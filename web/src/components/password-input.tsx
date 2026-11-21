@@ -22,7 +22,6 @@ import { useTranslation } from 'react-i18next'
 
 import { cn } from '@/lib/utils'
 
-import { Button } from './ui/button'
 import { Input } from './ui/input'
 
 type PasswordInputProps = Omit<
@@ -43,28 +42,36 @@ export function PasswordInput({
   const visibilityLabel = showPassword ? t('Hide password') : t('Show password')
 
   return (
-    <div className={cn('relative rounded-md', className)}>
+    <div className={cn('relative w-full rounded-md', className)}>
       <Input
         type={showPassword ? 'text' : 'password'}
         ref={ref}
         disabled={disabled}
+        className='pe-10'
         {...props}
       />
-      <Button
+      <button
         type='button'
-        size='icon'
-        variant='ghost'
         disabled={disabled}
-        className='text-muted-foreground absolute end-1 top-1/2 h-6 w-6 -translate-y-1/2 rounded-md'
+        data-no-press
+        className={cn(
+          'absolute end-1 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md border-0 bg-transparent p-0 transition-colors hover:bg-transparent disabled:opacity-50',
+          showPassword
+            ? 'text-foreground'
+            : 'text-muted-foreground hover:text-foreground'
+        )}
         onClick={() => setShowPassword((prev) => !prev)}
+        onMouseDown={(event) => event.preventDefault()}
         aria-label={visibilityLabel}
+        title={visibilityLabel}
+        aria-pressed={showPassword}
       >
         {showPassword ? (
-          <Eye size={18} aria-hidden='true' />
+          <Eye size={16} aria-hidden='true' />
         ) : (
-          <EyeOff size={18} aria-hidden='true' />
+          <EyeOff size={16} aria-hidden='true' />
         )}
-      </Button>
+      </button>
     </div>
   )
 }
