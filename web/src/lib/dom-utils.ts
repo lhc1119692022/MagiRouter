@@ -18,6 +18,16 @@ For commercial licensing, please contact support@quantumnous.com
 */
 export function applyFaviconToDom(url: string) {
   if (typeof document === 'undefined' || !url) return
+  const normalized = url.trim().toLowerCase()
+  if (
+    normalized === '/logo.png' ||
+    normalized === '/logo.svg' ||
+    normalized === '/magirouter-logo.png' ||
+    normalized === 'logo.png' ||
+    normalized === 'logo.svg'
+  ) {
+    return
+  }
   try {
     const next = new URL(url, window.location.href).href
     const existing =

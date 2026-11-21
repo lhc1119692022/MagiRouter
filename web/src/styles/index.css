@@ -29,6 +29,7 @@ For commercial licensing, please contact support@quantumnous.com
 
 @import './theme.css';
 @import './theme-presets.css';
+@import './magirouter.css';
 
 @layer base {
   :root {
@@ -107,7 +108,7 @@ For commercial licensing, please contact support@quantumnous.com
     scrollbar-color: var(--border) transparent;
   }
   html {
-    @apply overflow-x-hidden font-sans;
+    @apply overflow-x-clip font-sans;
   }
   body {
     @apply bg-background text-foreground has-[div[data-variant='inset']]:bg-sidebar min-h-svh w-full;
@@ -576,8 +577,8 @@ For commercial licensing, please contact support@quantumnous.com
     }
   }
 
-  button:not(:disabled):active,
-  [role='button']:not(:disabled):active {
+  button:not(:disabled):not([data-no-press]):active,
+  [role='button']:not(:disabled):not([data-no-press]):active {
     transform: scale(0.98);
   }
 
