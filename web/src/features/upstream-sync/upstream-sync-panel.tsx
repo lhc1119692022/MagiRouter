@@ -218,7 +218,10 @@ export function UpstreamSyncPanel() {
           </ul>
         )}
 
-        <details className='group rounded-lg border'>
+        <details
+          className='group rounded-lg border'
+          open={Boolean(sync.error)}
+        >
           <summary className='text-muted-foreground cursor-pointer list-none px-3.5 py-2.5 text-xs select-none'>
             {t('How to merge upstream changes')}
           </summary>
