@@ -7912,6 +7912,24 @@
     "Example Prompts": "Example Prompts",
     "Click to fill prompt": "Click to fill prompt",
     "Prompt Text": "Prompt",
-    "Video Duration": "Duration"
+    "Video Duration": "Duration",
+    "Upstream sync": "Upstream sync",
+    "Track the official repository so every deployment can state exactly which upstream commits it contains.": "Track the official repository so every deployment can state exactly which upstream commits it contains.",
+    "Checking...": "Checking...",
+    "Check now": "Check now",
+    "Running build": "Running build",
+    "Build commit": "Build commit",
+    "not stamped": "not stamped",
+    "Upstream base": "Upstream base",
+    "not recorded": "not recorded",
+    "Upstream main": "Upstream main",
+    "Could not reach GitHub from this browser. Use the compare link to check manually.": "Could not reach GitHub from this browser. Use the compare link to check manually.",
+    "Up to date with upstream": "Up to date with upstream",
+    "{{n}} upstream commits not merged yet": "{{n}} upstream commits not merged yet",
+    "More than {{n}} upstream commits not merged yet": "More than {{n}} upstream commits not merged yet",
+    "This build does not record an upstream base, so the gap cannot be measured.": "This build does not record an upstream base, so the gap cannot be measured.",
+    "Open on GitHub": "Open on GitHub",
+    "How to merge upstream changes": "How to merge upstream changes",
+    "Resolve conflicts, rebuild, then deploy the new commit. The version stamp updates automatically.": "Resolve conflicts, rebuild, then deploy the new commit. The version stamp updates automatically."
   }
 }

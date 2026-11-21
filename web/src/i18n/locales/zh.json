@@ -7912,6 +7912,24 @@
     "Example Prompts": "示例提示词",
     "Click to fill prompt": "点击即可填入左侧",
     "Prompt Text": "提示词",
-    "Video Duration": "时长"
+    "Video Duration": "时长",
+    "Upstream sync": "上游同步",
+    "Track the official repository so every deployment can state exactly which upstream commits it contains.": "跟踪官方仓库，让每次上线都能明确说出包含上游哪些提交。",
+    "Checking...": "检查中…",
+    "Check now": "立即检查",
+    "Running build": "当前线上构建",
+    "Build commit": "构建提交",
+    "not stamped": "未标注",
+    "Upstream base": "上游基线",
+    "not recorded": "未记录",
+    "Upstream main": "上游 main",
+    "Could not reach GitHub from this browser. Use the compare link to check manually.": "当前浏览器无法访问 GitHub，可点开对比链接手动确认。",
+    "Up to date with upstream": "已与上游同步",
+    "{{n}} upstream commits not merged yet": "有 {{n}} 个上游提交尚未合并",
+    "More than {{n}} upstream commits not merged yet": "有超过 {{n}} 个上游提交尚未合并",
+    "This build does not record an upstream base, so the gap cannot be measured.": "本次构建没有记录上游基线，无法计算差距。",
+    "Open on GitHub": "在 GitHub 查看对比",
+    "How to merge upstream changes": "如何合并上游改动",
+    "Resolve conflicts, rebuild, then deploy the new commit. The version stamp updates automatically.": "解决冲突后重新构建、发布新提交即可，版本标记会自动更新。"
   }
 }
