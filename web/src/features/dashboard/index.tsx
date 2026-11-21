@@ -250,10 +250,16 @@ export function Dashboard() {
 
   const meta = SECTION_META[activeSection] ?? SECTION_META.overview
   const isAdmin = Boolean(userRole && userRole >= ROLE.ADMIN)
+  const effectiveSection: DashboardSectionId =
+    !isAdmin && (activeSection === 'flow' || activeSection === 'users')
+      ? 'models'
+      : activeSection
   const visibleSections = useMemo(
     () =>
       DASHBOARD_SECTION_IDS.filter(
-        (section) => section !== 'overview' && (section !== 'users' || isAdmin)
+        (section) =>
+          section !== 'overview' &&
+          ((section !== 'users' && section !== 'flow') || isAdmin)
       ),
     [isAdmin]
   )
@@ -267,9 +273,9 @@ export function Dashboard() {
     [navigate]
   )
   const showSectionTabs =
-    activeSection !== 'overview' && visibleSections.length > 1
+    effectiveSection !== 'overview' && visibleSections.length > 1
   const modelActions =
-    activeSection === 'models' ? (
+    effectiveSection === 'models' ? (
       <>
         <ModelsChartPreferences
           preferences={chartPreferences}
@@ -284,7 +290,7 @@ export function Dashboard() {
       </>
     ) : null
   const flowActions =
-    activeSection === 'flow' ? (
+    effectiveSection === 'flow' && isAdmin ? (
       <>
         <Tooltip>
           <TooltipTrigger
@@ -322,18 +328,23 @@ export function Dashboard() {
     ) : null
   const sectionActions = modelActions ?? flowActions
 
-  if (activeSection === 'overview') {
+  if (effectiveSection === 'overview') {
     return <OverviewDashboard />
   }
 
   return (
     <SectionPageLayout>
-      <SectionPageLayout.Title>{t(meta.titleKey)}</SectionPageLayout.Title>
+      <SectionPageLayout.Title>
+        {t((SECTION_META[effectiveSection] ?? meta).titleKey)}
+      </SectionPageLayout.Title>
       <SectionPageLayout.Content>
         <div className='space-y-3 sm:space-y-4'>
           <div className='flex flex-wrap items-center justify-between gap-1.5 sm:gap-2'>
             {showSectionTabs ? (
-              <Tabs value={activeSection} onValueChange={handleSectionChange}>
+              <Tabs
+                value={effectiveSection}
+                onValueChange={handleSectionChange}
+              >
                 <TabsList className='max-w-full flex-wrap justify-start group-data-horizontal/tabs:h-auto'>
                   {visibleSections.map((section) => (
                     <TabsTrigger key={section} value={section}>
@@ -351,7 +362,7 @@ export function Dashboard() {
               </div>
             )}
           </div>
-          {activeSection === 'models' && (
+          {effectiveSection === 'models' && (
             <>
               <FadeIn>
                 <Suspense fallback={<LogStatCardsFallback />}>
@@ -396,7 +407,7 @@ export function Dashboard() {
               </FadeIn>
             </>
           )}
-          {activeSection === 'users' && (
+          {effectiveSection === 'users' && isAdmin && (
             <FadeIn>
               <Suspense fallback={<ModelChartsFallback />}>
                 <LazyUserCharts
@@ -406,7 +417,7 @@ export function Dashboard() {
               </Suspense>
             </FadeIn>
           )}
-          {activeSection === 'flow' && (
+          {effectiveSection === 'flow' && isAdmin && (
             <FadeIn>
               <Suspense fallback={<ModelChartsFallback />}>
                 <LazyFlowCharts

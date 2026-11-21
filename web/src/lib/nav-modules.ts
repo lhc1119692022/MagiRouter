@@ -201,7 +201,8 @@ export async function getModuleAccessForGuard(
  */
 export function isSidebarModuleEnabled(
   section: string,
-  module: string
+  module: string,
+  options?: { ignoreSectionFlag?: boolean }
 ): boolean {
   const status = readCachedStatus()
   if (!status) return true
@@ -216,7 +217,9 @@ export function isSidebarModuleEnabled(
     >
     const sectionConfig = parsed[section]
     if (!sectionConfig) return true
-    if (sectionConfig.enabled === false) return false
+    if (!options?.ignoreSectionFlag && sectionConfig.enabled === false) {
+      return false
+    }
     if (sectionConfig[module] === false) return false
     return true
   } catch {

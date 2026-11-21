@@ -16,6 +16,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useNavigate } from '@tanstack/react-router'
+import { useMemo } from 'react'
+
 import { ConfigDrawer } from '@/components/config-drawer'
 import { LanguageSwitcher } from '@/components/language-switcher'
 import { NotificationPopover } from '@/components/notification-popover'
@@ -24,6 +27,8 @@ import { Search } from '@/components/search'
 import { SystemUpdateAction } from '@/features/system-update/system-update-action'
 import { useNotifications } from '@/hooks/use-notifications'
 import { useTopNavLinks } from '@/hooks/use-top-nav-links'
+import { formatQuotaWithCurrency } from '@/lib/currency'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { defaultTopNavLinks } from '../config/top-nav.config'
 import type { TopNavLink } from '../types'
@@ -110,6 +115,14 @@ export function AppHeader({
 
   // Notifications hook
   const notifications = useNotifications()
+  const navigate = useNavigate()
+  const { auth } = useAuthStore()
+  const isAuthenticated = Boolean(auth.user)
+
+  const formattedBalance = useMemo(() => {
+    if (!auth.user || typeof auth.user.quota !== 'number') return '$0.00'
+    return formatQuotaWithCurrency(auth.user.quota)
+  }, [auth.user])
 
   return (
     <Header>
@@ -143,6 +156,33 @@ export function AppHeader({
               announcements={notifications.announcements}
               loading={notifications.loading}
             />
+          )}
+          {isAuthenticated && (
+            <button
+              type='button'
+              className='nav-balance-pill hidden sm:inline-flex'
+              title='当前账户余额 · 点击前往充值'
+              onClick={() => void navigate({ to: '/wallet' })}
+            >
+              <svg
+                width='14'
+                height='14'
+                viewBox='0 0 24 24'
+                fill='none'
+                stroke='currentColor'
+                strokeWidth='1.8'
+                strokeLinecap='round'
+                strokeLinejoin='round'
+                aria-hidden='true'
+              >
+                <rect x='2' y='5' width='20' height='14' rx='2.5' />
+                <path d='M16 12h2.5' />
+              </svg>
+              <span className='nav-balance-val tabular-nums'>
+                {formattedBalance}
+              </span>
+              <span className='nav-balance-tag'>充值</span>
+            </button>
           )}
           <LanguageSwitcher />
           {showConfigDrawer && <ConfigDrawer />}

@@ -21,8 +21,9 @@ For commercial licensing, please contact support@quantumnous.com
  */
 
 // System Configuration Defaults
-export const DEFAULT_SYSTEM_NAME = 'New API'
-export const DEFAULT_LOGO = '/logo.png'
+export const DEFAULT_SYSTEM_NAME = 'MagiRouter'
+// MagiRouter: new filename so browsers drop the cached upstream favicon.
+export const DEFAULT_LOGO = '/magirouter-logo.png'
 
 // LocalStorage Keys
 export const STORAGE_KEYS = {
