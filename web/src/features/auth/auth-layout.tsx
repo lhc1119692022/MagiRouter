@@ -16,11 +16,15 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Link } from '@tanstack/react-router'
+import { Link, useLocation } from '@tanstack/react-router'
+import { ChevronLeft, Lock, Moon, Sun } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { Skeleton } from '@/components/ui/skeleton'
-import { useSystemConfig } from '@/hooks/use-system-config'
+import { LanguageSwitcher } from '@/components/language-switcher'
+import { MagiRouterWordmark } from '@/components/layout/components/magirouter-wordmark'
+import { useTheme } from '@/context/theme-provider'
+import { OFFICIAL_DOMAINS } from '@/features/docs/data/docs-data'
 
 type AuthLayoutProps = {
   children: React.ReactNode
@@ -28,36 +32,138 @@ type AuthLayoutProps = {
 
 export function AuthLayout({ children }: AuthLayoutProps) {
   const { t } = useTranslation()
-  const { systemName, logo, loading } = useSystemConfig()
+  const location = useLocation()
+  const { resolvedTheme, setTheme } = useTheme()
+  const [copiedHost, setCopiedHost] = useState<string | null>(null)
+
+  const isSignUpPage = location.pathname.includes('sign-up')
+
+  useEffect(() => {
+    document.body.dataset.currentPage = 'auth'
+    return () => {
+      if (document.body.dataset.currentPage === 'auth') {
+        delete document.body.dataset.currentPage
+      }
+    }
+  }, [])
+
+  const handleCopyHost = async (hostUrl: string) => {
+    try {
+      await navigator.clipboard.writeText(hostUrl)
+      setCopiedHost(hostUrl)
+      window.setTimeout(() => {
+        setCopiedHost((current) => (current === hostUrl ? null : current))
+      }, 1600)
+    } catch {
+      // ignore clipboard errors
+    }
+  }
+
+  const handleToggleTheme = () => {
+    setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')
+  }
 
   return (
-    <div className='relative grid h-svh max-w-none'>
-      <Link
-        to='/'
-        className='absolute top-4 left-4 z-10 flex items-center gap-2 transition-opacity hover:opacity-80 sm:top-8 sm:left-8'
+    <section className='auth-shell' aria-label={t('Account Authentication')}>
+      <svg
+        className='auth-backdrop'
+        viewBox='0 0 1440 900'
+        preserveAspectRatio='xMidYMid slice'
+        aria-hidden='true'
       >
-        <div className='relative h-8 w-8'>
-          {loading ? (
-            <Skeleton className='absolute inset-0 rounded-full' />
-          ) : (
-            <img
-              src={logo}
-              alt={t('Logo')}
-              className='h-8 w-8 rounded-full object-cover'
-            />
-          )}
+        <circle cx='720' cy='440' r='280' fill='none' stroke='currentColor' strokeWidth='1' />
+        <circle cx='720' cy='440' r='420' fill='none' stroke='currentColor' strokeWidth='1' />
+        <circle cx='720' cy='440' r='580' fill='none' stroke='currentColor' strokeWidth='1' />
+        <line x1='0' y1='440' x2='1440' y2='440' stroke='currentColor' strokeWidth='0.75' strokeDasharray='4 8' />
+        <line x1='720' y1='0' x2='720' y2='900' stroke='currentColor' strokeWidth='0.75' strokeDasharray='4 8' />
+      </svg>
+
+      <header className='auth-topbar'>
+        <div className='auth-topbar-left'>
+          <Link to='/' className='brand-lockup' aria-label='MagiRouter 首页'>
+            <MagiRouterWordmark />
+          </Link>
+          <span className='auth-topbar-sep' aria-hidden='true' />
+          <Link to='/' className='auth-back-btn'>
+            <ChevronLeft className='size-3.5' />
+            <span>返回首页</span>
+          </Link>
         </div>
-        {loading ? (
-          <Skeleton className='h-6 w-24' />
-        ) : (
-          <h1 className='text-xl font-medium'>{systemName}</h1>
-        )}
-      </Link>
-      <div className='container flex items-center pt-16 sm:pt-0'>
-        <div className='mx-auto flex w-full flex-col justify-center space-y-2 px-4 py-8 sm:w-[480px] sm:p-8'>
-          {children}
+
+        <div className='auth-topbar-right'>
+          <span className='auth-topbar-hint'>
+            {isSignUpPage ? '已有账户？' : '还没有账户？'}
+          </span>
+          <Link
+            to={isSignUpPage ? '/sign-in' : '/sign-up'}
+            className='el-btn el-btn-sm el-btn-white'
+          >
+            {isSignUpPage ? t('Sign in') : t('Sign up')}
+          </Link>
+          <LanguageSwitcher />
+          <button
+            type='button'
+            className='theme-toggle-btn'
+            aria-label={resolvedTheme === 'dark' ? '切换浅色主题' : '切换暗色主题'}
+            aria-pressed={resolvedTheme === 'dark'}
+            title={resolvedTheme === 'dark' ? '切换浅色主题' : '切换暗色主题'}
+            onClick={handleToggleTheme}
+          >
+            {resolvedTheme === 'dark' ? (
+              <Sun className='size-4' />
+            ) : (
+              <Moon className='size-4' />
+            )}
+          </button>
         </div>
-      </div>
-    </div>
+      </header>
+
+      <main className='auth-stage'>
+        <div className='auth-split-shell'>
+          <aside
+            className='auth-domains-banner'
+            role='note'
+            aria-label='官方可用访问域名'
+          >
+            <div className='auth-domains-head'>
+              <span className='auth-domains-title'>
+                <Lock className='size-3.5 shrink-0' />
+                <span>官方访问域名</span>
+              </span>
+              <span className='auth-domains-hint'>
+                任一入口均可登录，建议收藏备用
+              </span>
+            </div>
+            <div className='auth-domains-grid'>
+              {OFFICIAL_DOMAINS.map((domain, domainIndex) => (
+                <div key={domain.host} className='auth-domain-chip'>
+                  <div className='auth-domain-top'>
+                    <span
+                      className={
+                        domainIndex === 0
+                          ? 'auth-domain-tag is-primary'
+                          : 'auth-domain-tag'
+                      }
+                    >
+                      {domain.label}
+                    </span>
+                    <span className='auth-domain-url'>{domain.host}</span>
+                  </div>
+                  <button
+                    type='button'
+                    className='auth-domain-copy'
+                    onClick={() => void handleCopyHost(domain.host)}
+                  >
+                    {copiedHost === domain.host ? '已复制' : '复制'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </aside>
+
+          <div className='auth-card'>{children}</div>
+        </div>
+      </main>
+    </section>
   )
 }

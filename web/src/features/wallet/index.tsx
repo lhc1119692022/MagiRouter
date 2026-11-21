@@ -17,6 +17,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { Link } from '@tanstack/react-router'
+import { ArrowRight, ReceiptText, ShieldCheck, WalletCards } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { SectionPageLayout } from '@/components/layout'
@@ -289,6 +291,58 @@ export function Wallet(props: WalletProps) {
         <SectionPageLayout.Content>
           <div className='mx-auto flex w-full max-w-7xl flex-col gap-4 sm:gap-5'>
             <WalletStatsCard user={user} loading={userLoading} />
+
+            <div className='border-border bg-card grid grid-cols-1 gap-3 rounded-2xl border p-4 sm:grid-cols-3'>
+              <div className='flex items-start gap-2.5'>
+                <WalletCards className='text-foreground mt-0.5 size-4 shrink-0' />
+                <div className='min-w-0'>
+                  <p className='text-foreground text-xs font-semibold'>
+                    {t('1:1 USD Exchange Billing')}
+                  </p>
+                  <p className='text-muted-foreground mt-0.5 text-[11.5px] leading-relaxed'>
+                    {t(
+                      'Transparent pay-as-you-go balance with no hidden markup or mandatory monthly fee.'
+                    )}
+                  </p>
+                </div>
+              </div>
+              <div className='flex items-start gap-2.5'>
+                <ShieldCheck className='text-foreground mt-0.5 size-4 shrink-0' />
+                <div className='min-w-0'>
+                  <p className='text-foreground text-xs font-semibold'>
+                    {t('Zero Charge on Failed Calls')}
+                  </p>
+                  <p className='text-muted-foreground mt-0.5 text-[11.5px] leading-relaxed'>
+                    {t(
+                      'Upstream timeouts or failed tasks do not deduct balance; async failures auto-refund.'
+                    )}
+                  </p>
+                </div>
+              </div>
+              <div className='flex items-start justify-between gap-2'>
+                <div className='flex items-start gap-2.5'>
+                  <ReceiptText className='text-foreground mt-0.5 size-4 shrink-0' />
+                  <div className='min-w-0'>
+                    <p className='text-foreground text-xs font-semibold'>
+                      {t('Per-Request Audit Trail')}
+                    </p>
+                    <p className='text-muted-foreground mt-0.5 text-[11.5px] leading-relaxed'>
+                      {t(
+                        'Every deduction is traceable by model, token count, and routing multiplier.'
+                      )}
+                    </p>
+                  </div>
+                </div>
+                <Link
+                  to='/docs'
+                  search={{ doc: 'billing-model' }}
+                  className='text-muted-foreground hover:text-foreground inline-flex shrink-0 items-center gap-1 text-[11.5px] font-medium'
+                >
+                  <span>{t('Billing rules')}</span>
+                  <ArrowRight className='size-3' />
+                </Link>
+              </div>
+            </div>
 
             <div
               className={

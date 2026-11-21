@@ -78,13 +78,15 @@ export function GeneralError({
     : t('Please try again later.')
 
   return (
-    <div className={cn('h-svh w-full', className)}>
-      <div className='m-auto flex h-full w-full flex-col items-center justify-center gap-2'>
+    <div className={cn('bg-background text-foreground h-svh w-full px-4', className)}>
+      <div className='m-auto flex h-full w-full max-w-md flex-col items-center justify-center gap-2 text-center'>
         {!minimal && status !== undefined && (
-          <h1 className='text-[7rem] leading-tight font-bold'>{status}</h1>
+          <h1 className='text-magi-heading font-mono text-[6.5rem] leading-none font-semibold tracking-tighter'>
+            {status}
+          </h1>
         )}
-        <span className='font-medium'>{title}</span>
-        <p className='text-muted-foreground text-center'>
+        <span className='text-foreground mt-2 text-lg font-medium'>{title}</span>
+        <p className='text-muted-foreground text-center text-sm leading-relaxed'>
           {t('We apologize for the inconvenience.')} <br /> {description}
         </p>
         {!minimal && (
@@ -93,12 +95,17 @@ export function GeneralError({
           </p>
         )}
         {!minimal && (
-          <div className='mt-6 flex flex-wrap justify-center gap-4'>
-            <Button variant='outline' onClick={() => history.go(-1)}>
+          <div className='mt-6 flex flex-wrap justify-center gap-3'>
+            <Button
+              variant='outline'
+              className='rounded-full px-5'
+              onClick={() => history.go(-1)}
+            >
               {t('Go Back')}
             </Button>
             <Button
               variant='outline'
+              className='rounded-full px-5'
               render={
                 <a
                   href={FEEDBACK_URL}
@@ -109,7 +116,10 @@ export function GeneralError({
             >
               {t('Report an issue')}
             </Button>
-            <Button onClick={() => navigate({ to: '/' })}>
+            <Button
+              className='rounded-full px-5'
+              onClick={() => navigate({ to: '/' })}
+            >
               {t('Back to Home')}
             </Button>
           </div>

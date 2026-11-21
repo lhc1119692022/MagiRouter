@@ -56,7 +56,18 @@ export function useTopNavLinks(): TopNavLink[] {
   }, [status])
 
   // Documentation link (may be external)
-  const docsLink: string | undefined = status?.docs_link as string | undefined
+  const rawDocsLink =
+    typeof status?.docs_link === 'string' ? status.docs_link.trim() : ''
+  const isDefaultUpstreamDocs =
+    rawDocsLink === 'https://docs.newapi.pro' ||
+    rawDocsLink === 'https://docs.newapi.pro/'
+  const customExternalDocsLink =
+    rawDocsLink &&
+    rawDocsLink !== '/docs' &&
+    !isDefaultUpstreamDocs &&
+    /^https?:\/\//i.test(rawDocsLink)
+      ? rawDocsLink
+      : ''
 
   const isAuthed = !!auth?.user
 
@@ -88,8 +99,12 @@ export function useTopNavLinks(): TopNavLink[] {
 
   // Docs (supports external links)
   if (modules?.docs !== false) {
-    if (docsLink) {
-      links.push({ title: t('Docs'), href: docsLink, external: true })
+    if (customExternalDocsLink) {
+      links.push({
+        title: t('Docs'),
+        href: customExternalDocsLink,
+        external: true,
+      })
     } else {
       links.push({ title: t('Docs'), href: '/docs' })
     }

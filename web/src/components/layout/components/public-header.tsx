@@ -17,445 +17,1030 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { Link, useNavigate, useRouterState } from '@tanstack/react-router'
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { Dialog } from '@/components/dialog'
 import { LanguageSwitcher } from '@/components/language-switcher'
-import { NotificationPopover } from '@/components/notification-popover'
-import { ProfileDropdown } from '@/components/profile-dropdown'
-import { ThemeSwitch } from '@/components/theme-switch'
-import { Button } from '@/components/ui/button'
-import { Skeleton } from '@/components/ui/skeleton'
-import { SystemUpdateAction } from '@/features/system-update/system-update-action'
+import { SignOutDialog } from '@/components/sign-out-dialog'
+import { useTheme } from '@/context/theme-provider'
 import { useNotifications } from '@/hooks/use-notifications'
+import { useStatus } from '@/hooks/use-status'
 import { useSystemConfig } from '@/hooks/use-system-config'
 import { useTopNavLinks } from '@/hooks/use-top-nav-links'
+import { useUserDisplay } from '@/hooks/use-user-display'
+import { formatQuotaWithCurrency } from '@/lib/currency'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
 
 import { defaultTopNavLinks } from '../config/top-nav.config'
 import type { TopNavLink } from '../types'
-import { HeaderLogo } from './header-logo'
+import { MagiRouterWordmark } from './magirouter-wordmark'
+import { MobileDrawer } from './mobile-drawer'
+import { QuickModelSearchDialog } from './quick-model-search-dialog'
 
-const AUTH_PROMPT_SECONDS = 5
-
-type AuthPromptTarget = {
-  title: string
-  href: string
-}
+const BANNER_DISMISS_KEY = 'magirouter:banner:dismissed:v1'
 
 export interface PublicHeaderProps {
+  navContent?: ReactNode
   navLinks?: TopNavLink[]
-  mobileLinks?: TopNavLink[]
-  navContent?: React.ReactNode
   showThemeSwitch?: boolean
-  showLanguageSwitcher?: boolean
-  logo?: React.ReactNode
-  siteName?: string
-  homeUrl?: string
-  leftContent?: React.ReactNode
-  rightContent?: React.ReactNode
-  showNavigation?: boolean
   showAuthButtons?: boolean
   showNotifications?: boolean
+  logo?: ReactNode
+  siteName?: string
   className?: string
+  onToggleSidebar?: () => void
+  sidebarCollapsed?: boolean
+}
+
+function stripText(raw: string): string {
+  return raw
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/[#*_`>[\]()]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
 export function PublicHeader(props: PublicHeaderProps) {
   const {
+    navContent,
     navLinks = defaultTopNavLinks,
     showThemeSwitch = true,
-    showLanguageSwitcher = true,
-    logo: customLogo,
-    siteName: customSiteName,
-    homeUrl = '/',
     showAuthButtons = true,
     showNotifications = true,
+    logo: customLogo,
+    siteName: customSiteName,
+    className,
+    onToggleSidebar,
+    sidebarCollapsed = false,
   } = props
 
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const [scrolled, setScrolled] = useState(false)
-  const [mobileOpen, setMobileOpen] = useState(false)
-  const [authPromptTarget, setAuthPromptTarget] =
-    useState<AuthPromptTarget | null>(null)
-  const [authPromptSecondsLeft, setAuthPromptSecondsLeft] =
-    useState(AUTH_PROMPT_SECONDS)
+  const { resolvedTheme, setTheme } = useTheme()
   const { auth } = useAuthStore()
-  const {
-    systemName,
-    logo: systemLogo,
-    loading,
-    logoLoaded,
-  } = useSystemConfig()
+  const { status } = useStatus()
+  const { systemName, loading } = useSystemConfig()
   const dynamicLinks = useTopNavLinks()
   const notifications = useNotifications()
-  const routerState = useRouterState()
-  const pathname = routerState.location.pathname
+  const pathname = useRouterState({
+    select: (state) => state.location.pathname,
+  })
 
   const user = auth.user
-  const isAuthenticated = !!user
-  const displaySiteName = customSiteName || systemName
+  const isAuthenticated = Boolean(user)
+  const { displayName, secondaryText, initials } = useUserDisplay(user)
   const links = dynamicLinks.length > 0 ? dynamicLinks : navLinks
+  const isHome = pathname === '/' || pathname === ''
 
-  let logoContent: ReactNode = (
-    <HeaderLogo
-      src={systemLogo}
-      loading={loading}
-      logoLoaded={logoLoaded}
-      className='size-full rounded-lg object-contain'
-    />
-  )
-  if (customLogo) logoContent = customLogo
-  if (loading) logoContent = <Skeleton className='size-full rounded-lg' />
-
-  let authContent = (
-    <Button
-      size='sm'
-      className='h-8 rounded-lg px-3.5 text-xs font-medium'
-      render={<Link to='/sign-in' />}
-    >
-      {t('Sign in')}
-    </Button>
-  )
-  if (isAuthenticated) authContent = <ProfileDropdown />
-  if (loading) authContent = <Skeleton className='h-8 w-20 rounded-lg' />
-
-  useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 20)
-    onScroll()
-    window.addEventListener('scroll', onScroll, { passive: true })
-    return () => window.removeEventListener('scroll', onScroll)
-  }, [])
-
-  useEffect(() => {
-    document.body.style.overflow = mobileOpen ? 'hidden' : ''
-    return () => {
-      document.body.style.overflow = ''
+  const [bannerDismissed, setBannerDismissed] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false
+    try {
+      return window.sessionStorage.getItem(BANNER_DISMISS_KEY) === '1'
+    } catch {
+      return false
     }
-  }, [mobileOpen])
+  })
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [createMenuOpen, setCreateMenuOpen] = useState(false)
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false)
+  const [signOutOpen, setSignOutOpen] = useState(false)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+
+  const createMenuRef = useRef<HTMLDivElement>(null)
+  const notifyMenuRef = useRef<HTMLDivElement>(null)
+  const accountMenuRef = useRef<HTMLDivElement>(null)
+
+  const closeAllMenus = useCallback(() => {
+    setCreateMenuOpen(false)
+    setAccountMenuOpen(false)
+    notifications.closePopover()
+  }, [notifications])
 
   useEffect(() => {
-    if (!authPromptTarget) return
-
-    const intervalId = window.setInterval(() => {
-      setAuthPromptSecondsLeft((seconds) => Math.max(seconds - 1, 0))
-    }, 1000)
-
-    const timeoutId = window.setTimeout(() => {
-      const redirect = authPromptTarget.href
-      setAuthPromptTarget(null)
-      navigate({ to: '/sign-in', search: { redirect } })
-    }, AUTH_PROMPT_SECONDS * 1000)
-
-    return () => {
-      window.clearInterval(intervalId)
-      window.clearTimeout(timeoutId)
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        closeAllMenus()
+        setSearchOpen((prev) => !prev)
+      } else if (event.key === 'Escape') {
+        closeAllMenus()
+      }
     }
-  }, [authPromptTarget, navigate])
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [closeAllMenus])
 
-  const closeAuthPrompt = useCallback(() => {
-    setAuthPromptTarget(null)
-    setAuthPromptSecondsLeft(AUTH_PROMPT_SECONDS)
-  }, [])
-
-  const navigateToSignIn = useCallback(() => {
-    const redirect = authPromptTarget?.href || '/'
-    setAuthPromptTarget(null)
-    navigate({ to: '/sign-in', search: { redirect } })
-  }, [authPromptTarget?.href, navigate])
-
-  const handleNavLinkClick = useCallback(
-    (
-      event: React.MouseEvent<HTMLAnchorElement>,
-      link: TopNavLink,
-      closeMobile = false
-    ) => {
-      if (link.disabled) {
-        event.preventDefault()
-        return
+  useEffect(() => {
+    const onPointerDown = (event: MouseEvent) => {
+      const target = event.target as Node
+      if (createMenuRef.current && !createMenuRef.current.contains(target)) {
+        setCreateMenuOpen(false)
       }
-
-      if (link.requiresAuth) {
-        event.preventDefault()
-        if (closeMobile) {
-          setMobileOpen(false)
-        }
-        setAuthPromptSecondsLeft(AUTH_PROMPT_SECONDS)
-        setAuthPromptTarget({
-          title: t(link.title),
-          href: link.href,
-        })
-        return
+      if (accountMenuRef.current && !accountMenuRef.current.contains(target)) {
+        setAccountMenuOpen(false)
       }
-
-      if (closeMobile) {
-        setMobileOpen(false)
+      if (
+        notifications.popoverOpen &&
+        notifyMenuRef.current &&
+        !notifyMenuRef.current.contains(target)
+      ) {
+        notifications.closePopover()
       }
-    },
-    [t]
-  )
+    }
+    document.addEventListener('mousedown', onPointerDown)
+    return () => document.removeEventListener('mousedown', onPointerDown)
+  }, [notifications])
+
+  const rawDocsLink =
+    typeof status?.docs_link === 'string' ? status.docs_link.trim() : ''
+  const isDefaultUpstreamDocs =
+    rawDocsLink === 'https://docs.newapi.pro' ||
+    rawDocsLink === 'https://docs.newapi.pro/'
+  const externalDocsHref =
+    rawDocsLink &&
+    rawDocsLink !== '/docs' &&
+    !isDefaultUpstreamDocs &&
+    /^https?:\/\//i.test(rawDocsLink)
+      ? rawDocsLink
+      : ''
+
+  const bannerMessage = useMemo(() => {
+    const firstAnnouncement = notifications.announcements[0]
+    if (firstAnnouncement) {
+      const title =
+        typeof firstAnnouncement.title === 'string'
+          ? stripText(firstAnnouncement.title)
+          : ''
+      const content =
+        typeof firstAnnouncement.content === 'string'
+          ? stripText(firstAnnouncement.content)
+          : ''
+      const combined = title || content
+      if (combined) return combined.slice(0, 96)
+    }
+    if (notifications.notice) {
+      const firstLine = stripText(notifications.notice.split(/\r?\n/)[0] || '')
+      if (firstLine) return firstLine.slice(0, 96)
+    }
+    return '主站 magirouter.com 稳定运行 · 1:1 汇率透明计费 · 上游报错自动免扣'
+  }, [notifications.announcements, notifications.notice])
+
+  const formattedBalance = useMemo(() => {
+    if (!user) return '$0.00'
+    return formatQuotaWithCurrency(user.quota)
+  }, [user])
+
+  const handleDismissBanner = () => {
+    setBannerDismissed(true)
+    try {
+      window.sessionStorage.setItem(BANNER_DISMISS_KEY, '1')
+    } catch {
+      // Ignore storage errors
+    }
+  }
+
+  const handleGoProtected = (targetPath: string) => {
+    closeAllMenus()
+    if (isAuthenticated) {
+      void navigate({ to: targetPath })
+      return
+    }
+    void navigate({
+      to: '/sign-in',
+      search: { redirect: targetPath },
+    })
+  }
+
+  const handleToggleTheme = () => {
+    setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')
+  }
+
+  const isRouteActive = (prefix: string) => {
+    if (prefix === '/') return isHome
+    return pathname === prefix || pathname.startsWith(`${prefix}/`)
+  }
 
   return (
     <>
-      <header className='pointer-events-none fixed inset-x-0 top-0 z-50'>
+      {!bannerDismissed && (
         <div
-          className={cn(
-            'pointer-events-auto mx-auto transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]',
-            scrolled ? 'max-w-[52rem] px-3 pt-3' : 'max-w-7xl px-4 pt-0 md:px-6'
-          )}
+          id='announcement-bar'
+          className='el-banner'
+          role='region'
+          aria-label={t('System Announcement')}
         >
-          <nav
-            className={cn(
-              'flex items-center justify-between gap-2 transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]',
-              scrolled
-                ? 'bg-background/60 ring-border/50 h-12 rounded-2xl pr-1.5 pl-4 shadow-[0_2px_16px_-6px_rgba(0,0,0,0.08),0_0_0_0.5px_rgba(0,0,0,0.02)] ring-[0.5px] backdrop-blur-2xl dark:shadow-[0_2px_16px_-6px_rgba(0,0,0,0.4)]'
-                : 'h-16 px-2'
-            )}
+          <svg
+            className='el-banner-ear-left'
+            viewBox='0 0 20 22'
+            aria-hidden='true'
           >
-            {/* Logo */}
-            <div className='@container/system-brand flex min-w-0 flex-1 items-center gap-1 lg:min-w-36'>
-              <Link
-                to={homeUrl}
-                className='group flex min-w-0 items-center gap-2.5'
+            <path
+              d='M20 2C8.95431 2 0 10.9543 0 22V0H20V2Z'
+              fill='currentColor'
+            />
+          </svg>
+          <svg
+            className='el-banner-ear-right'
+            viewBox='0 0 20 22'
+            aria-hidden='true'
+          >
+            <path
+              d='M0 2C11.0457 2 20 10.9543 20 22V0H0V2Z'
+              fill='currentColor'
+            />
+          </svg>
+
+          <div className='el-banner-inner'>
+            <span className='el-banner-tag'>
+              <svg
+                width='13'
+                height='13'
+                viewBox='0 0 24 24'
+                fill='none'
+                stroke='currentColor'
+                strokeWidth='1.9'
+                strokeLinecap='round'
+                strokeLinejoin='round'
+                aria-hidden='true'
               >
-                <div className='flex size-7 shrink-0 items-center justify-center transition-all duration-300 group-hover:scale-105'>
-                  {logoContent}
-                </div>
-                <span
-                  className='max-w-48 truncate text-sm font-semibold tracking-tight'
-                  title={displaySiteName}
+                <path d='M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9' />
+                <path d='M10.3 21a1.94 1.94 0 0 0 3.4 0' />
+              </svg>
+              <span>站点通知</span>
+            </span>
+            <span className='el-banner-sep' />
+            <span className='el-banner-text'>{bannerMessage}</span>
+            {isAuthenticated && (
+              <button
+                type='button'
+                className='el-banner-cta'
+                onClick={() => {
+                  closeAllMenus()
+                  void navigate({ to: '/about' })
+                }}
+              >
+                查看通知 →
+              </button>
+            )}
+          </div>
+
+          <button
+            type='button'
+            className='el-banner-close'
+            onClick={handleDismissBanner}
+            aria-label={t('Close')}
+          >
+            <svg
+              width='16'
+              height='16'
+              viewBox='0 0 24 24'
+              fill='none'
+              stroke='currentColor'
+              strokeWidth='1.75'
+              strokeLinecap='round'
+            >
+              <path d='M18 6 6 18M6 6l12 12' />
+            </svg>
+          </button>
+        </div>
+      )}
+
+      <header className={cn('site-header', className)} id='site-header'>
+        <div className='el-container'>
+          <nav className='site-nav' aria-label='主导航'>
+            <div className='nav-left'>
+              {onToggleSidebar && (
+                <button
+                  type='button'
+                  className='sidebar-collapse-btn'
+                  aria-label={sidebarCollapsed ? '展开侧边栏' : '收起侧边栏'}
+                  aria-expanded={!sidebarCollapsed}
+                  title={sidebarCollapsed ? '展开侧边栏' : '收起侧边栏'}
+                  onClick={onToggleSidebar}
                 >
-                  {loading ? (
-                    <Skeleton className='h-4 w-16' />
-                  ) : (
-                    displaySiteName
-                  )}
-                </span>
+                  <svg
+                    width='16'
+                    height='16'
+                    viewBox='0 0 24 24'
+                    fill='none'
+                    stroke='currentColor'
+                    strokeWidth='1.8'
+                    strokeLinecap='round'
+                    strokeLinejoin='round'
+                  >
+                    <rect x='3' y='3' width='18' height='18' rx='3' />
+                    <line x1='9' y1='3' x2='9' y2='21' />
+                  </svg>
+                </button>
+              )}
+
+              <Link
+                to='/'
+                className='brand-lockup'
+                aria-label={`${customSiteName || systemName || 'MagiRouter'} 首页`}
+              >
+                <MagiRouterWordmark
+                  height={22}
+                  customLogo={customLogo}
+                  customSiteName={customSiteName}
+                />
               </Link>
-              <SystemUpdateAction presentation='version' />
+
+              <button
+                type='button'
+                className='header-search-btn'
+                aria-label={t('Search models...')}
+                onClick={() => {
+                  closeAllMenus()
+                  setSearchOpen(true)
+                }}
+              >
+                <svg
+                  width='15'
+                  height='15'
+                  viewBox='0 0 24 24'
+                  fill='none'
+                  stroke='currentColor'
+                  strokeWidth='2'
+                  strokeLinecap='round'
+                  strokeLinejoin='round'
+                  aria-hidden='true'
+                >
+                  <circle cx='11' cy='11' r='8' />
+                  <path d='m21 21-4.3-4.3' />
+                </svg>
+                <span className='header-search-text'>搜索模型…</span>
+                <kbd className='header-search-kbd'>⌘K</kbd>
+              </button>
             </div>
 
-            {/* Desktop nav */}
-            <div className='hidden min-w-0 items-center gap-0.5 lg:flex'>
-              {links.map((link) => {
-                const isActive = pathname === link.href
-                if (link.external) {
-                  return (
-                    <a
-                      key={`${link.title}:${link.href}`}
-                      href={link.href}
-                      title={t(link.title)}
-                      target='_blank'
-                      rel='noopener noreferrer'
-                      aria-disabled={link.disabled}
-                      tabIndex={link.disabled ? -1 : undefined}
-                      onClick={(event) => handleNavLinkClick(event, link)}
-                      className={cn(
-                        'text-muted-foreground hover:text-foreground min-w-0 truncate rounded-lg px-3 py-1.5 text-sm font-medium transition-colors duration-200',
-                        link.disabled && 'pointer-events-none opacity-50'
-                      )}
-                    >
-                      {t(link.title)}
-                    </a>
-                  )
-                }
-                return (
+            {navContent ? (
+              <div className='nav-center'>{navContent}</div>
+            ) : (
+              <div className='nav-center' role='navigation' aria-label='站点页面'>
+                {!isHome && (
                   <Link
-                    key={`${link.title}:${link.href}`}
-                    to={link.href}
-                    title={t(link.title)}
-                    disabled={link.disabled}
-                    onClick={(event) => handleNavLinkClick(event, link)}
+                    to='/'
+                    className={cn('nav-link-item', isHome && 'is-active')}
+                  >
+                    首页
+                  </Link>
+                )}
+
+                <button
+                  type='button'
+                  className={cn(
+                    'nav-link-item',
+                    isRouteActive('/dashboard') && 'is-active'
+                  )}
+                  onClick={() => handleGoProtected('/dashboard')}
+                >
+                  控制台
+                </button>
+
+                <Link
+                  to='/pricing'
+                  className={cn(
+                    'nav-link-item',
+                    isRouteActive('/pricing') && 'is-active'
+                  )}
+                >
+                  模型广场
+                </Link>
+
+                <div className='nav-dropdown-wrap' ref={createMenuRef}>
+                  <button
+                    type='button'
                     className={cn(
-                      'min-w-0 truncate rounded-lg px-3 py-1.5 text-sm font-medium transition-colors duration-200',
-                      isActive
-                        ? 'text-foreground'
-                        : 'text-muted-foreground hover:text-foreground',
-                      link.disabled && 'pointer-events-none opacity-50'
+                      'nav-link-item',
+                      (createMenuOpen || isRouteActive('/playground')) &&
+                        'is-active'
+                    )}
+                    aria-expanded={createMenuOpen}
+                    onClick={() => {
+                      setAccountMenuOpen(false)
+                      notifications.closePopover()
+                      setCreateMenuOpen((prev) => !prev)
+                    }}
+                  >
+                    <span>AI创作</span>
+                    <svg
+                      width='12'
+                      height='12'
+                      viewBox='0 0 24 24'
+                      fill='none'
+                      stroke='currentColor'
+                      strokeWidth='2'
+                      strokeLinecap='round'
+                      strokeLinejoin='round'
+                      aria-hidden='true'
+                    >
+                      <path d='m6 9 6 6 6-6' />
+                    </svg>
+                  </button>
+
+                  {createMenuOpen && (
+                    <div className='nav-dropdown-panel'>
+                      <button
+                        type='button'
+                        className='dropdown-item'
+                        onClick={() => handleGoProtected('/playground')}
+                      >
+                        <span className='dropdown-icon'>
+                          <svg
+                            width='15'
+                            height='15'
+                            viewBox='0 0 24 24'
+                            fill='none'
+                            stroke='currentColor'
+                            strokeWidth='1.8'
+                            strokeLinecap='round'
+                            strokeLinejoin='round'
+                          >
+                            <path d='m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3L12 3Z' />
+                          </svg>
+                        </span>
+                        <span>
+                          <div className='dropdown-title'>AI创作中心</div>
+                          <div className='dropdown-desc'>
+                            实时文本对话、图片生成、视频与语音调试台
+                          </div>
+                        </span>
+                      </button>
+
+                      <button
+                        type='button'
+                        className='dropdown-item is-disabled-item'
+                        aria-disabled='true'
+                      >
+                        <span className='dropdown-icon'>
+                          <svg
+                            width='15'
+                            height='15'
+                            viewBox='0 0 24 24'
+                            fill='none'
+                            stroke='currentColor'
+                            strokeWidth='1.8'
+                            strokeLinecap='round'
+                            strokeLinejoin='round'
+                          >
+                            <rect x='3' y='3' width='7' height='7' rx='1.5' />
+                            <rect x='14' y='14' width='7' height='7' rx='1.5' />
+                            <path d='M10 6.5h4.5A2.5 2.5 0 0 1 17 9v5' />
+                          </svg>
+                        </span>
+                        <span>
+                          <div className='dropdown-title-row'>
+                            <span className='dropdown-title'>画布</span>
+                            <span className='dropdown-soon-badge'>搭建中</span>
+                          </div>
+                          <div className='dropdown-desc'>
+                            节点式多模态视觉编排画布
+                          </div>
+                        </span>
+                      </button>
+
+                      <button
+                        type='button'
+                        className='dropdown-item is-disabled-item'
+                        aria-disabled='true'
+                      >
+                        <span className='dropdown-icon'>
+                          <svg
+                            width='15'
+                            height='15'
+                            viewBox='0 0 24 24'
+                            fill='none'
+                            stroke='currentColor'
+                            strokeWidth='1.8'
+                            strokeLinecap='round'
+                            strokeLinejoin='round'
+                          >
+                            <rect x='3' y='4' width='18' height='16' rx='2.5' />
+                            <path d='M3 10h18' />
+                            <path d='M9 10v10' />
+                          </svg>
+                        </span>
+                        <span>
+                          <div className='dropdown-title-row'>
+                            <span className='dropdown-title'>工作台</span>
+                            <span className='dropdown-soon-badge'>搭建中</span>
+                          </div>
+                          <div className='dropdown-desc'>
+                            项目级多镜头分镜与资产管理
+                          </div>
+                        </span>
+                      </button>
+
+                      <button
+                        type='button'
+                        className='dropdown-item'
+                        onClick={() => {
+                          setCreateMenuOpen(false)
+                          void navigate({ to: '/pricing' })
+                        }}
+                      >
+                        <span className='dropdown-icon'>
+                          <svg
+                            width='15'
+                            height='15'
+                            viewBox='0 0 24 24'
+                            fill='none'
+                            stroke='currentColor'
+                            strokeWidth='1.8'
+                          >
+                            <rect x='3' y='3' width='7' height='7' rx='1' />
+                            <rect x='14' y='3' width='7' height='7' rx='1' />
+                            <rect x='14' y='14' width='7' height='7' rx='1' />
+                            <rect x='3' y='14' width='7' height='7' rx='1' />
+                          </svg>
+                        </span>
+                        <span>
+                          <div className='dropdown-title'>全部创作模型</div>
+                          <div className='dropdown-desc'>
+                            查看全部语言、图片、视频与音频模型定价
+                          </div>
+                        </span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {externalDocsHref ? (
+                  <a
+                    href={externalDocsHref}
+                    target='_blank'
+                    rel='noopener noreferrer'
+                    className='nav-link-item'
+                  >
+                    文档
+                  </a>
+                ) : (
+                  <Link
+                    to='/docs'
+                    className={cn(
+                      'nav-link-item',
+                      isRouteActive('/docs') && 'is-active'
                     )}
                   >
-                    {t(link.title)}
+                    文档
                   </Link>
-                )
-              })}
+                )}
 
-              {(showLanguageSwitcher ||
-                showThemeSwitch ||
-                showNotifications) && (
-                <div className='bg-border/40 mx-2 h-4 w-px' />
+                <Link
+                  to='/rankings'
+                  className={cn(
+                    'nav-link-item',
+                    isRouteActive('/rankings') && 'is-active'
+                  )}
+                >
+                  排行榜
+                </Link>
+
+                {isAuthenticated && (
+                  <Link
+                    to='/about'
+                    className={cn(
+                      'nav-link-item',
+                      isRouteActive('/about') && 'is-active'
+                    )}
+                  >
+                    时间线
+                  </Link>
+                )}
+              </div>
+            )}
+
+            <div className='nav-right'>
+              <div className='hidden sm:inline-flex'>
+                <LanguageSwitcher />
+              </div>
+
+              {showThemeSwitch && (
+                <button
+                  type='button'
+                  className='theme-toggle-btn'
+                  aria-label={
+                    resolvedTheme === 'dark' ? '切换浅色主题' : '切换暗色主题'
+                  }
+                  aria-pressed={resolvedTheme === 'dark'}
+                  title={
+                    resolvedTheme === 'dark' ? '切换浅色主题' : '切换暗色主题'
+                  }
+                  onClick={handleToggleTheme}
+                >
+                  {resolvedTheme === 'dark' ? (
+                    <svg
+                      width='15'
+                      height='15'
+                      viewBox='0 0 24 24'
+                      fill='none'
+                      stroke='currentColor'
+                      strokeWidth='1.8'
+                      strokeLinecap='round'
+                      strokeLinejoin='round'
+                      aria-hidden='true'
+                    >
+                      <path d='M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z' />
+                    </svg>
+                  ) : (
+                    <svg
+                      width='15'
+                      height='15'
+                      viewBox='0 0 24 24'
+                      fill='none'
+                      stroke='currentColor'
+                      strokeWidth='1.8'
+                      strokeLinecap='round'
+                      aria-hidden='true'
+                    >
+                      <circle cx='12' cy='12' r='4' />
+                      <path d='M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41' />
+                    </svg>
+                  )}
+                </button>
               )}
 
-              {showLanguageSwitcher && <LanguageSwitcher />}
-              {showThemeSwitch && <ThemeSwitch />}
-              {showNotifications && (
-                <NotificationPopover
-                  open={notifications.popoverOpen}
-                  onOpenChange={notifications.setPopoverOpen}
-                  unreadCount={notifications.unreadCount}
-                  activeTab={notifications.activeTab}
-                  onTabChange={notifications.setActiveTab}
-                  notice={notifications.notice}
-                  announcements={notifications.announcements}
-                  loading={notifications.loading}
-                />
-              )}
-
-              {showAuthButtons && (
+              {showAuthButtons && !isAuthenticated && (
                 <>
-                  <div className='bg-border/40 mx-1 h-4 w-px' />
-                  {authContent}
+                  <Link to='/sign-in' className='el-btn el-btn-md el-btn-white'>
+                    登录
+                  </Link>
+                  <Link
+                    to='/sign-up'
+                    className='el-btn el-btn-md el-btn-primary'
+                  >
+                    注册
+                  </Link>
                 </>
               )}
-            </div>
 
-            {/* Mobile: compact actions + hamburger */}
-            <div className='flex shrink-0 items-center gap-2 lg:hidden'>
-              {showThemeSwitch && <ThemeSwitch />}
-              {showAuthButtons && !loading && isAuthenticated && (
-                <ProfileDropdown />
-              )}
-              <Button
-                type='button'
-                variant='ghost'
-                size='icon'
-                className='size-9'
-                onClick={() => setMobileOpen((v) => !v)}
-                aria-label={t('Toggle navigation menu')}
-              >
-                <div className='relative size-4'>
-                  <span
-                    className={cn(
-                      'absolute inset-x-0 block h-[1.5px] origin-center rounded-full bg-current transition-all duration-300',
-                      mobileOpen ? 'top-[7px] rotate-45' : 'top-[3px]'
+              {isAuthenticated && showNotifications && (
+                <div className='nav-popover-anchor' ref={notifyMenuRef}>
+                  <button
+                    type='button'
+                    className='nav-icon-btn'
+                    aria-label='站点公告与通知'
+                    aria-haspopup='true'
+                    aria-expanded={notifications.popoverOpen}
+                    title='公告与通知'
+                    onClick={() => {
+                      setCreateMenuOpen(false)
+                      setAccountMenuOpen(false)
+                      notifications.setPopoverOpen(!notifications.popoverOpen)
+                    }}
+                  >
+                    <svg
+                      width='15'
+                      height='15'
+                      viewBox='0 0 24 24'
+                      fill='none'
+                      stroke='currentColor'
+                      strokeWidth='1.8'
+                      strokeLinecap='round'
+                      strokeLinejoin='round'
+                      aria-hidden='true'
+                    >
+                      <path d='M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9' />
+                      <path d='M10.3 21a1.94 1.94 0 0 0 3.4 0' />
+                    </svg>
+                    {notifications.unreadCount > 0 && (
+                      <span className='nav-unread-dot' aria-hidden='true' />
                     )}
-                  />
-                  <span
-                    className={cn(
-                      'absolute inset-x-0 top-[7px] block h-[1.5px] rounded-full bg-current transition-all duration-300',
-                      mobileOpen ? 'scale-x-0 opacity-0' : 'opacity-100'
-                    )}
-                  />
-                  <span
-                    className={cn(
-                      'absolute inset-x-0 block h-[1.5px] origin-center rounded-full bg-current transition-all duration-300',
-                      mobileOpen ? 'top-[7px] -rotate-45' : 'top-[11px]'
-                    )}
-                  />
+                  </button>
+
+                  {notifications.popoverOpen && (
+                    <div
+                      className='nav-popover-panel nav-notify-popover'
+                      role='dialog'
+                      aria-label='站点公告与通知'
+                    >
+                      <div className='nav-notify-head'>
+                        <div className='nav-notify-tabs' role='tablist'>
+                          <button
+                            type='button'
+                            className={cn(
+                              'nav-notify-tab',
+                              notifications.activeTab === 'notice' &&
+                                'is-active'
+                            )}
+                            role='tab'
+                            aria-selected={notifications.activeTab === 'notice'}
+                            onClick={() => notifications.setActiveTab('notice')}
+                          >
+                            公告
+                          </button>
+                          <button
+                            type='button'
+                            className={cn(
+                              'nav-notify-tab',
+                              notifications.activeTab === 'announcements' &&
+                                'is-active'
+                            )}
+                            role='tab'
+                            aria-selected={
+                              notifications.activeTab === 'announcements'
+                            }
+                            onClick={() =>
+                              notifications.setActiveTab('announcements')
+                            }
+                          >
+                            通知
+                            <span className='nav-notify-count tabular-nums'>
+                              {notifications.announcements.length}
+                            </span>
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className='nav-notify-body'>
+                        {notifications.activeTab === 'notice' ? (
+                          <div className='nav-announce-text'>
+                            {notifications.notice || '暂无站点公告。'}
+                          </div>
+                        ) : notifications.announcements.length > 0 ? (
+                          <div className='space-y-2'>
+                            {notifications.announcements
+                              .slice(0, 6)
+                              .map((item, index) => {
+                                const title =
+                                  typeof item.title === 'string' && item.title
+                                    ? item.title
+                                    : typeof item.content === 'string'
+                                      ? stripText(item.content).slice(0, 60)
+                                      : '系统更新'
+                                const dateStr =
+                                  typeof item.publishDate === 'string'
+                                    ? item.publishDate
+                                    : ''
+                                return (
+                                  <div
+                                    key={String(item.id ?? index)}
+                                    className='nav-notice-item'
+                                  >
+                                    {dateStr && (
+                                      <div className='nav-notice-meta tabular-nums'>
+                                        {dateStr}
+                                      </div>
+                                    )}
+                                    <div className='nav-notice-title'>
+                                      {title}
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                          </div>
+                        ) : (
+                          <div className='nav-announce-text'>暂无系统通知。</div>
+                        )}
+                      </div>
+
+                      <div className='nav-notify-foot'>
+                        <span className='console-head-meta'>
+                          {notifications.unreadCount > 0
+                            ? `${notifications.unreadCount} 条未读`
+                            : '全部已读'}
+                        </span>
+                        <button
+                          type='button'
+                          className='dash-panel-link'
+                          onClick={() => {
+                            notifications.closePopover()
+                            void navigate({ to: '/about' })
+                          }}
+                        >
+                          前往时间线 →
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              </Button>
+              )}
+
+              {isAuthenticated && (
+                <button
+                  type='button'
+                  className='nav-balance-pill'
+                  title='当前账户余额 · 点击前往充值'
+                  onClick={() => {
+                    closeAllMenus()
+                    void navigate({ to: '/wallet' })
+                  }}
+                >
+                  <svg
+                    width='14'
+                    height='14'
+                    viewBox='0 0 24 24'
+                    fill='none'
+                    stroke='currentColor'
+                    strokeWidth='1.8'
+                    strokeLinecap='round'
+                    strokeLinejoin='round'
+                    aria-hidden='true'
+                  >
+                    <rect x='2' y='5' width='20' height='14' rx='2.5' />
+                    <path d='M16 12h2.5' />
+                  </svg>
+                  <span className='nav-balance-val tabular-nums'>
+                    {formattedBalance}
+                  </span>
+                  <span className='nav-balance-tag'>充值</span>
+                </button>
+              )}
+
+              {isAuthenticated && showAuthButtons && (
+                <div className='nav-popover-anchor' ref={accountMenuRef}>
+                  <button
+                    type='button'
+                    className='nav-user-pill'
+                    aria-haspopup='menu'
+                    aria-expanded={accountMenuOpen}
+                    title='个人账户菜单'
+                    onClick={() => {
+                      setCreateMenuOpen(false)
+                      notifications.closePopover()
+                      setAccountMenuOpen((prev) => !prev)
+                    }}
+                  >
+                    <span className='nav-user-avatar'>{initials}</span>
+                    <span className='hidden sm:inline'>{displayName}</span>
+                    <svg
+                      className='nav-user-chevron'
+                      width='13'
+                      height='13'
+                      viewBox='0 0 24 24'
+                      fill='none'
+                      stroke='currentColor'
+                      strokeWidth='2'
+                      strokeLinecap='round'
+                      strokeLinejoin='round'
+                      aria-hidden='true'
+                    >
+                      <path d='m6 9 6 6 6-6' />
+                    </svg>
+                  </button>
+
+                  {accountMenuOpen && (
+                    <div
+                      className='nav-popover-panel nav-account-menu'
+                      role='menu'
+                      aria-label='个人账户菜单'
+                    >
+                      <div className='nav-account-header'>
+                        <div className='nav-account-name'>{displayName}</div>
+                        {secondaryText && (
+                          <div className='nav-account-email'>
+                            {secondaryText}
+                          </div>
+                        )}
+                        <div className='nav-account-bal'>
+                          <span>可用余额</span>
+                          <strong className='tabular-nums'>
+                            {formattedBalance}
+                          </strong>
+                        </div>
+                      </div>
+
+                      <button
+                        type='button'
+                        className='nav-menu-item'
+                        role='menuitem'
+                        onClick={() => {
+                          setAccountMenuOpen(false)
+                          void navigate({ to: '/dashboard' })
+                        }}
+                      >
+                        <span className='nav-menu-item-left'>
+                          <svg
+                            viewBox='0 0 24 24'
+                            fill='none'
+                            stroke='currentColor'
+                            strokeWidth='1.8'
+                            strokeLinecap='round'
+                            strokeLinejoin='round'
+                          >
+                            <path d='M22 12h-4l-3 9L9 3l-3 9H2' />
+                          </svg>
+                          <span>控制台</span>
+                        </span>
+                      </button>
+
+                      <button
+                        type='button'
+                        className='nav-menu-item'
+                        role='menuitem'
+                        onClick={() => {
+                          setAccountMenuOpen(false)
+                          void navigate({ to: '/wallet' })
+                        }}
+                      >
+                        <span className='nav-menu-item-left'>
+                          <svg
+                            viewBox='0 0 24 24'
+                            fill='none'
+                            stroke='currentColor'
+                            strokeWidth='1.8'
+                            strokeLinecap='round'
+                            strokeLinejoin='round'
+                          >
+                            <rect x='2' y='5' width='20' height='14' rx='2' />
+                            <path d='M2 10h20' />
+                          </svg>
+                          <span>充值余额</span>
+                        </span>
+                        <span className='el-select-opt-meta tabular-nums'>
+                          {formattedBalance}
+                        </span>
+                      </button>
+
+                      <button
+                        type='button'
+                        className='nav-menu-item'
+                        role='menuitem'
+                        onClick={() => {
+                          setAccountMenuOpen(false)
+                          void navigate({ to: '/security' })
+                        }}
+                      >
+                        <span className='nav-menu-item-left'>
+                          <svg
+                            viewBox='0 0 24 24'
+                            fill='none'
+                            stroke='currentColor'
+                            strokeWidth='1.8'
+                            strokeLinecap='round'
+                            strokeLinejoin='round'
+                          >
+                            <path d='M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z' />
+                          </svg>
+                          <span>账户安全</span>
+                        </span>
+                      </button>
+
+                      <div className='nav-menu-sep' role='separator' />
+
+                      <button
+                        type='button'
+                        className='nav-menu-item is-danger'
+                        role='menuitem'
+                        onClick={() => {
+                          setAccountMenuOpen(false)
+                          setSignOutOpen(true)
+                        }}
+                      >
+                        <span className='nav-menu-item-left'>
+                          <svg
+                            viewBox='0 0 24 24'
+                            fill='none'
+                            stroke='currentColor'
+                            strokeWidth='1.8'
+                            strokeLinecap='round'
+                            strokeLinejoin='round'
+                          >
+                            <path d='M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4' />
+                            <polyline points='16 17 21 12 16 7' />
+                            <line x1='21' y1='12' x2='9' y2='12' />
+                          </svg>
+                          <span>退出登录</span>
+                        </span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className='lg:hidden'>
+                <MobileDrawer
+                  open={mobileMenuOpen}
+                  onOpenChange={setMobileMenuOpen}
+                  navLinks={links}
+                  logoContent={
+                    <MagiRouterWordmark
+                      height={20}
+                      customLogo={customLogo}
+                      customSiteName={customSiteName}
+                    />
+                  }
+                  systemName={customSiteName || systemName}
+                  loading={loading}
+                  isAuthenticated={isAuthenticated}
+                  user={user}
+                  showAuthButtons={showAuthButtons}
+                  onProtectedNavClick={(link) => handleGoProtected(link.href)}
+                />
+              </div>
             </div>
           </nav>
         </div>
       </header>
 
-      {/* Mobile full-screen overlay */}
-      <div
-        className={cn(
-          'bg-background/98 fixed inset-0 z-40 backdrop-blur-2xl transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] lg:pointer-events-none lg:hidden',
-          mobileOpen
-            ? 'pointer-events-auto opacity-100'
-            : 'pointer-events-none opacity-0'
-        )}
-      >
-        <div className='flex h-full flex-col justify-between px-8 pt-20 pb-10'>
-          <nav className='flex flex-col gap-1'>
-            {links.map((link, i) => {
-              const isActive = pathname === link.href
-              const linkClassName = cn(
-                'flex items-center gap-3 py-3 text-base font-medium tracking-tight transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)]',
-                mobileOpen
-                  ? 'translate-y-0 opacity-100'
-                  : 'translate-y-4 opacity-0',
-                isActive ? 'text-foreground' : 'text-muted-foreground',
-                link.disabled && 'pointer-events-none opacity-50'
-              )
-              const transitionStyle = {
-                transitionDelay: mobileOpen ? `${100 + i * 50}ms` : '0ms',
-              }
-              if (link.external) {
-                return (
-                  <a
-                    key={`${link.title}:${link.href}`}
-                    href={link.href}
-                    target='_blank'
-                    rel='noopener noreferrer'
-                    aria-disabled={link.disabled}
-                    tabIndex={link.disabled ? -1 : undefined}
-                    onClick={(event) => handleNavLinkClick(event, link, true)}
-                    className={linkClassName}
-                    style={transitionStyle}
-                  >
-                    {t(link.title)}
-                  </a>
-                )
-              }
-              return (
-                <Link
-                  key={`${link.title}:${link.href}`}
-                  to={link.href}
-                  disabled={link.disabled}
-                  onClick={(event) => handleNavLinkClick(event, link, true)}
-                  className={linkClassName}
-                  style={transitionStyle}
-                >
-                  {t(link.title)}
-                </Link>
-              )
-            })}
-          </nav>
+      <QuickModelSearchDialog
+        open={searchOpen}
+        onOpenChange={setSearchOpen}
+      />
 
-          <div
-            className={cn(
-              'flex flex-col gap-3 transition-all duration-500',
-              mobileOpen
-                ? 'translate-y-0 opacity-100'
-                : 'translate-y-4 opacity-0'
-            )}
-            style={{ transitionDelay: mobileOpen ? '250ms' : '0ms' }}
-          >
-            {showAuthButtons && (
-              <Link
-                to={isAuthenticated ? '/dashboard' : '/sign-in'}
-                onClick={() => setMobileOpen(false)}
-                className='bg-foreground text-background inline-flex h-10 items-center justify-center rounded-lg text-sm font-medium transition-opacity hover:opacity-90 active:opacity-80'
-              >
-                {isAuthenticated ? t('Go to Dashboard') : t('Sign in')}
-              </Link>
-            )}
-          </div>
-        </div>
-      </div>
-
-      <Dialog
-        open={!!authPromptTarget}
-        onOpenChange={(open) => {
-          if (!open) {
-            closeAuthPrompt()
-          }
-        }}
-        title={t('Sign in required')}
-        description={t('Please sign in to view {{module}}.', {
-          module: authPromptTarget?.title || '',
-        })}
-        contentClassName='sm:max-w-md'
-        contentHeight='auto'
-        footer={
-          <>
-            <Button variant='outline' onClick={closeAuthPrompt}>
-              {t('Cancel')}
-            </Button>
-            <Button onClick={navigateToSignIn}>{t('Sign in now')}</Button>
-          </>
-        }
-      >
-        <div className='bg-muted/40 text-muted-foreground rounded-lg px-3 py-2 text-sm'>
-          {t('Redirecting to sign in in {{seconds}} seconds.', {
-            seconds: authPromptSecondsLeft,
-          })}
-        </div>
-      </Dialog>
+      <SignOutDialog open={signOutOpen} onOpenChange={setSignOutOpen} />
     </>
   )
 }

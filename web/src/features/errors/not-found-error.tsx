@@ -26,19 +26,30 @@ export function NotFoundError() {
   const navigate = useNavigate()
   const { history } = useRouter()
   return (
-    <div className='h-svh'>
-      <div className='m-auto flex h-full w-full flex-col items-center justify-center gap-2'>
-        <h1 className='text-[7rem] leading-tight font-bold'>404</h1>
-        <span className='font-medium'>{t('Oops! Page Not Found!')}</span>
-        <p className='text-muted-foreground text-center'>
+    <div className='bg-background text-foreground h-svh px-4'>
+      <div className='m-auto flex h-full w-full max-w-md flex-col items-center justify-center gap-2 text-center'>
+        <h1 className='text-magi-heading font-mono text-[6.5rem] leading-none font-semibold tracking-tighter'>
+          404
+        </h1>
+        <span className='text-foreground mt-2 text-lg font-medium'>
+          {t('Oops! Page Not Found!')}
+        </span>
+        <p className='text-muted-foreground text-center text-sm leading-relaxed'>
           {t("It seems like the page you're looking for")} <br />
           {t('does not exist or might have been removed.')}
         </p>
-        <div className='mt-6 flex gap-4'>
-          <Button variant='outline' onClick={() => history.go(-1)}>
+        <div className='mt-6 flex flex-wrap justify-center gap-3'>
+          <Button
+            variant='outline'
+            className='rounded-full px-5'
+            onClick={() => history.go(-1)}
+          >
             {t('Go Back')}
           </Button>
-          <Button onClick={() => navigate({ to: '/' })}>
+          <Button
+            className='rounded-full px-5'
+            onClick={() => navigate({ to: '/' })}
+          >
             {t('Back to Home')}
           </Button>
         </div>

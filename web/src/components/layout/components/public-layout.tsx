@@ -16,8 +16,28 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useRouterState } from '@tanstack/react-router'
+import { useEffect } from 'react'
+
 import type { TopNavLink } from '../types'
 import { PublicHeader, type PublicHeaderProps } from './public-header'
+
+function resolveBodyPageKey(pathname: string): string {
+  if (pathname === '/' || pathname === '') return 'home'
+  if (pathname.startsWith('/pricing')) return 'models'
+  if (pathname.startsWith('/docs')) return 'docs'
+  if (pathname.startsWith('/about') || pathname.startsWith('/rankings')) {
+    return 'about'
+  }
+  if (pathname.startsWith('/playground')) return 'create'
+  if (
+    pathname.startsWith('/user-agreement') ||
+    pathname.startsWith('/privacy-policy')
+  ) {
+    return 'legal'
+  }
+  return 'subpage'
+}
 
 type PublicLayoutProps = {
   children: React.ReactNode
@@ -30,11 +50,27 @@ type PublicLayoutProps = {
   showNotifications?: boolean
   logo?: React.ReactNode
   siteName?: string
+  onToggleSidebar?: () => void
+  sidebarCollapsed?: boolean
 }
 
 export function PublicLayout(props: PublicLayoutProps) {
+  const pathname = useRouterState({
+    select: (state) => state.location.pathname,
+  })
+
+  useEffect(() => {
+    const pageKey = resolveBodyPageKey(pathname)
+    document.body.dataset.currentPage = pageKey
+    return () => {
+      if (document.body.dataset.currentPage === pageKey) {
+        delete document.body.dataset.currentPage
+      }
+    }
+  }, [pathname])
+
   return (
-    <div className='bg-background text-foreground relative min-h-svh overflow-x-clip'>
+    <div className='magi-public bg-background text-foreground relative min-h-svh overflow-x-clip'>
       <PublicHeader
         navContent={props.navContent}
         navLinks={props.navLinks}
@@ -43,11 +79,13 @@ export function PublicLayout(props: PublicLayoutProps) {
         showNotifications={props.showNotifications}
         logo={props.logo}
         siteName={props.siteName}
+        onToggleSidebar={props.onToggleSidebar}
+        sidebarCollapsed={props.sidebarCollapsed}
         {...props.headerProps}
       />
 
       {props.showMainContainer !== false ? (
-        <main className='container px-4 py-6 pt-20 md:px-4'>
+        <main className='el-container py-8'>
           {props.children}
         </main>
       ) : (
