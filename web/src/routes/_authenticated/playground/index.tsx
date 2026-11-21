@@ -24,7 +24,11 @@ import { isSidebarModuleEnabled } from '@/lib/nav-modules'
 
 export const Route = createFileRoute('/_authenticated/playground/')({
   beforeLoad: () => {
-    if (!isSidebarModuleEnabled('chat', 'playground')) {
+    // The Playground owns its own flag. Gating it on the enclosing `chat`
+    // section means disabling an unrelated sidebar group (or an older server
+    // config that only knows `chat`) silently sends every AI-creation entry
+    // to the console.
+    if (!isSidebarModuleEnabled('chat', 'playground', { ignoreSectionFlag: true })) {
       throw redirect({ to: '/dashboard' })
     }
   },
