@@ -116,12 +116,12 @@ try {
     }
 
     if ($Image) {
-        Write-Host "Building image $Image:$version ..." -ForegroundColor Cyan
+        Write-Host "Building image ${Image}:$version ..." -ForegroundColor Cyan
         & docker build -t "${Image}:$version" -t "${Image}:latest" $root
         if ($LASTEXITCODE -ne 0) { throw 'docker build failed' }
 
         if ($PushImage) {
-            Write-Host "Pushing $Image:$version ..." -ForegroundColor Cyan
+            Write-Host "Pushing ${Image}:$version ..." -ForegroundColor Cyan
             & docker push "${Image}:$version"
             if ($LASTEXITCODE -ne 0) { throw 'docker push failed' }
             & docker push "${Image}:latest"
