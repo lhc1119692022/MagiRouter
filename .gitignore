@@ -44,3 +44,8 @@ relaykit/relayconvert/chat_responses_live_local_test.go
 service/openaicompat/chat_responses_live_local_test.go
 go.work
 go.work.sum
+
+# MagiRouter local dev stack (Docker compose file + its bind mounts).
+compose.local.yaml
+local-state/
+/logs/
