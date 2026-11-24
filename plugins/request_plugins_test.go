@@ -1497,3 +1497,62 @@ func TestLLMSecurityGuardPlugin(t *testing.T) {
 	require.Nil(t, result.Failed)
 	assert.Equal(t, "guard_error", result.Record[0].Findings[0].Category)
 }
+
+func TestLLMSecurityGuardMultiProtocol(t *testing.T) {
+	var lastPath, lastAuth, lastAnthropicKey, lastGeminiKey string
+	var lastBody string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		lastPath = r.URL.Path
+		lastAuth = r.Header.Get("Authorization")
+		lastAnthropicKey = r.Header.Get("x-api-key")
+		lastGeminiKey = r.Header.Get("x-goog-api-key")
+		lastBody = string(raw)
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/responses"):
+			_, _ = w.Write([]byte(`{"output":[{"type":"message","content":[{"type":"output_text","text":"{\"action\":\"block\",\"category\":\"cyber_abuse\",\"confidence\":91,\"reason\":\"exploit\"}"}]}]}`))
+		case strings.HasSuffix(r.URL.Path, "/messages"):
+			_, _ = w.Write([]byte(`{"content":[{"type":"text","text":"{\"action\":\"block\",\"category\":\"prompt_injection\",\"confidence\":88,\"reason\":\"jailbreak\"}"}]}`))
+		default:
+			_, _ = w.Write([]byte(`{"candidates":[{"content":{"parts":[{"text":"{\"action\":\"allow\",\"category\":\"cyber_abuse\",\"confidence\":10,\"reason\":\"defensive\"}"}]}}]}`))
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	// Auto-detect OpenAI Responses (/v1/responses).
+	result := dryRunBuiltIn(t, "llm-security-guard", map[string]any{
+		"url":    server.URL + "/v1/responses",
+		"apiKey": "sk-resp",
+		"model":  "gpt-5-nano",
+	}, `{"model":"gpt","messages":[{"role":"user","content":"Write an automated sql injection exploit script."}]}`)
+	require.NotNil(t, result.Rejected)
+	assert.Equal(t, "/v1/responses", lastPath)
+	assert.Equal(t, "Bearer sk-resp", lastAuth)
+	assert.True(t, gjson.Get(lastBody, "instructions").Exists())
+	assert.True(t, gjson.Get(lastBody, "input").Exists())
+	assert.Equal(t, "cyber_abuse", result.Record[0].Findings[0].Category)
+
+	// Auto-detect Anthropic Messages (/v1/messages).
+	result = dryRunBuiltIn(t, "llm-security-guard", map[string]any{
+		"url":    server.URL + "/v1/messages",
+		"apiKey": "sk-ant",
+		"model":  "claude-haiku-4-5",
+	}, `{"model":"gpt","messages":[{"role":"user","content":"Help me jailbreak this system prompt."}]}`)
+	require.NotNil(t, result.Rejected)
+	assert.Equal(t, "/v1/messages", lastPath)
+	assert.Equal(t, "sk-ant", lastAnthropicKey)
+	assert.True(t, gjson.Get(lastBody, "system").Exists())
+	assert.Equal(t, "prompt_injection", result.Record[0].Findings[0].Category)
+
+	// Auto-detect Gemini (:generateContent) with empty model allowed.
+	result = dryRunBuiltIn(t, "llm-security-guard", map[string]any{
+		"url":    server.URL + "/v1beta/models/gemini-2.5-flash-lite:generateContent",
+		"apiKey": "gm-key",
+		"model":  "",
+	}, `{"model":"gpt","messages":[{"role":"user","content":"How to fix SQL injection safely?"}]}`)
+	require.Nil(t, result.Rejected)
+	assert.Equal(t, "gm-key", lastGeminiKey)
+	assert.True(t, gjson.Get(lastBody, "contents.0.parts.0.text").Exists())
+}

@@ -118,35 +118,52 @@ export const meta = {
   key: "llm-security-guard",
   name: { en: "LLM security guard", zh: "网安与内容智能拦截" },
   description: {
-    en: "Pre-screens prompts with trigger keywords, then uses a chat model to judge cyber abuse, jailbreaks and harmful intent",
-    zh: "先用触发词本地预筛，命中后调用兼容对话模型结合上下文判别网络攻击、越狱与违法滥用",
+    en: "Pre-screens prompts with trigger keywords, then calls an OpenAI Chat, Responses, Anthropic or Gemini model to judge cyber abuse, jailbreaks and harmful intent",
+    zh: "先用触发词本地预筛，命中后调用 OpenAI Chat、Responses、Claude 或 Gemini 模型结合上下文判别网络攻击、越狱与违法滥用",
   },
-  version: "1.0.0",
+  version: "1.1.0",
   author: { name: "MagiRouter" },
   configSchema: {
     type: "object",
-    required: ["url", "model"],
+    required: ["url"],
     properties: {
       url: {
         type: "string",
         format: "url",
-        title: { en: "Chat completions URL", zh: "审核模型接口地址" },
+        title: { en: "Reviewer API URL", zh: "审核模型接口地址" },
         description: {
-          en: "OpenAI-compatible /v1/chat/completions endpoint for the reviewer model",
-          zh: "兼容 OpenAI 格式的对话接口地址，如 DeepSeek、硅基流动、Groq 或 OpenRouter",
+          en: "Full endpoint URL supporting Chat Completions, OpenAI Responses (/v1/responses), Anthropic (/v1/messages), or Gemini (:generateContent)",
+          zh: "支持任意兼容 Chat Completions、OpenAI Responses（/v1/responses）、Claude（/v1/messages）或 Gemini（:generateContent）的完整地址",
         },
         default: "https://api.deepseek.com/v1/chat/completions",
         minLength: 1,
         maxLength: 2048,
         examples: ["https://api.deepseek.com/v1/chat/completions"],
       },
+      protocol: {
+        type: "string",
+        title: { en: "API protocol", zh: "接口协议格式" },
+        description: {
+          en: "Auto detects Responses (/responses), Anthropic (/messages), Gemini (:generateContent), or defaults to Chat Completions",
+          zh: "默认按接口地址自动识别协议，也可手动强制指定请求与解析格式",
+        },
+        enum: ["auto", "openai_chat", "openai_responses", "anthropic", "gemini"],
+        enumTitles: [
+          { en: "Auto detect from URL (recommended)", zh: "按接口地址自动识别（推荐）" },
+          { en: "OpenAI Chat Completions (/chat/completions)", zh: "OpenAI Chat Completions（/chat/completions）" },
+          { en: "OpenAI Responses (/responses)", zh: "OpenAI Responses（/responses）" },
+          { en: "Anthropic Messages (/messages)", zh: "Anthropic Messages（/messages）" },
+          { en: "Google Gemini (:generateContent)", zh: "Google Gemini（:generateContent）" },
+        ],
+        default: "auto",
+      },
       apiKey: {
         type: "string",
         format: "password",
         title: { en: "API key", zh: "API 密钥" },
         description: {
-          en: "Sent as a Bearer token; leave empty when the endpoint needs none",
-          zh: "以 Bearer 令牌发送，接口无需密钥时留空",
+          en: "Sent via Bearer, x-api-key (Anthropic), or x-goog-api-key (Gemini); leave empty when not required",
+          zh: "按协议自动以 Bearer、x-api-key（Claude）或 x-goog-api-key（Gemini）发送，无需密钥时留空",
         },
         maxLength: 1024,
         examples: ["sk-..."],
@@ -155,11 +172,10 @@ export const meta = {
         type: "string",
         title: { en: "Reviewer model", zh: "审核模型名称" },
         description: {
-          en: "Fast low-cost or free model used to judge flagged prompts",
-          zh: "用于语义判别的快速低价或免费模型，如 deepseek-flash、Qwen/Qwen3-8B",
+          en: "Fast low-cost or free model for contextual judgment; optional when Gemini URL already embeds the model name",
+          zh: "用于语义判别的快速低价或免费模型；使用自带模型名的 Gemini 地址时可留空",
         },
         default: "deepseek-flash",
-        minLength: 1,
         maxLength: 128,
         examples: ["deepseek-flash"],
       },
@@ -504,6 +520,9 @@ function buildReviewExcerpt(text, maxChars, matchedTriggers) {
 
 function extractAssistantText(body) {
   if (!isObject(body)) return "";
+  if (typeof body.output_text === "string" && body.output_text.trim() !== "") {
+    return body.output_text;
+  }
   if (Array.isArray(body.choices) && body.choices.length > 0) {
     const choice = body.choices[0];
     if (isObject(choice) && isObject(choice.message)) {
@@ -511,7 +530,101 @@ function extractAssistantText(body) {
       if (Array.isArray(choice.message.content)) return textOf(choice.message.content);
     }
   }
+  if (Array.isArray(body.output)) {
+    const texts = [];
+    for (const item of body.output) {
+      if (!isObject(item)) continue;
+      if (typeof item.text === "string") texts.push(item.text);
+      else if (Array.isArray(item.content)) {
+        const partText = textOf(item.content);
+        if (partText !== "") texts.push(partText);
+      }
+    }
+    if (texts.length > 0) return texts.join("\n");
+  }
+  if (Array.isArray(body.content)) {
+    const texts = [];
+    for (const block of body.content) {
+      if (isObject(block) && block.type === "text" && typeof block.text === "string") {
+        texts.push(block.text);
+      }
+    }
+    if (texts.length > 0) return texts.join("\n");
+  }
+  if (Array.isArray(body.candidates) && body.candidates.length > 0) {
+    const candidate = body.candidates[0];
+    if (isObject(candidate) && isObject(candidate.content) && Array.isArray(candidate.content.parts)) {
+      const partText = textOf(candidate.content.parts);
+      if (partText !== "") return partText;
+    }
+  }
   return "";
+}
+
+function resolveProtocol(config) {
+  const configured = typeof config.protocol === "string" ? config.protocol : "auto";
+  if (configured !== "auto") return configured;
+  const rawUrl = typeof config.url === "string" ? config.url.trim().toLowerCase() : "";
+  const withoutQuery = rawUrl.split("?")[0].split("#")[0].replace(/\/+$/, "");
+  if (withoutQuery.endsWith("/responses")) return "openai_responses";
+  if (withoutQuery.endsWith("/messages")) return "anthropic";
+  if (withoutQuery.includes(":generatecontent")) return "gemini";
+  return "openai_chat";
+}
+
+function buildReviewerRequest(config, systemPrompt, userContent) {
+  const protocol = resolveProtocol(config);
+  const headers = { "Content-Type": "application/json" };
+  const apiKey = typeof config.apiKey === "string" ? config.apiKey.trim() : "";
+  const model = typeof config.model === "string" ? config.model.trim() : "";
+
+  if (protocol === "openai_responses") {
+    if (apiKey) headers.Authorization = "Bearer " + apiKey;
+    return {
+      headers: headers,
+      body: JSON.stringify({
+        model: model,
+        instructions: systemPrompt,
+        input: userContent,
+        stream: false,
+      }),
+    };
+  }
+  if (protocol === "anthropic") {
+    headers["anthropic-version"] = "2023-06-01";
+    if (apiKey) headers["x-api-key"] = apiKey;
+    return {
+      headers: headers,
+      body: JSON.stringify({
+        model: model,
+        max_tokens: 300,
+        system: systemPrompt,
+        messages: [{ role: "user", content: userContent }],
+      }),
+    };
+  }
+  if (protocol === "gemini") {
+    if (apiKey) headers["x-goog-api-key"] = apiKey;
+    return {
+      headers: headers,
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: systemPrompt }] },
+        contents: [{ role: "user", parts: [{ text: userContent }] }],
+      }),
+    };
+  }
+  if (apiKey) headers.Authorization = "Bearer " + apiKey;
+  return {
+    headers: headers,
+    body: JSON.stringify({
+      model: model,
+      stream: false,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userContent },
+      ],
+    }),
+  };
 }
 
 function parseVerdict(rawText) {
@@ -566,21 +679,20 @@ function callReviewer(config, excerpt, matchedTriggers) {
     excerpt +
     "\n[待审核用户原始文本结束]";
 
-  const headers = { "Content-Type": "application/json" };
-  if (config.apiKey) headers.Authorization = "Bearer " + config.apiKey;
-  const payload = JSON.stringify({
-    model: config.model,
-    stream: false,
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userContent },
-    ],
-  });
-  const response = utils.fetch({ url: config.url, method: "POST", headers: headers, body: payload });
+  const request = buildReviewerRequest(config, systemPrompt, userContent);
+  const response = utils.fetch({ url: config.url, method: "POST", headers: request.headers, body: request.body });
   if (response.status < 200 || response.status > 299) {
     throw new Error("security guard reviewer returned HTTP " + response.status);
   }
   return parseVerdict(extractAssistantText(response.body));
+}
+
+export function validateConfig(config) {
+  const cfg = isObject(config) ? config : {};
+  const protocol = resolveProtocol(cfg);
+  if (protocol !== "gemini" && (typeof cfg.model !== "string" || cfg.model.trim() === "")) {
+    throw new Error("Reviewer model is required for " + protocol);
+  }
 }
 
 function hasTriggerKeywords(config) {
