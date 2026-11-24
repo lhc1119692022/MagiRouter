@@ -23,7 +23,7 @@ export const meta = {
     en: "Checks user text with an OpenAI-compatible moderation API and rejects flagged requests",
     zh: "使用 OpenAI 兼容的审核接口检查用户文本，拒绝被标记的请求",
   },
-  version: "1.0.0",
+  version: "1.1.0",
   author: { name: "QuantumNous" },
   configSchema: {
     type: "object",
@@ -105,6 +105,28 @@ export const meta = {
         description: {
           en: "Also check model replies; streamed replies arrive in bursts of about 1000 characters",
           zh: "同时审核模型回复，流式回复约每 1000 字一次送达",
+        },
+        default: false,
+      },
+      maxTextChars: {
+        type: "integer",
+        unit: "character",
+        title: { en: "Max characters per text", zh: "单次审核最大字符数" },
+        description: {
+          en: "Truncates long texts keeping the start and end; 0 sends the full text. Recommended: 1500 for OpenAI Build tier",
+          zh: "超长文本仅保留首尾片段送审，0 表示不截断；OpenAI Build 档建议填 1500 防触发每分钟字数限流",
+        },
+        minimum: 0,
+        maximum: 100000,
+        default: 0,
+        examples: [1500],
+      },
+      failOpen: {
+        type: "boolean",
+        title: { en: "Allow on moderation error", zh: "审核异常或限流时自动放行" },
+        description: {
+          en: "Continue the request when the moderation API times out, hits rate limits (429), or fails",
+          zh: "审核接口超时、触发限流（429）或网络异常时放行请求，避免影响正常用户",
         },
         default: false,
       },
@@ -262,6 +284,36 @@ function moderate(config, input) {
   return blockingCategories(results, config.categories || []).slice(0, 64);
 }
 
+// safeModerate respects failOpen: when enabled, upstream timeouts, HTTP 429
+// rate limits, or malformed responses return null so callers continue cleanly.
+function safeModerate(config, input) {
+  try {
+    return moderate(config, input);
+  } catch (e) {
+    if (config.failOpen === true) return null;
+    throw e;
+  }
+}
+
+function truncateText(text, maxChars) {
+  if (!maxChars || maxChars <= 0 || text.length <= maxChars) return text;
+  const divider = "\n...\n";
+  if (maxChars <= divider.length + 2) {
+    let end = maxChars;
+    const last = text.charCodeAt(end - 1);
+    if (end < text.length && last >= 0xd800 && last <= 0xdbff) end--;
+    return text.slice(0, end);
+  }
+  const available = maxChars - divider.length;
+  let headEnd = Math.floor(available * 0.6);
+  const headLast = text.charCodeAt(headEnd - 1);
+  if (headEnd > 0 && headLast >= 0xd800 && headLast <= 0xdbff) headEnd--;
+  let tailStart = text.length - (available - headEnd);
+  const tailFirst = text.charCodeAt(tailStart);
+  if (tailStart < text.length && tailFirst >= 0xdc00 && tailFirst <= 0xdfff) tailStart++;
+  return text.slice(0, headEnd) + divider + text.slice(tailStart);
+}
+
 // requestBody writes the moderation request for input.
 function requestBody(config, input) {
   const request = { input: input };
@@ -364,18 +416,37 @@ export function ingress(ctx, req) {
   }
   let blocking = [];
   let requests = 0;
-  if (texts.length > 0) {
-    const inputs = textInputs(config, texts, config.scope !== "all_user" && texts.length === 1, MAX_FETCHES);
+  let failedOpen = false;
+  const checkedTexts = config.maxTextChars > 0 ? texts.map((text) => truncateText(text, config.maxTextChars)) : texts;
+  if (checkedTexts.length > 0) {
+    const inputs = textInputs(config, checkedTexts, config.scope !== "all_user" && checkedTexts.length === 1, MAX_FETCHES);
     if (inputs === null) {
       return { action: "reject", code: "moderation.too_long", message: "The request is too long for content moderation" };
     }
-    for (; blocking.length === 0 && requests < inputs.length; requests++) blocking = moderate(config, inputs[requests]);
+    for (; blocking.length === 0 && requests < inputs.length; requests++) {
+      const result = safeModerate(config, inputs[requests]);
+      if (result === null) {
+        failedOpen = true;
+        break;
+      }
+      blocking = result;
+    }
   }
   // Images take the requests the text left.
-  for (let i = 0; blocking.length === 0 && i < images.length && requests < MAX_FETCHES; i++, requests++) {
-    blocking = moderate(config, [{ type: "image_url", image_url: { url: images[i] } }]);
+  for (let i = 0; !failedOpen && blocking.length === 0 && i < images.length && requests < MAX_FETCHES; i++, requests++) {
+    const result = safeModerate(config, [{ type: "image_url", image_url: { url: images[i] } }]);
+    if (result === null) {
+      failedOpen = true;
+      break;
+    }
+    blocking = result;
   }
-  if (blocking.length === 0) return { action: "continue" };
+  if (blocking.length === 0) {
+    if (failedOpen) {
+      return { action: "continue", findings: [{ rule: "fail_open", category: "moderation_error", count: 1 }] };
+    }
+    return { action: "continue" };
+  }
   return {
     action: "reject",
     code: "moderation.flagged",
@@ -400,12 +471,17 @@ export function reply(ctx, res) {
   }
   const texts = res.outputs.map((output) => output.text).filter((text) => text.trim() !== "");
   if (texts.length === 0) return { action: "continue" };
-  const inputs = textInputs(config, texts, false, MAX_FETCHES);
+  const checkedTexts = config.maxTextChars > 0 ? texts.map((text) => truncateText(text, config.maxTextChars)) : texts;
+  const inputs = textInputs(config, checkedTexts, false, MAX_FETCHES);
   if (inputs === null) {
     return { action: "stop", code: "moderation.too_long", message: "The reply is too long for content moderation" };
   }
   let blocking = [];
-  for (let i = 0; blocking.length === 0 && i < inputs.length; i++) blocking = moderate(config, inputs[i]);
+  for (let i = 0; blocking.length === 0 && i < inputs.length; i++) {
+    const result = safeModerate(config, inputs[i]);
+    if (result === null) return { action: "continue" };
+    blocking = result;
+  }
   if (blocking.length === 0) return { action: "continue" };
   return {
     action: "stop",

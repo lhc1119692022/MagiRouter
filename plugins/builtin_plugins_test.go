@@ -20,6 +20,7 @@ var requestPluginHooks = map[string][]string{
 	"auto-reasoning":     {"request"},
 	"content-moderation": {"ingress", "reply"},
 	"image-compress":     {"outbound"},
+	"llm-security-guard": {"ingress"},
 	"param-override":     {"outbound"},
 	"request-filter":     {"ingress", "egress", "reply"},
 	"request-redact":     {"ingress", "egress", "reply"},

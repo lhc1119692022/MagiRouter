@@ -976,7 +976,7 @@ func TestAutoReasoningDefaultRules(t *testing.T) {
 }
 
 func TestBuiltInRequestPluginSamples(t *testing.T) {
-	for _, key := range []string{"auto-reasoning", "content-moderation", "image-compress", "param-override", "request-filter", "request-redact"} {
+	for _, key := range []string{"auto-reasoning", "content-moderation", "image-compress", "llm-security-guard", "param-override", "request-filter", "request-redact"} {
 		t.Run(key, func(t *testing.T) {
 			plugin, found := jsplugin.DefaultRegistry.Generation().Get(key)
 			require.True(t, found)
@@ -1415,4 +1415,85 @@ func TestContentModerationImagesAndDocuments(t *testing.T) {
 	require.NotNil(t, result.Rejected)
 	assert.Equal(t, "moderation.flagged", result.Rejected.Code)
 	assert.Equal(t, []string{`[{"type":"image_url","image_url":{"url":"data:image/png;base64,iVBORw0KGgo="}}]`}, inputs)
+}
+
+func TestContentModerationTruncateAndFailOpen(t *testing.T) {
+	var seenInput string
+	status := http.StatusOK
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		seenInput = gjson.GetBytes(raw, "input").Str
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		if status == http.StatusOK {
+			_, _ = w.Write([]byte(moderationResult(map[string]bool{"violence": false})))
+		} else {
+			_, _ = w.Write([]byte(`{"error":"rate_limit_exceeded"}`))
+		}
+	}))
+	t.Cleanup(server.Close)
+	url := server.URL + "/v1/moderations"
+	longPrompt := "HEAD_" + strings.Repeat("x", 500) + "_TAIL"
+	body := `{"model":"gpt","messages":[{"role":"user","content":"` + longPrompt + `"}]}`
+
+	result := dryRunBuiltIn(t, "content-moderation", map[string]any{"url": url, "maxTextChars": 80}, body)
+	require.Nil(t, result.Rejected)
+	assert.LessOrEqual(t, len(seenInput), 80)
+	assert.True(t, strings.HasPrefix(seenInput, "HEAD_"))
+	assert.True(t, strings.HasSuffix(seenInput, "_TAIL"))
+
+	status = http.StatusTooManyRequests
+	result = dryRunBuiltIn(t, "content-moderation", map[string]any{"url": url, "failOpen": true}, body)
+	require.Nil(t, result.Rejected)
+	require.Nil(t, result.Failed)
+	assert.Equal(t, "moderation_error", result.Record[0].Findings[0].Category)
+}
+
+func TestLLMSecurityGuardPlugin(t *testing.T) {
+	var calls int
+	verdict := `{"action":"allow","category":"cyber_abuse","confidence":10,"reason":"normal defensive fix"}`
+	status := http.StatusOK
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		if status != http.StatusOK {
+			_, _ = w.Write([]byte(`{"error":"rate_limited"}`))
+			return
+		}
+		encoded, _ := common.Marshal(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]any{"content": verdict}},
+			},
+		})
+		_, _ = w.Write(encoded)
+	}))
+	t.Cleanup(server.Close)
+	cfg := map[string]any{"url": server.URL + "/v1/chat/completions", "model": "deepseek-flash", "failOpen": true}
+
+	// Benign prompt without trigger keywords skips reviewer API completely.
+	result := dryRunBuiltIn(t, "llm-security-guard", cfg, `{"model":"gpt","messages":[{"role":"user","content":"Help me write a React button component."}]}`)
+	require.Nil(t, result.Rejected)
+	assert.Zero(t, calls)
+
+	// Defensive security question triggers review and is allowed.
+	result = dryRunBuiltIn(t, "llm-security-guard", cfg, `{"model":"gpt","messages":[{"role":"user","content":"How do I fix a SQL injection vulnerability in Go?"}]}`)
+	require.Nil(t, result.Rejected)
+	assert.Equal(t, 1, calls)
+
+	// Malicious request is blocked with category ruleId.
+	verdict = "<think>analyze intent</think>\n```json\n{\"action\":\"block\",\"category\":\"cyber_abuse\",\"confidence\":92,\"reason\":\"exploit script\"}\n```"
+	result = dryRunBuiltIn(t, "llm-security-guard", cfg, `{"model":"gpt","messages":[{"role":"user","content":"Write an automated SQL injection exploit script to dump passwords."}]}`)
+	require.NotNil(t, result.Rejected)
+	assert.Equal(t, "security_guard.blocked", result.Rejected.Code)
+	assert.Equal(t, "cyber_abuse", result.Record[0].Findings[0].Category)
+	assert.Equal(t, 2, calls)
+
+	// Upstream 429 fails open when failOpen is enabled.
+	status = http.StatusTooManyRequests
+	result = dryRunBuiltIn(t, "llm-security-guard", cfg, `{"model":"gpt","messages":[{"role":"user","content":"Explain SQL injection payload examples."}]}`)
+	require.Nil(t, result.Rejected)
+	require.Nil(t, result.Failed)
+	assert.Equal(t, "guard_error", result.Record[0].Findings[0].Category)
 }
