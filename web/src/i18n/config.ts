@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import i18n from 'i18next'
+import i18n, { type BackendModule } from 'i18next'
 import LanguageDetector from 'i18next-browser-languagedetector'
 import { initReactI18next } from 'react-i18next'
 
@@ -32,7 +32,10 @@ import zhCN from './locales/zh.json'
  * language. They are now fetched on demand, both for a detected browser
  * language and for an explicit switch in the language menu.
  */
-const LAZY_LOCALES: Record<string, () => Promise<{ default: object }>> = {
+const LAZY_LOCALES: Record<
+  string,
+  () => Promise<{ default: { translation: Record<string, string> } }>
+> = {
   fr: () => import('./locales/fr.json'),
   ja: () => import('./locales/ja.json'),
   ru: () => import('./locales/ru.json'),
@@ -45,48 +48,21 @@ export const resources = {
   zhCN,
 } as const
 
-const inflight = new Map<string, Promise<void>>()
-
-async function ensureLocale(lng: string) {
-  const base = lng.split('-')[0]
-  const code = LAZY_LOCALES[lng] ? lng : base
-  const loader = LAZY_LOCALES[code]
-  if (!loader || i18n.hasResourceBundle(code, 'translation')) return
-
-  const existing = inflight.get(code)
-  if (existing) return existing
-
-  const task = loader()
-    .then((module) => {
-      i18n.addResourceBundle(
-        code,
-        'translation',
-        module.default,
-        true,
-        true
-      )
-      // The detected language may still be sitting on the fallback while the
-      // bundle downloads; re-apply it so the UI switches over in place.
-      if (i18n.language === code) {
-        void i18n.changeLanguage(code)
-      }
-    })
-    .catch(() => {
-      // A failed locale chunk keeps the English fallback; never block boot.
-    })
-    .finally(() => {
-      inflight.delete(code)
-    })
-
-  inflight.set(code, task)
-  return task
-}
-
 i18n
+  .use<BackendModule>({
+    type: 'backend',
+    init: () => {},
+    async read(language, _namespace) {
+      const load = LAZY_LOCALES[language]
+      if (!load) return {}
+      return (await load()).default.translation
+    },
+  })
   .use(LanguageDetector)
   .use(initReactI18next)
   .init({
     resources,
+    partialBundledLanguages: true,
     fallbackLng: 'en',
     supportedLngs: ['en', 'zhCN', 'fr', 'ru', 'ja', 'vi', 'zhTW'],
     load: 'currentOnly',
@@ -103,10 +79,5 @@ i18n
       convertDetectedLanguage,
     },
   })
-
-i18n.on('languageChanged', (lng) => {
-  void ensureLocale(lng)
-})
-void ensureLocale(i18n.language)
 
 export default i18n

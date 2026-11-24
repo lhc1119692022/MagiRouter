@@ -20,12 +20,15 @@ import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { useStatus } from '@/hooks/use-status'
+import { getDocumentationLink } from '@/lib/documentation-link'
 import { parseHeaderNavModulesFromStatus } from '@/lib/nav-modules'
 import { useAuthStore } from '@/stores/auth-store'
 
 export type TopNavLink = {
   title: string
   href: string
+  search?: Record<string, string>
+  hash?: string
   disabled?: boolean
   requiresAuth?: boolean
   external?: boolean
@@ -55,20 +58,6 @@ export function useTopNavLinks(): TopNavLink[] {
     )
   }, [status])
 
-  // Documentation link (may be external)
-  const rawDocsLink =
-    typeof status?.docs_link === 'string' ? status.docs_link.trim() : ''
-  const isDefaultUpstreamDocs =
-    rawDocsLink === 'https://docs.newapi.pro' ||
-    rawDocsLink === 'https://docs.newapi.pro/'
-  const customExternalDocsLink =
-    rawDocsLink &&
-    rawDocsLink !== '/docs' &&
-    !isDefaultUpstreamDocs &&
-    /^https?:\/\//i.test(rawDocsLink)
-      ? rawDocsLink
-      : ''
-
   const isAuthed = !!auth?.user
 
   const links: TopNavLink[] = []
@@ -80,7 +69,11 @@ export function useTopNavLinks(): TopNavLink[] {
 
   // Console -> /dashboard (new console path)
   if (modules?.console !== false) {
-    links.push({ title: t('Console'), href: '/dashboard' })
+    links.push({
+      title: t('Console'),
+      href: '/dashboard',
+      requiresAuth: !isAuthed,
+    })
   }
 
   // Pricing
@@ -90,29 +83,21 @@ export function useTopNavLinks(): TopNavLink[] {
     links.push({ title: t('Model Square'), href: '/pricing', requiresAuth })
   }
 
-  // Rankings
-  const rankings = modules?.rankings
-  if (rankings && typeof rankings === 'object' && rankings.enabled) {
-    const requiresAuth = rankings.requireAuth && !isAuthed
-    links.push({ title: t('Rankings'), href: '/rankings', requiresAuth })
+  if (modules.creation) {
+    links.push({
+      title: t('AI Studio'),
+      href: '/create',
+      requiresAuth: !isAuthed,
+    })
   }
 
   // Docs (supports external links)
   if (modules?.docs !== false) {
-    if (customExternalDocsLink) {
-      links.push({
-        title: t('Docs'),
-        href: customExternalDocsLink,
-        external: true,
-      })
-    } else {
-      links.push({ title: t('Docs'), href: '/docs' })
-    }
+    links.push({ title: t('Docs'), ...getDocumentationLink(status?.docs_link) })
   }
 
-  // About
-  if (modules?.about !== false) {
-    links.push({ title: t('About'), href: '/about' })
+  if (modules.about) {
+    links.push({ title: t('Timeline'), href: '/about' })
   }
 
   return links

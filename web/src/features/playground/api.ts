@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { resolveApiKeyValue } from '@/features/keys/api'
 import { api } from '@/lib/api'
 import { requireServerSuccess } from '@/lib/server-error-message'
 
@@ -32,24 +33,55 @@ import type {
  */
 export async function sendChatCompletion(
   payload: ChatCompletionRequest,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  keyId?: number | null
 ): Promise<ChatCompletionResponse> {
-  const res = await api.post(API_ENDPOINTS.CHAT_COMPLETIONS, payload, {
+  if (keyId == null || !Number.isSafeInteger(keyId) || keyId <= 0) {
+    throw new Error('Select an API key')
+  }
+  const key = await resolveApiKeyValue(keyId)
+  const response = await fetch('/v1/chat/completions', {
+    method: 'POST',
+    redirect: 'error',
+    credentials: 'omit',
     signal,
-    skipErrorHandler: true,
-  } as Record<string, unknown>)
-  return res.data
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${key}`,
+    },
+    body: JSON.stringify(payload),
+  })
+  const result = await response.json()
+  if (!response.ok) {
+    throw new Error(result?.error?.message || `HTTP ${response.status}`)
+  }
+  return result
 }
 
 /**
  * Get user available models
  */
-export async function getUserModels(group: string): Promise<ModelOption[]> {
+export async function getUserModels(
+  group: string,
+  billingKeyId?: number | null,
+  includeChatControls = !!group
+): Promise<ModelOption[]> {
   const res = await api.get(API_ENDPOINTS.USER_MODELS, {
-    params: { group },
+    params: {
+      group,
+      include_chat_controls: includeChatControls || undefined,
+      billing_key_id: billingKeyId ?? undefined,
+    },
   })
   const { data } = res
   requireServerSuccess(data)
+
+  if (
+    billingKeyId != null &&
+    (data.billing_key_id !== billingKeyId || data.group !== group)
+  ) {
+    throw new Error('Selected key is unavailable')
+  }
 
   if (!data.success || !Array.isArray(data.data)) {
     return []
@@ -58,7 +90,39 @@ export async function getUserModels(group: string): Promise<ModelOption[]> {
   return data.data.map((model: string) => ({
     label: model,
     value: model,
+    chatControls: data.chat_controls?.[model],
+    modelLimitNames: data.model_limit_names?.[model],
   }))
+}
+
+export async function getPlaygroundKeyScope(
+  keyId: number,
+  expectedGroup?: string,
+  signal?: AbortSignal
+) {
+  const response = await api.get(API_ENDPOINTS.USER_MODELS, {
+    // Each key selection needs its own cancellable permissions request.
+    disableDuplicate: true,
+    signal,
+    params: { billing_key_id: keyId, include_chat_controls: true },
+  })
+  const data = requireServerSuccess(response.data)
+  if (
+    data.billing_key_id !== keyId ||
+    typeof data.group !== 'string' ||
+    !data.group.trim() ||
+    (expectedGroup && expectedGroup !== data.group) ||
+    !Array.isArray(data.data) ||
+    !data.data.every((name: unknown) => typeof name === 'string' && name.trim())
+  ) {
+    throw new Error('Selected key is unavailable')
+  }
+  const models: ModelOption[] = data.data.map((value: string) => ({
+    value,
+    label: value,
+    chatControls: data.chat_controls?.[value],
+  }))
+  return { keyId, group: data.group as string, models }
 }
 
 /**

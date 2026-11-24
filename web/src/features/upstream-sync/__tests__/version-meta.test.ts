@@ -37,9 +37,7 @@ function commit(sha: string, message = `commit ${sha}`): UpstreamCommit {
 
 describe('parseBuildMeta', () => {
   it('reads commit and upstream base from the version metadata', () => {
-    expect(
-      parseBuildMeta('v1.0.0-rc.51+sha.abc1234.up.def5678')
-    ).toEqual({
+    expect(parseBuildMeta('v1.0.0-rc.51+sha.abc1234.up.def5678')).toEqual({
       version: 'v1.0.0-rc.51',
       commit: 'abc1234',
       upstreamBase: 'def5678',

@@ -25,6 +25,7 @@ import type { ReactNode } from 'react'
 export type SectionDefinition<TSettings, TExtraArgs extends unknown[] = []> = {
   id: string
   titleKey: string
+  scrollWithDocument?: boolean
   build: (settings: TSettings, ...extraArgs: TExtraArgs) => ReactNode
 }
 

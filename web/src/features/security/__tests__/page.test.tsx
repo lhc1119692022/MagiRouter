@@ -185,11 +185,17 @@ describe('security page migration', () => {
     expect(
       within(verification).getByRole('switch', { name: 'Record IP Address' })
     ).toBeVisible()
-    expect(verification).toHaveClass('xl:sticky', 'xl:top-0')
-    expect(verification.parentElement).toHaveClass(
-      'grid',
-      'xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.46fr)]'
-    )
+    expect(
+      screen
+        .getAllByRole('heading', { level: 2 })
+        .map((heading) => heading.textContent)
+    ).toEqual([
+      'Login & Authentication',
+      'Sessions & Access',
+      'Account Actions',
+      'Security verification',
+      'Privacy',
+    ])
     const access = screen.getByRole('region', { name: 'Sessions & Access' })
     expect(within(access).getByText('Access tokens')).toBeVisible()
     expect(
@@ -198,12 +204,13 @@ describe('security page migration', () => {
     expect(
       screen.getByRole('switch', { name: 'Record IP Address' })
     ).toBeVisible()
-    expect(
-      within(screen.getByRole('region', { name: 'Account Actions' })).getByRole(
-        'button',
-        { name: 'Delete Account' }
-      )
-    ).toBeVisible()
+    const deletion = within(
+      screen.getByRole('region', { name: 'Account Actions' })
+    ).getByRole('button', { name: 'Delete Account' })
+    expect(deletion).toBeVisible()
+    expect(deletion).toHaveAccessibleDescription(
+      'Permanently delete your account and all data'
+    )
   })
 
   it('built-in and custom bindings share one compact responsive grid', async () => {
@@ -213,12 +220,9 @@ describe('security page migration', () => {
     })
     expect(within(bindings).getAllByRole('listitem')).toHaveLength(5)
     expect(within(bindings).getByText('Gitea')).toBeVisible()
-    expect(bindings).toHaveClass(
-      'grid-cols-1',
-      'sm:grid-cols-2',
-      'lg:grid-cols-3',
-      'gap-2'
-    )
+    for (const item of within(bindings).getAllByRole('listitem')) {
+      expect(within(item).getByRole('button')).toBeVisible()
+    }
     expect(screen.queryByText('Custom OAuth')).not.toBeInTheDocument()
   })
 
@@ -260,6 +264,22 @@ describe('security page migration', () => {
     expect(api.get).not.toHaveBeenCalledWith('/api/user/passkey')
     expect(api.get).not.toHaveBeenCalledWith('/api/user/2fa/status')
     expect(api.get).not.toHaveBeenCalledWith('/api/user/sessions')
+  })
+
+  it('shows the real identity and labelled quota metrics without requiring preference permissions', async () => {
+    await renderPage('/profile')
+    expect(
+      await screen.findByRole('heading', { name: 'Alice', level: 2 })
+    ).toBeVisible()
+    expect(screen.getByText('@alice')).toBeVisible()
+    expect(screen.getByText('default')).toBeVisible()
+    expect(screen.getByText('User ID 1')).toBeVisible()
+    expect(screen.getAllByRole('term').map((term) => term.textContent)).toEqual(
+      ['Current Balance', 'Total Usage', 'API Requests', 'Concurrency Limit']
+    )
+    expect(screen.getAllByRole('definition')).toHaveLength(4)
+    expect(screen.queryByText('Daily Check-in')).not.toBeInTheDocument()
+    expect(screen.queryByText('Sidebar Modules')).not.toBeInTheDocument()
   })
 
   it('a failed profile load offers retry before exposing account actions', async () => {

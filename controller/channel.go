@@ -23,6 +23,7 @@ import (
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/service/authz"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/setting/request_plugin_setting"
 
 	"github.com/gin-gonic/gin"
@@ -814,6 +815,19 @@ func getVertexArrayKeys(keys string) ([]string, []int, error) {
 	return cleanKeys, inputIndices, nil
 }
 
+func findUserManagementGroupInCSV(groupCSV string) string {
+	if !ratio_setting.HasUserManagementGroups() {
+		return ""
+	}
+	for part := range strings.SplitSeq(groupCSV, ",") {
+		group := strings.TrimSpace(part)
+		if group != "" && ratio_setting.IsUserManagementGroup(group) {
+			return group
+		}
+	}
+	return ""
+}
+
 func AddChannel(c *gin.Context) {
 	addChannelRequest := AddChannelRequest{}
 	err := c.ShouldBindJSON(&addChannelRequest)
@@ -840,6 +854,10 @@ func AddChannel(c *gin.Context) {
 	// 使用统一的校验函数
 	if err := validateChannel(addChannelRequest.Channel, true); err != nil {
 		common.ApiError(c, err)
+		return
+	}
+	if badGroup := findUserManagementGroupInCSV(addChannelRequest.Channel.Group); badGroup != "" {
+		common.ApiErrorT(c, "Group {{group}} is for user management only and cannot be assigned to channels", map[string]any{"group": badGroup})
 		return
 	}
 	if err := checkPluginChannelKeys(c, addChannelRequest.Channel, addChannelRequest.Channel.Key, ""); err != nil {
@@ -1141,6 +1159,12 @@ func EditTagChannels(c *gin.Context) {
 		}
 		channelTag.HeaderOverride = common.GetPointer[string](trimmed)
 	}
+	if channelTag.Groups != nil {
+		if badGroup := findUserManagementGroupInCSV(*channelTag.Groups); badGroup != "" {
+			common.ApiErrorT(c, "Group {{group}} is for user management only and cannot be assigned to channels", map[string]any{"group": badGroup})
+			return
+		}
+	}
 	err = model.EditChannelByTag(channelTag.Tag, channelTag.NewTag, channelTag.ModelMapping, channelTag.Models, channelTag.Groups, channelTag.Priority, channelTag.Weight, channelTag.ParamOverride, channelTag.HeaderOverride)
 	if err != nil {
 		common.ApiError(c, err)
@@ -1254,6 +1278,12 @@ func UpdateChannel(c *gin.Context) {
 	if err != nil {
 		common.ApiError(c, err)
 		return
+	}
+	if channel.Group != originChannel.Group {
+		if badGroup := findUserManagementGroupInCSV(channel.Group); badGroup != "" {
+			common.ApiErrorT(c, "Group {{group}} is for user management only and cannot be assigned to channels", map[string]any{"group": badGroup})
+			return
+		}
 	}
 	originProxy := originChannel.GetSetting().Proxy
 	proxyChanged := false
@@ -1729,6 +1759,12 @@ func FetchModels(c *gin.Context) {
 				common.ApiError(c, err)
 				return
 			}
+		} else if req.Proxy != nil && *req.Proxy != "" {
+			if err := service.ValidateProxyURL(*req.Proxy); err != nil {
+				common.ApiError(c, err)
+				return
+			}
+			channel.SetSetting(dto.ChannelSettings{Proxy: strings.TrimSpace(*req.Proxy)})
 		}
 	}
 
@@ -2402,7 +2438,7 @@ func OllamaPullModel(c *gin.Context) {
 	}
 
 	key := strings.Split(channel.Key, "\n")[0]
-	err = ollama.PullOllamaModel(baseURL, key, req.ModelName)
+	err = ollama.PullOllamaModel(baseURL, key, req.ModelName, channel.GetSetting())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
@@ -2480,7 +2516,7 @@ func OllamaPullModelStream(c *gin.Context) {
 	}
 
 	// 执行拉取
-	err = ollama.PullOllamaModelStream(baseURL, key, req.ModelName, progressCallback)
+	err = ollama.PullOllamaModelStream(baseURL, key, req.ModelName, channel.GetSetting(), progressCallback)
 
 	if err != nil {
 		errorData, _ := json.Marshal(gin.H{
@@ -2547,7 +2583,7 @@ func OllamaDeleteModel(c *gin.Context) {
 	}
 
 	key := strings.Split(channel.Key, "\n")[0]
-	err = ollama.DeleteOllamaModel(baseURL, key, req.ModelName)
+	err = ollama.DeleteOllamaModel(baseURL, key, req.ModelName, channel.GetSetting())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
@@ -2596,7 +2632,7 @@ func OllamaVersion(c *gin.Context) {
 	}
 
 	key := strings.Split(channel.Key, "\n")[0]
-	version, err := ollama.FetchOllamaVersion(baseURL, key)
+	version, err := ollama.FetchOllamaVersion(baseURL, key, channel.GetSetting())
 	if err != nil {
 		common.ApiErrorT(c, "Failed to fetch Ollama version: {{error}}", map[string]any{"error": err.Error()})
 		return

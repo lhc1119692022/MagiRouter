@@ -2,13 +2,13 @@ package controller
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/console_setting"
 
 	"github.com/gin-gonic/gin"
@@ -24,10 +24,12 @@ const (
 )
 
 type Monitor struct {
-	Name   string  `json:"name"`
-	Uptime float64 `json:"uptime"`
-	Status int     `json:"status"`
-	Group  string  `json:"group,omitempty"`
+	Name        string   `json:"name"`
+	Uptime      float64  `json:"uptime"`
+	UptimeKnown bool     `json:"uptimeKnown"`
+	LatencyMs   *float64 `json:"latencyMs,omitempty"`
+	Status      int      `json:"status"`
+	Group       string   `json:"group,omitempty"`
 }
 
 type UptimeGroupResult struct {
@@ -51,7 +53,7 @@ func getAndDecode(ctx context.Context, client *http.Client, url string, dest any
 		return errors.New("non-200 status")
 	}
 
-	return json.NewDecoder(resp.Body).Decode(dest)
+	return common.DecodeJson(resp.Body, dest)
 }
 
 func fetchGroupData(ctx context.Context, client *http.Client, groupConfig map[string]any) UptimeGroupResult {
@@ -83,7 +85,9 @@ func fetchGroupData(ctx context.Context, client *http.Client, groupConfig map[st
 
 	var heartbeatData struct {
 		HeartbeatList map[string][]struct {
-			Status int `json:"status"`
+			Time   string   `json:"time"`
+			Status *int     `json:"status"`
+			Ping   *float64 `json:"ping"`
 		} `json:"heartbeatList"`
 		UptimeList map[string]float64 `json:"uptimeList"`
 	}
@@ -107,18 +111,31 @@ func fetchGroupData(ctx context.Context, client *http.Client, groupConfig map[st
 
 		for _, m := range pg.MonitorList {
 			monitor := Monitor{
-				Name:  m.Name,
-				Group: pg.Name,
+				Name:   m.Name,
+				Group:  pg.Name,
+				Status: -1,
 			}
 
 			monitorID := strconv.Itoa(m.ID)
 
-			if uptime, exists := heartbeatData.UptimeList[monitorID+uptimeKeySuffix]; exists {
+			if uptime, exists := heartbeatData.UptimeList[monitorID+uptimeKeySuffix]; exists && uptime >= 0 && uptime <= 1 {
 				monitor.Uptime = uptime
+				monitor.UptimeKnown = true
 			}
 
 			if heartbeats, exists := heartbeatData.HeartbeatList[monitorID]; exists && len(heartbeats) > 0 {
-				monitor.Status = heartbeats[0].Status
+				latest := heartbeats[0]
+				for _, sample := range heartbeats[1:] {
+					if sample.Time > latest.Time {
+						latest = sample
+					}
+				}
+				if latest.Status != nil {
+					monitor.Status = *latest.Status
+				}
+				if latest.Ping != nil && *latest.Ping >= 0 {
+					monitor.LatencyMs = latest.Ping
+				}
 			}
 
 			result.Monitors = append(result.Monitors, monitor)
@@ -129,7 +146,10 @@ func fetchGroupData(ctx context.Context, client *http.Client, groupConfig map[st
 }
 
 func GetUptimeKumaStatus(c *gin.Context) {
-	groups := console_setting.GetUptimeKumaGroups()
+	var groups []map[string]any
+	if console_setting.GetConsoleSetting().UptimeKumaEnabled {
+		groups = console_setting.GetUptimeKumaGroups()
+	}
 	if len(groups) == 0 {
 		c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": []UptimeGroupResult{}})
 		return

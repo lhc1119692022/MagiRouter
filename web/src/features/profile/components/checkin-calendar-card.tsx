@@ -32,7 +32,7 @@ import { toast } from 'sonner'
 import { Dialog } from '@/components/dialog'
 import { Turnstile } from '@/components/turnstile'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
+import { Card, CardHeader } from '@/components/ui/card'
 import { IconBadge } from '@/components/ui/icon-badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
@@ -283,13 +283,13 @@ export function CheckinCalendarCard({
         </div>
       </Dialog>
 
-      <Card data-card-hover='false' className='gap-0 overflow-hidden py-0'>
-        {/* Header */}
-        <div className='border-b p-4 sm:p-6'>
+      <Card data-card-hover='false' className='identity-checkin'>
+        <CardHeader>
           <div className='flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4'>
             <button
               type='button'
-              className='flex min-w-0 flex-1 items-start gap-3 rounded-lg text-left whitespace-normal outline-none'
+              aria-expanded={!collapsed}
+              className='focus-visible:ring-ring flex min-w-0 flex-1 items-start gap-3 rounded-lg text-left whitespace-normal outline-none focus-visible:ring-2'
               onClick={() => setCollapsed((v) => !v)}
             >
               <IconBadge tone='neutral' size='lg' className='sm:size-11'>
@@ -300,9 +300,9 @@ export function CheckinCalendarCard({
               </IconBadge>
               <div className='min-w-0 flex-1'>
                 <div className='flex flex-wrap items-center gap-1.5 sm:gap-2'>
-                  <h3 className='text-base font-semibold tracking-tight sm:text-lg'>
+                  <h2 className='identity-action-title'>
                     {t('Daily Check-in')}
-                  </h3>
+                  </h2>
                   {checkedToday && (
                     <div className='inline-flex items-center gap-1 rounded-md bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-600 sm:gap-1.5 sm:px-2.5 sm:text-xs dark:text-emerald-400'>
                       <Sparkles className='h-2.5 w-2.5 sm:h-3 sm:w-3' />
@@ -333,12 +333,12 @@ export function CheckinCalendarCard({
               {checkinButtonLabel}
             </Button>
           </div>
-        </div>
+        </CardHeader>
 
         {!collapsed ? (
           <>
             {/* Stats */}
-            <div className='grid grid-cols-3 gap-px border-b'>
+            <div className='identity-checkin-stats grid grid-cols-3 gap-px'>
               <div className='bg-card p-3 text-center sm:p-5'>
                 <div className='text-xl font-semibold tracking-tight tabular-nums sm:text-2xl'>
                   {checkinData?.stats?.total_checkins || 0}
@@ -383,6 +383,7 @@ export function CheckinCalendarCard({
                       variant='ghost'
                       size='icon'
                       className='h-7 w-7 sm:h-8 sm:w-8'
+                      aria-label={t('Previous')}
                       onClick={handlePrevMonth}
                     >
                       <ChevronLeft className='h-3.5 w-3.5 sm:h-4 sm:w-4' />
@@ -391,6 +392,7 @@ export function CheckinCalendarCard({
                       variant='ghost'
                       size='icon'
                       className='h-7 w-7 sm:h-8 sm:w-8'
+                      aria-label={t('Next')}
                       onClick={handleNextMonth}
                     >
                       <ChevronRight className='h-3.5 w-3.5 sm:h-4 sm:w-4' />

@@ -16,26 +16,35 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+const DEFAULT_FAVICON = '/favicon.svg?v=20261121b'
+
+const GENERIC_LOGO_URLS = new Set([
+  '/logo.png',
+  '/logo.svg',
+  '/magirouter-logo.png',
+  'logo.png',
+  'logo.svg',
+])
+
+/**
+ * Apply the platform favicon.
+ *
+ * An empty / upstream-generic logo means "no admin override": the tab must
+ * still show MagiRouter's own mark, so fall back to the bundled icon instead
+ * of leaving whatever the browser cached for an older build on this origin.
+ */
 export function applyFaviconToDom(url: string) {
   if (typeof document === 'undefined' || !url) return
   const normalized = url.trim().toLowerCase()
-  if (
-    normalized === '/logo.png' ||
-    normalized === '/logo.svg' ||
-    normalized === '/magirouter-logo.png' ||
-    normalized === 'logo.png' ||
-    normalized === 'logo.svg'
-  ) {
-    return
-  }
+  const target = GENERIC_LOGO_URLS.has(normalized) ? DEFAULT_FAVICON : url
   try {
-    const next = new URL(url, window.location.href).href
+    const next = new URL(target, window.location.href).href
     const existing =
       document.querySelectorAll<HTMLLinkElement>('link[rel~="icon"]')
     if (existing.length === 1 && existing[0].href === next) return
     const link = document.createElement('link')
     link.rel = 'icon'
-    link.href = url
+    link.href = target
     existing.forEach((l) => l.remove())
     document.head.appendChild(link)
   } catch {

@@ -27,10 +27,13 @@ import {
   FormControl,
   FormDescription,
   FormField,
+  FormItem,
   FormLabel,
   FormMessage,
 } from '@/components/ui/form'
+import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
+import { creationDestination } from '@/lib/nav-modules'
 
 import {
   SettingsControlChildren,
@@ -48,9 +51,20 @@ import {
   serializeHeaderNavModules,
 } from './config'
 
+const destination = z
+  .string()
+  .trim()
+  .refine(
+    (value) => !value || !!creationDestination(value),
+    'Enter an HTTPS URL or a site path starting with /.'
+  )
+
 const headerNavSchema = z.object({
   home: z.boolean(),
   console: z.boolean(),
+  creation: z.boolean(),
+  canvasUrl: destination,
+  workbenchUrl: destination,
   pricingEnabled: z.boolean(),
   pricingRequireAuth: z.boolean(),
   rankingsEnabled: z.boolean(),
@@ -73,6 +87,9 @@ const toFormValues = (config: HeaderNavModulesConfig): HeaderNavFormValues => ({
     config.console === undefined
       ? HEADER_NAV_DEFAULT.console
       : Boolean(config.console),
+  creation: config.creation ?? config.console ?? HEADER_NAV_DEFAULT.creation,
+  canvasUrl: config.canvasUrl ?? '',
+  workbenchUrl: config.workbenchUrl ?? '',
   pricingEnabled:
     config.pricing?.enabled === undefined
       ? HEADER_NAV_DEFAULT.pricing.enabled
@@ -119,6 +136,9 @@ export function HeaderNavigationSection({
       ...config,
       home: values.home,
       console: values.console,
+      creation: values.creation,
+      canvasUrl: creationDestination(values.canvasUrl),
+      workbenchUrl: creationDestination(values.workbenchUrl),
       docs: values.docs,
       about: values.about,
       pricing: {
@@ -149,7 +169,7 @@ export function HeaderNavigationSection({
   }
 
   const simpleModules: Array<{
-    key: keyof HeaderNavFormValues
+    key: 'home' | 'console' | 'creation' | 'docs' | 'about'
     title: string
     description: string
   }> = [
@@ -164,20 +184,25 @@ export function HeaderNavigationSection({
       description: t('User dashboard and quota controls.'),
     },
     {
+      key: 'creation',
+      title: t('AI Studio'),
+      description: t('AI Creation Center'),
+    },
+    {
       key: 'docs',
       title: t('Docs'),
       description: t('Documentation or external knowledge base.'),
     },
     {
       key: 'about',
-      title: t('About'),
-      description: t('Static page describing the platform.'),
+      title: t('Timeline'),
+      description: t('Platform notices, changes and model rankings.'),
     },
   ]
 
   const accessModules: Array<{
-    enabledKey: keyof HeaderNavFormValues
-    requireAuthKey: keyof HeaderNavFormValues
+    enabledKey: 'pricingEnabled' | 'rankingsEnabled'
+    requireAuthKey: 'pricingRequireAuth' | 'rankingsRequireAuth'
     requireAuthDependsOn: 'pricingEnabled' | 'rankingsEnabled'
     title: string
     description: string
@@ -239,6 +264,39 @@ export function HeaderNavigationSection({
                     </FormControl>
                     <FormMessage />
                   </SettingsSwitchItem>
+                )}
+              />
+            ))}
+          </div>
+
+          <div className='grid gap-4 lg:grid-cols-2'>
+            {(['canvasUrl', 'workbenchUrl'] as const).map((key) => (
+              <FormField
+                key={key}
+                control={form.control}
+                name={key}
+                render={({ field, fieldState }) => (
+                  <FormItem>
+                    <FormLabel>
+                      {key === 'canvasUrl' ? t('Canvas') : t('Workbench')} ·{' '}
+                      {t('URL')}
+                    </FormLabel>
+                    <FormControl>
+                      <Input {...field} placeholder='https://…' dir='ltr' />
+                    </FormControl>
+                    <FormDescription>
+                      {t(
+                        'Leave empty to show Under construction without a link.'
+                      )}
+                    </FormDescription>
+                    {fieldState.error && (
+                      <FormMessage>
+                        {t(
+                          'Enter an HTTPS URL or a site path starting with /.'
+                        )}
+                      </FormMessage>
+                    )}
+                  </FormItem>
                 )}
               />
             ))}

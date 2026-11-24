@@ -1,0 +1,55 @@
+.console-shell:has(.console-document-page) {
+  height: auto;
+  min-height: 100svh;
+}
+
+.console-shell:has(.console-document-page)
+  .console-workspace-shell
+  > [data-slot='sidebar-inset'] {
+  height: auto;
+  min-width: 0;
+  overflow: visible;
+}
+
+.console-document-page {
+  padding-block: 28px 72px;
+}
+
+.console-document-page .console-page-inner {
+  padding-inline: clamp(36px, 4.2vw, 72px);
+}
+
+@media (min-width: 1024px) {
+  .console-shell:has(.console-document-page)
+    .console-workspace-shell
+    [data-slot='sidebar-container'] {
+    position: sticky;
+    top: var(--app-header-height);
+    bottom: auto;
+    height: calc(100svh - var(--app-header-height));
+  }
+
+  .console-shell:has(.console-document-page)
+    [data-slot='sidebar'][data-collapsible='offcanvas']
+    [data-slot='sidebar-container'] {
+    width: 0;
+    visibility: hidden;
+    overflow: hidden;
+  }
+
+  .console-shell:has(.console-document-page)
+    [data-slot='sidebar']:not([data-variant]) {
+    position: sticky;
+    top: var(--app-header-height);
+    height: calc(100svh - var(--app-header-height));
+  }
+}
+
+@media (max-width: 1023px) {
+  .console-document-page {
+    padding-block: 20px 48px;
+  }
+  .console-document-page .console-page-inner {
+    padding-inline: 24px;
+  }
+}

@@ -42,7 +42,6 @@ import { MessageActions } from '../message/message-actions'
 import { MessageErrorActions } from '../message/message-error-actions'
 import { PlaygroundMessageContent } from '../message/playground-message-content'
 import { PlaygroundMessageEditor } from '../message/playground-message-editor'
-import { PlaygroundEmptyState } from './playground-empty-state'
 
 const MAX_RENDERED_HISTORY_MESSAGES = 24
 
@@ -52,7 +51,6 @@ interface PlaygroundChatProps {
   onRegenerateMessage?: (message: MessageType) => void
   onEditMessage?: (message: MessageType) => void
   onDeleteMessage?: (message: MessageType) => void
-  onSelectPrompt?: (prompt: string) => void
   isGenerating?: boolean
   isLoadingMessages?: boolean
   editingKey?: string | null
@@ -68,7 +66,6 @@ export function PlaygroundChat({
   onRegenerateMessage,
   onEditMessage,
   onDeleteMessage,
-  onSelectPrompt,
   isGenerating = false,
   isLoadingMessages = false,
   editingKey,
@@ -111,6 +108,8 @@ export function PlaygroundChat({
 
     setOriginalText(content)
   }, [editingKey, messages])
+
+  if (!isLoadingMessages && !visibleMessages.length) return null
 
   let chatContent = visibleMessages.map((message, visibleMessageIndex) => {
     const messageIndex = visibleMessageOffset + visibleMessageIndex
@@ -193,16 +192,10 @@ export function PlaygroundChat({
     )
   })
 
-  if (visibleMessages.length === 0 && onSelectPrompt) {
-    chatContent = [
-      <PlaygroundEmptyState key='empty' onSelectPrompt={onSelectPrompt} />,
-    ]
-  }
-
   if (isLoadingMessages) {
     chatContent = [
       <div
-        className='text-muted-foreground flex min-h-[min(520px,calc(100svh-18rem))] items-center justify-center gap-2 text-sm'
+        className='text-muted-foreground flex flex-1 items-center justify-center gap-2 py-10 text-sm'
         key='loading'
       >
         <Loader />
@@ -213,9 +206,8 @@ export function PlaygroundChat({
 
   return (
     <Conversation>
-      {/* Remove outer padding; apply padding to inner centered container to align with input */}
-      <ConversationContent className='p-0'>
-        <div className='mx-auto w-full max-w-4xl px-4 py-4'>{chatContent}</div>
+      <ConversationContent className='px-4 py-5 sm:px-6 sm:py-6'>
+        <div className='pg-chat-thread-inner'>{chatContent}</div>
       </ConversationContent>
       <ConversationScrollButton />
     </Conversation>

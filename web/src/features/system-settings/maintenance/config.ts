@@ -16,6 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { creationDestination } from '@/lib/nav-modules'
+
 export type HeaderNavAccessConfig = {
   enabled: boolean
   requireAuth: boolean
@@ -24,11 +26,14 @@ export type HeaderNavAccessConfig = {
 export type HeaderNavModulesConfig = {
   home: boolean
   console: boolean
+  creation: boolean
   pricing: HeaderNavAccessConfig
   rankings: HeaderNavAccessConfig
   docs: boolean
   about: boolean
-  [key: string]: boolean | HeaderNavAccessConfig
+  canvasUrl?: string
+  workbenchUrl?: string
+  [key: string]: boolean | HeaderNavAccessConfig | string | undefined
 }
 
 export type SidebarSectionConfig = {
@@ -41,6 +46,7 @@ export type SidebarModulesAdminConfig = Record<string, SidebarSectionConfig>
 export const HEADER_NAV_DEFAULT: HeaderNavModulesConfig = {
   home: true,
   console: true,
+  creation: true,
   pricing: {
     enabled: true,
     requireAuth: false,
@@ -56,13 +62,16 @@ export const HEADER_NAV_DEFAULT: HeaderNavModulesConfig = {
 export const SIDEBAR_MODULES_DEFAULT: SidebarModulesAdminConfig = {
   chat: {
     enabled: true,
-    playground: true,
+    playground: false,
     chat: true,
   },
   console: {
     enabled: true,
     detail: true,
+    boards: true,
+    model_square: true,
     token: true,
+    channel_status: true,
     log: true,
     audit: true,
     midjourney: true,
@@ -73,15 +82,21 @@ export const SIDEBAR_MODULES_DEFAULT: SidebarModulesAdminConfig = {
     topup: true,
     personal: true,
     security: true,
+    support: true,
+    docs: true,
   },
   admin: {
     enabled: true,
     channel: true,
     models: true,
+    deployments: true,
     redemption: true,
     user: true,
     setting: true,
     subscription: true,
+    system_info: true,
+    task_plugins: true,
+    request_processing: true,
   },
 }
 
@@ -151,6 +166,10 @@ export function parseHeaderNavModules(
     }
 
     Object.entries(parsed).forEach(([key, raw]) => {
+      if (key === 'canvasUrl' || key === 'workbenchUrl') {
+        result[key] = creationDestination(raw)
+        return
+      }
       if (key === 'pricing') {
         result.pricing = parseAccessModule(raw, base.pricing)
         return
@@ -170,6 +189,7 @@ export function parseHeaderNavModules(
       }
     })
 
+    if (!Object.hasOwn(parsed, 'creation')) result.creation = result.console
     return result
   } catch {
     return base
@@ -217,6 +237,8 @@ export function parseSidebarModulesAdmin(
       result[sectionKey] = sectionConfig
     })
 
+    inheritLegacySidebarSwitches(result)
+
     // Merge defaults to ensure expected sections exist
     Object.entries(defaults).forEach(([sectionKey, config]) => {
       if (!result[sectionKey]) {
@@ -241,4 +263,49 @@ export function serializeSidebarModulesAdmin(
   config: SidebarModulesAdminConfig
 ): string {
   return JSON.stringify(config)
+}
+
+function inheritLegacySidebarSwitches(config: SidebarModulesAdminConfig): void {
+  if (
+    config.console &&
+    !('boards' in config.console) &&
+    'detail' in config.console
+  ) {
+    config.console.boards = config.console.detail
+  }
+  if (
+    config.admin &&
+    !('deployments' in config.admin) &&
+    'models' in config.admin
+  ) {
+    config.admin.deployments = config.admin.models
+  }
+}
+
+export function parseSidebarModulesUser(
+  value: unknown
+): SidebarModulesAdminConfig | null {
+  if (!value) return null
+  try {
+    const raw: unknown = typeof value === 'string' ? JSON.parse(value) : value
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+    const sections = Object.entries(raw).flatMap(([sectionKey, section]) => {
+      if (!section || typeof section !== 'object' || Array.isArray(section)) {
+        return []
+      }
+      const entries = Object.entries(section).map(
+        ([key, item]) => [key, toBoolean(item, true)] as const
+      )
+      const normalized = {
+        enabled: true,
+        ...Object.fromEntries(entries),
+      } as SidebarSectionConfig
+      return [[sectionKey, normalized] as const]
+    })
+    const config = Object.fromEntries(sections)
+    inheritLegacySidebarSwitches(config)
+    return config
+  } catch {
+    return null
+  }
 }

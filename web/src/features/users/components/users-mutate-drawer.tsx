@@ -301,6 +301,7 @@ export function UsersMutateDrawer({
           <Form {...form}>
             <form
               id='user-form'
+              noValidate
               onSubmit={form.handleSubmit(onSubmit)}
               className={sideDrawerFormClassName()}
             >
@@ -489,6 +490,53 @@ export function UsersMutateDrawer({
                         <FormMessage />
                       </FormItem>
                     )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name='max_concurrency'
+                    render={(fieldProps) => {
+                      const rawValue = fieldProps.field.value
+                      const displayValue =
+                        typeof rawValue === 'number' &&
+                        Number.isFinite(rawValue)
+                          ? rawValue
+                          : ''
+                      return (
+                        <FormItem>
+                          <FormLabel>{t('Max concurrency')}</FormLabel>
+                          <FormControl>
+                            <Input
+                              type='number'
+                              min={0}
+                              max={100000}
+                              step={1}
+                              name={fieldProps.field.name}
+                              ref={fieldProps.field.ref}
+                              onBlur={fieldProps.field.onBlur}
+                              value={displayValue}
+                              onChange={(event) => {
+                                const nextValue =
+                                  event.currentTarget.valueAsNumber
+                                if (Number.isFinite(nextValue)) {
+                                  fieldProps.field.onChange(nextValue)
+                                  return
+                                }
+                                if (event.currentTarget.value === '') {
+                                  fieldProps.field.onChange(0)
+                                }
+                              }}
+                            />
+                          </FormControl>
+                          <FormDescription>
+                            {t(
+                              'Maximum simultaneous in-flight model requests; 0 follows group or global concurrency settings'
+                            )}
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )
+                    }}
                   />
 
                   <FormField

@@ -1,0 +1,197 @@
+.overview-report-period .dash-period-title {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--ink-strong);
+}
+.overview-report-period .console-subtab-btn,
+.overview-report-trend .dash-metric-pill {
+  border: 0;
+}
+.overview-report-period .console-subtab-btn {
+  height: 30px;
+}
+.overview-report-trend .dash-metric-pill {
+  height: 24px;
+}
+.overview-report-trend .dash-panel-head {
+  flex-wrap: wrap;
+}
+.overview-report-trend .dash-chart-svg:focus-visible,
+.overview-report-distributions .dash-pie-item:focus-visible {
+  outline: 2px solid var(--ink-strong);
+  outline-offset: 2px;
+}
+.overview-report-mid > :only-child {
+  grid-column: 1 / -1;
+}
+.overview-report-state {
+  min-height: 100px;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  color: var(--ink-muted);
+  text-align: center;
+  font-size: 13px;
+}
+.overview-report-distributions .dash-panel-head {
+  flex-wrap: wrap;
+}
+.overview-report-distributions .dash-pie-layout {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+.overview-report-distributions .dash-pie-wrap {
+  position: relative;
+  width: 152px;
+  height: 152px;
+  flex-shrink: 0;
+  margin-inline: auto;
+}
+.overview-report-distributions .dash-pie-svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.overview-report-distributions .dash-pie-seg {
+  transition:
+    opacity 150ms,
+    stroke-width 150ms;
+}
+.overview-report-distributions .dash-pie-seg[data-linked='true'] {
+  cursor: pointer;
+}
+.overview-report-distributions .dash-pie-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  text-align: center;
+  padding: 0 18px;
+}
+.overview-report-distributions .dash-pie-center-val {
+  font: 500 16px/1.15 var(--font-mono);
+  color: var(--ink-strong);
+}
+.overview-report-distributions .dash-pie-center-sub {
+  font-size: 11px;
+  color: var(--ink-muted);
+  margin-top: 3px;
+  max-width: 104px;
+}
+.overview-report-distributions .dash-pie-center-sub,
+.overview-report-distributions .dash-pie-name,
+.overview-report-distributions .dash-vendor-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.overview-report-distributions .dash-pie-legend {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.overview-report-distributions .dash-pie-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 6px;
+  margin: 0 -6px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: normal;
+  text-align: start;
+}
+.overview-report-distributions .dash-pie-item:hover,
+.overview-report-distributions .dash-pie-item:focus-visible {
+  background: var(--bg-cream);
+}
+.overview-report-distributions .dash-pie-item-left,
+.overview-report-distributions .dash-vendor-id {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.overview-report-distributions .dash-pie-swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.overview-report-distributions .dash-pie-name {
+  font-family: var(--font-mono);
+  color: var(--ink-strong);
+}
+.overview-report-distributions .dash-pie-stat,
+.overview-report-distributions .dash-vendor-nums {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--ink-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.overview-report-distributions .dash-vendor-list,
+.overview-report-distributions .dash-vendor-row {
+  display: flex;
+  flex-direction: column;
+}
+.overview-report-distributions .dash-vendor-list {
+  gap: 11px;
+}
+.overview-report-distributions .dash-vendor-row {
+  gap: 5px;
+}
+.overview-report-distributions .dash-vendor-top,
+.overview-report-distributions .dash-vendor-sub {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.overview-report-distributions .dash-vendor-top {
+  font-size: 12.5px;
+}
+.overview-report-distributions .dash-vendor-id,
+.overview-report-distributions .dash-vendor-nums strong {
+  font-weight: 500;
+  color: var(--ink-strong);
+}
+.overview-report-distributions .dash-vendor-logo {
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  background: var(--bg-cream);
+  box-shadow: inset 0 0 0 var(--hairline) var(--ring-color);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.overview-report-distributions .dash-vendor-nums {
+  font-size: 12px;
+}
+.overview-report-distributions .dash-vendor-sub {
+  font: 11px/normal var(--font-mono);
+  color: var(--ink-muted);
+}
+.overview-report-distributions .dash-share-fill {
+  display: block;
+}
+@media (max-width: 960px) {
+  .overview-report-distributions .dash-pie-layout {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .overview-report-distributions .dash-pie-seg {
+    transition: none;
+  }
+}

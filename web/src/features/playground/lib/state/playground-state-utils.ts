@@ -16,24 +16,43 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import type { CreationPreset } from '@/features/creation/presets'
+
 import { DEFAULT_CONFIG, DEFAULT_PARAMETER_ENABLED } from '../../constants'
-import type { Message, ParameterEnabled, PlaygroundConfig } from '../../types'
-import {
-  loadConfig,
-  loadMessages,
-  loadParameterEnabled,
-} from '../storage/storage'
+import type { Message, PlaygroundConfig } from '../../types'
+import { PLAYGROUND_PARAMETER_CONTROLS } from '../parameters/playground-parameters'
+import { loadConfig, loadMessages } from '../storage/storage'
 
 export type MessageStateUpdater =
   | Message[]
   | ((previousMessages: Message[]) => Message[])
 
-export function getInitialPlaygroundConfig(): PlaygroundConfig {
-  return { ...DEFAULT_CONFIG, ...loadConfig() }
-}
+export function getInitialPlaygroundConfig(
+  preset?: CreationPreset,
+  initialGroup?: string
+): PlaygroundConfig {
+  const saved = loadConfig()
+  const config = {
+    ...DEFAULT_CONFIG,
+    ...saved,
+    ...(initialGroup ? { group: initialGroup } : {}),
+  }
+  if (preset?.mode !== 'chat') return config
 
-export function getInitialParameterEnabled(): ParameterEnabled {
-  return { ...DEFAULT_PARAMETER_ENABLED, ...loadParameterEnabled() }
+  const parameters = preset.parameters ?? {}
+  const parameterEnabled = { ...DEFAULT_PARAMETER_ENABLED }
+  for (const { key } of PLAYGROUND_PARAMETER_CONTROLS) {
+    parameterEnabled[key] = parameters[key] !== undefined
+  }
+  return {
+    ...DEFAULT_CONFIG,
+    group: config.group,
+    stream: config.stream,
+    historyTurns: config.historyTurns,
+    model: preset.model,
+    ...parameters,
+    parameterEnabled,
+  }
 }
 
 export function getInitialMessages(): Message[] {

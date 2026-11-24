@@ -28,7 +28,11 @@ import type { ApiKey, ApiKeyFormData } from '../types'
 // Form Schema
 // ============================================================================
 
-export function getApiKeyFormSchema(t: TFunction, maxAutoGroups = 5) {
+export function getApiKeyFormSchema(
+  t: TFunction,
+  maxAutoGroups = 5,
+  requireExplicitGroup = false
+) {
   const autoGroupLimit =
     Number.isInteger(maxAutoGroups) && maxAutoGroups > 0 ? maxAutoGroups : 5
 
@@ -48,6 +52,14 @@ export function getApiKeyFormSchema(t: TFunction, maxAutoGroups = 5) {
       tokenCount: z.number().min(1).optional(),
     })
     .superRefine((data, ctx) => {
+      if (requireExplicitGroup && !(data.group ?? '').trim()) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['group'],
+          message: t('Please select a billing group'),
+        })
+      }
+
       if (data.group === 'auto') {
         if (
           data.auto_groups_mode === 'custom' &&

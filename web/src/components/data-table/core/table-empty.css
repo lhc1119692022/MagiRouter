@@ -1,0 +1,9 @@
+[data-slot='table-container']:has([data-empty-state]) {
+  container-type: inline-size;
+}
+
+[data-empty-state] > [data-slot='empty'] {
+  position: sticky;
+  inset-inline-start: 0;
+  inline-size: min(100%, 100cqi);
+}

@@ -28,6 +28,9 @@ import type { UpdateOptionRequest, UpdatePasskeyDomainsRequest } from '../types'
 
 // Configuration keys that require status refresh
 const STATUS_RELATED_KEYS = new Set([
+  'SystemName',
+  'Logo',
+  'Footer',
   'HeaderNavModules',
   'SidebarModulesAdmin',
   'Notice',
@@ -41,6 +44,9 @@ const STATUS_RELATED_KEYS = new Set([
   'general_setting.quota_display_type',
   'general_setting.custom_currency_symbol',
   'general_setting.custom_currency_exchange_rate',
+  'general_setting.docs_link',
+  'DataExportEnabled',
+  'DataExportDefaultTime',
   'oidc.display_name',
   'ServerAddress',
   'passkey.enabled',
@@ -61,9 +67,21 @@ export function useUpdateOption() {
       if (data.success) {
         // Always refresh system-options
         queryClient.invalidateQueries({ queryKey: ['system-options'] })
+        if (variables.key === 'console_setting.creation_presets') {
+          void queryClient.invalidateQueries({ queryKey: ['creation-presets'] })
+        }
+        if (variables.key === 'console_setting.official_model_prices') {
+          void queryClient.invalidateQueries({ queryKey: ['pricing'] })
+        }
 
         // If updating frontend-display-related config, also refresh status
-        if (STATUS_RELATED_KEYS.has(variables.key)) {
+        if (variables.key.startsWith('console_setting.uptime_kuma_')) {
+          void queryClient.invalidateQueries({ queryKey: ['uptime-status'] })
+        }
+        if (
+          variables.key.startsWith('console_setting.') ||
+          STATUS_RELATED_KEYS.has(variables.key)
+        ) {
           queryClient.invalidateQueries({ queryKey: ['status'] })
           try {
             window.localStorage.removeItem('status')

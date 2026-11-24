@@ -1,6 +1,8 @@
 import { Link, useNavigate } from '@tanstack/react-router'
 import { useCallback, useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
+import { useTopNavLinks } from '@/hooks/use-top-nav-links'
 import { copyToClipboard } from '@/lib/copy-to-clipboard'
 
 import {
@@ -22,6 +24,8 @@ interface IntegrationSectionProps {
 
 export function IntegrationSection(props: IntegrationSectionProps) {
   const navigate = useNavigate()
+  const { t } = useTranslation()
+  const showStudio = useTopNavLinks().some((link) => link.href === '/create')
   const [protocol, setProtocol] = useState<ProtocolId>('responses')
   const [language, setLanguage] = useState<SnippetLanguage>('curl')
   const [copiedCode, setCopiedCode] = useState(false)
@@ -70,10 +74,7 @@ export function IntegrationSection(props: IntegrationSectionProps) {
         <div className='section-head'>
           <div>
             <h2 className='el-h2'>三步快速完成接入</h2>
-            <p
-              className='el-body-sm'
-              style={{ marginTop: 8, maxWidth: 740 }}
-            >
+            <p className='el-body-sm' style={{ marginTop: 8, maxWidth: 740 }}>
               无需多平台注册与反复适配，用一把密钥即可快速使用全球顶级语言、图片、视频与音频模型。
             </p>
           </div>
@@ -84,15 +85,17 @@ export function IntegrationSection(props: IntegrationSectionProps) {
             >
               {props.isAuthenticated ? '进入控制台 →' : '立即开始 →'}
             </Link>
-            <Link
-              to={props.isAuthenticated ? '/playground' : '/sign-in'}
-              search={
-                props.isAuthenticated ? undefined : { redirect: '/playground' }
-              }
-              className='el-btn el-btn-lg el-btn-white'
-            >
-              进入 AI 创作 →
-            </Link>
+            {showStudio && (
+              <Link
+                to={props.isAuthenticated ? '/create' : '/sign-in'}
+                search={
+                  props.isAuthenticated ? undefined : { redirect: '/create' }
+                }
+                className='el-btn el-btn-lg el-btn-white'
+              >
+                {t('AI Studio')} →
+              </Link>
+            )}
             <Link to='/docs' className='el-btn el-btn-lg el-btn-white'>
               接入文档
             </Link>
@@ -262,7 +265,10 @@ export function IntegrationSection(props: IntegrationSectionProps) {
             >
               <div>
                 <div className='el-eyebrow'>{activeToolConfig.eyebrow}</div>
-                <h2 className='el-h3' style={{ margin: '4px 0 0', fontSize: 21 }}>
+                <h2
+                  className='el-h3'
+                  style={{ margin: '4px 0 0', fontSize: 21 }}
+                >
                   {activeToolConfig.title}
                 </h2>
               </div>

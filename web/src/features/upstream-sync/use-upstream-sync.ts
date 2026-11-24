@@ -33,6 +33,7 @@ import {
   describeSyncState,
   parseBuildMeta,
   type SyncState,
+  type UpstreamCommit,
 } from './lib'
 
 export const UPSTREAM_SYNC_INTERVAL = 30 * 60 * 1000
@@ -72,8 +73,7 @@ export function useUpstreamSync() {
         if (signal.aborted) throw error
         return {
           commits: [],
-          error:
-            error instanceof UpstreamFetchError ? error.code : 'network',
+          error: error instanceof UpstreamFetchError ? error.code : 'network',
         }
       }
     },
@@ -89,7 +89,7 @@ export function useUpstreamSync() {
     enabled: isAdmin,
     meta,
     commits,
-    latest: commits[0] ?? null,
+    latest: (commits[0] as UpstreamCommit | undefined) ?? null,
     gap,
     state,
     error: query.data?.error ?? null,

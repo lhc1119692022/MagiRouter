@@ -44,6 +44,7 @@ import {
 } from '../constants'
 import type { User } from '../types'
 import { DataTableRowActions } from './data-table-row-actions'
+import { UserConcurrencyCell } from './user-concurrency-dialog'
 import { UserQuotaCell } from './user-quota-cell'
 
 export function useUsersColumns(): ColumnDef<User>[] {
@@ -214,6 +215,14 @@ export function useUsersColumns(): ColumnDef<User>[] {
         },
         size: 140,
         meta: { mobileOrder: 30 },
+      },
+      {
+        id: 'max_concurrency',
+        header: t('Concurrency'),
+        cell: ({ row }) => <UserConcurrencyCell user={row.original} />,
+        size: 150,
+        enableSorting: false,
+        meta: { mobileOrder: 35 },
       },
       {
         accessorKey: 'role',

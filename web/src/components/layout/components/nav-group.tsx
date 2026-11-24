@@ -65,13 +65,42 @@ export function NavGroup({ title, items }: NavGroupProps) {
   const href = useLocation({ select: (location) => location.href })
 
   return (
-    <SidebarGroup className='px-2 py-1'>
-      <SidebarGroupLabel className='text-muted-foreground/70 px-2 text-[11px] font-medium tracking-wider uppercase'>
-        {title}
-      </SidebarGroupLabel>
+    <SidebarGroup>
+      {title ? <SidebarGroupLabel>{title}</SidebarGroupLabel> : null}
       <SidebarMenu>
         {items.map((item) => {
-          const key = `${item.title}-${item.url || item.type}`
+          const key =
+            item.sidebarKey ?? `${item.title}-${item.url || item.type}`
+          if (item.hidden) {
+            return (
+              <SidebarMenuItem
+                key={key}
+                hidden
+                className='hidden'
+                data-sidebar-key={item.sidebarKey}
+                aria-label={item.title}
+              >
+                {item.icon && <item.icon aria-hidden='true' />}
+                <span>{item.title}</span>
+              </SidebarMenuItem>
+            )
+          }
+          if (item.disabled) {
+            return (
+              <SidebarMenuItem key={key}>
+                <SidebarMenuButton
+                  disabled
+                  aria-disabled='true'
+                  title={item.title}
+                  data-sidebar-key={item.sidebarKey}
+                  tooltip={item.title}
+                >
+                  {item.icon && <item.icon className='shrink-0' />}
+                  <span className='min-w-0 flex-1 truncate'>{item.title}</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )
+          }
 
           // Special handling: dynamic chat presets list
           if (item.type === 'chat-presets') {
@@ -121,23 +150,31 @@ function NavBadge({ children }: { children: ReactNode }) {
  * Sidebar menu link item
  */
 function SidebarMenuLink({ item, href }: { item: NavLink; href: string }) {
-  const { isMobile, setOpenMobile } = useSidebar()
+  const { isMobile } = useSidebar()
+  const [path, hash] = href.split('#')
+  const active = checkIsActive(path, item) && (!item.hash || item.hash === hash)
   return (
     <SidebarMenuItem>
       <SidebarMenuButton
-        isActive={checkIsActive(href, item)}
+        isActive={active}
+        data-sidebar-key={item.sidebarKey}
         tooltip={item.title}
         render={
           <Link
             to={item.url}
+            hash={item.hash}
+            activeOptions={{ includeHash: Boolean(item.hash) }}
+            aria-current={active ? 'page' : undefined}
+            title={item.title}
             preload={isMobile ? false : undefined}
-            onClick={() => setOpenMobile(false)}
           />
         }
       >
         {item.icon && <item.icon className='shrink-0' />}
         <span className='min-w-0 flex-1 truncate'>{item.title}</span>
-        {item.badge && <NavBadge>{item.badge}</NavBadge>}
+        {(item.badge || item.hint) && (
+          <NavBadge>{item.badge || item.hint}</NavBadge>
+        )}
       </SidebarMenuButton>
     </SidebarMenuItem>
   )
@@ -153,7 +190,7 @@ function SidebarMenuCollapsible({
   item: NavCollapsible
   href: string
 }) {
-  const { isMobile, setOpenMobile } = useSidebar()
+  const { isMobile } = useSidebar()
   // 检查当前路径是否匹配子菜单项
   const isSubItemActive = checkIsActive(href, item)
   // 使用受控状态，初始值基于当前路径是否匹配
@@ -193,7 +230,6 @@ function SidebarMenuCollapsible({
                   <Link
                     to={subItem.url}
                     preload={isMobile ? false : undefined}
-                    onClick={() => setOpenMobile(false)}
                   />
                 }
               >

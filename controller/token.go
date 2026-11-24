@@ -13,6 +13,7 @@ import (
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"github.com/gin-gonic/gin"
 	"github.com/shopspring/decimal"
@@ -87,6 +88,41 @@ func getTokenRequestUserGroup(c *gin.Context) (string, error) {
 		return userGroup, nil
 	}
 	return model.GetUserGroup(c.GetInt("id"), false)
+}
+
+func validateTokenBillingGroup(c *gin.Context, tokenGroup string) bool {
+	if !ratio_setting.HasUserManagementGroups() {
+		return true
+	}
+	group := strings.TrimSpace(tokenGroup)
+	if group != "" && ratio_setting.IsUserManagementGroup(group) {
+		common.ApiErrorT(c, "Group {{group}} is for user management only and cannot be used as a billing group", map[string]any{"group": group})
+		return false
+	}
+	userGroup, err := getTokenRequestUserGroup(c)
+	if err != nil {
+		common.ApiError(c, err)
+		return false
+	}
+	if !ratio_setting.IsUserManagementGroup(userGroup) {
+		return true
+	}
+	if group == "" {
+		common.ApiErrorT(c, "Your account group is for user management only. Please select a billing group for this API key.")
+		return false
+	}
+	if group == "auto" {
+		if !service.GroupInUserUsableGroups(userGroup, "auto") {
+			common.ApiErrorT(c, "Group {{group}} is unavailable or unauthorized", map[string]any{"group": group})
+			return false
+		}
+		return true
+	}
+	if !service.IsUserSelectableGroup(userGroup, group) {
+		common.ApiErrorT(c, "Group {{group}} is unavailable or unauthorized", map[string]any{"group": group})
+		return false
+	}
+	return true
 }
 
 func setTokenAutoGroups(c *gin.Context, token *model.Token, groups []string) bool {
@@ -333,6 +369,9 @@ func AddToken(c *gin.Context) {
 		common.ApiErrorT(c, "Maximum number of tokens reached ({{max}})", map[string]any{"max": maxTokens})
 		return
 	}
+	if !validateTokenBillingGroup(c, token.Group) {
+		return
+	}
 	if token.Group == "auto" {
 		if !setTokenAutoGroups(c, &token, request.AutoGroups.Groups) {
 			return
@@ -374,6 +413,7 @@ func AddToken(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
+		"data":    gin.H{"id": cleanToken.Id},
 	})
 }
 
@@ -448,6 +488,9 @@ func UpdateToken(c *gin.Context) {
 	if statusOnly != "" {
 		cleanToken.Status = token.Status
 	} else {
+		if !validateTokenBillingGroup(c, token.Group) {
+			return
+		}
 		// If you add more fields, please also update token.Update()
 		cleanToken.Name = token.Name
 		cleanToken.ExpiredTime = token.ExpiredTime

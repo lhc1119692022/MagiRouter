@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { Shield, Trash2 } from 'lucide-react'
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -37,6 +37,7 @@ type AccountActionCardProps = {
 export function AccountActionCard(props: AccountActionCardProps) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
+  const descriptionId = useId()
   const actions = {
     password: {
       title: t(
@@ -58,22 +59,23 @@ export function AccountActionCard(props: AccountActionCardProps) {
   const action = actions[props.action]
   return (
     <>
-      <Card
-        data-card-hover='false'
-        className={`gap-0 py-0 ${props.action === 'delete' ? 'ring-destructive/30' : ''}`}
-      >
-        <div className='flex items-center gap-3 px-3 py-2.5 sm:px-4'>
-          <IconBadge tone='neutral' size='sm'>
+      <Card data-card-hover='false' data-action={props.action}>
+        <div className='identity-action-row'>
+          <IconBadge
+            tone={props.action === 'delete' ? 'destructive' : 'neutral'}
+            size='sm'
+          >
             <action.icon />
           </IconBadge>
           <div className='min-w-0 flex-1 space-y-0.5'>
-            <p className='text-sm font-medium'>{action.title}</p>
-            <p className='text-muted-foreground text-xs'>
+            <h3 className='identity-action-title'>{action.title}</h3>
+            <p id={descriptionId} className='identity-action-description'>
               {action.description}
             </p>
           </div>
           <Button
             type='button'
+            aria-describedby={descriptionId}
             size='sm'
             variant={props.action === 'delete' ? 'destructive' : 'outline'}
             onClick={() => setOpen(true)}

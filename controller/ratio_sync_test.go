@@ -1,18 +1,20 @@
 package controller
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/QuantumNous/new-api/setting/config"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"net/http"
-	"net/http/httptest"
 )
 
 func TestPricingSyncExpressionPriority(t *testing.T) {
@@ -68,6 +70,7 @@ func TestRatioConfigExportsEffectiveExpressions(t *testing.T) {
 }
 
 func TestPricingSyncCompleteSourcesAndArrayFormats(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
 	before := config.GlobalConfig.ExportAllConfigs()
 	oldRatios, oldCompletion := ratio_setting.ModelRatio2JSONString(), ratio_setting.CompletionRatio2JSONString()
 	t.Cleanup(func() {
@@ -108,6 +111,7 @@ func TestPricingSyncCompleteSourcesAndArrayFormats(t *testing.T) {
 		_, _ = w.Write(encoded)
 	}))
 	defer server.Close()
+	require.NoError(t, db.Create(&[]model.Channel{{Id: 1, BaseURL: &server.URL}, {Id: 2, BaseURL: &server.URL}}).Error)
 	var response struct {
 		Success bool
 		Data    struct {
@@ -148,4 +152,47 @@ func TestPricingSyncCompleteSourcesAndArrayFormats(t *testing.T) {
 	assert.NotContains(t, response.Data.Prices, "sync-unpriced")
 	assert.NotContains(t, response.Data.Prices, "sync-invalid-expression")
 	assert.NotContains(t, response.Data.Differences, "sync-already")
+}
+
+func TestPricingSourceClientUsesOnlyTheSavedOrigin(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	origin := "http://pricing-fixture.invalid"
+	proxy := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		assert.Equal(t, origin, request.URL.Scheme+"://"+request.URL.Host)
+		if request.URL.Path == "/v1/models" {
+			assert.Equal(t, "Bearer channel-fixture", request.Header.Get("Authorization"))
+		} else {
+			assert.Empty(t, request.Header.Get("Authorization"))
+		}
+		writer.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(proxy.Close)
+	t.Cleanup(func() { service.InvalidateProxyClient(proxy.URL) })
+	channel := &model.Channel{Name: "pricing fixture", BaseURL: &origin, Key: "channel-fixture"}
+	channel.SetSetting(dto.ChannelSettings{Proxy: proxy.URL})
+	require.NoError(t, db.Create(channel).Error)
+	public := &http.Client{}
+	for _, endpoint := range []string{"/api/pricing", "openrouter"} {
+		path := endpoint
+		if endpoint == "openrouter" {
+			path = "/v1/models"
+		}
+		request, err := http.NewRequest(http.MethodGet, origin+path, nil)
+		require.NoError(t, err)
+		client, err := pricingSourceClient(request, dto.UpstreamDTO{ID: channel.Id, Endpoint: endpoint}, public)
+		require.NoError(t, err)
+		response, err := client.Do(request)
+		require.NoError(t, err)
+		response.Body.Close()
+		require.Equal(t, http.StatusNoContent, response.StatusCode)
+	}
+	request, err := http.NewRequest(http.MethodGet, "https://external-fixture.invalid/pricing", nil)
+	require.NoError(t, err)
+	client, err := pricingSourceClient(request, dto.UpstreamDTO{ID: channel.Id}, public)
+	require.NoError(t, err)
+	require.Same(t, public, client)
+	require.Empty(t, request.Header.Get("Authorization"))
+	_, err = pricingSourceClient(request, dto.UpstreamDTO{ID: channel.Id, Endpoint: "openrouter"}, public)
+	require.Error(t, err)
+	require.Empty(t, request.Header.Get("Authorization"))
 }

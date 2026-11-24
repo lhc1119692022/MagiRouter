@@ -144,18 +144,25 @@ function buildLineSparkline(values?: number[]) {
   }
 }
 
-function LineSparkline(props: { values?: number[]; tone: StatCardTone }) {
+export function LineSparkline(props: {
+  values?: number[]
+  tone: StatCardTone
+  className?: string
+}) {
   const rawGradientId = useId()
   const gradientId = `stat-card-line-${rawGradientId.replaceAll(':', '')}`
   const paths = buildLineSparkline(props.values)
 
-  if (!paths) return <div className='h-8' aria-hidden='true' />
+  if (!paths) {
+    return <div className={cn('h-8', props.className)} aria-hidden='true' />
+  }
 
   return (
     <div
       className={cn(
         'relative h-8 overflow-hidden rounded-lg',
-        LINE_TONE_CLASSES[props.tone]
+        LINE_TONE_CLASSES[props.tone],
+        props.className
       )}
       aria-hidden='true'
     >

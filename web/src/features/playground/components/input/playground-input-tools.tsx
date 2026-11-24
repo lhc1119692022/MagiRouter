@@ -16,75 +16,45 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { GlobeIcon, PaperclipIcon, Trash2Icon } from 'lucide-react'
-import { useState } from 'react'
+import { PaperclipIcon, Trash2Icon } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import {
   PromptInputButton,
   PromptInputTools,
+  usePromptInputAttachments,
 } from '@/components/ai-elements/prompt-input'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 
-import {
-  ATTACHMENT_ACTIONS,
-  getAttachmentActionNotice,
-  getSearchActionNotice,
-} from '../../lib'
-import type { ParameterEnabled, PlaygroundConfig } from '../../types'
-import { PlaygroundParameterPanel } from './playground-parameter-panel'
-
 type PlaygroundInputToolsProps = {
-  config: PlaygroundConfig
+  acceptsChatImages: boolean
+  onImageCountChange?: (count: number) => void
   disabled?: boolean
   hasMessages?: boolean
   onClearMessages?: () => void
-  onConfigChange: <K extends keyof PlaygroundConfig>(
-    key: K,
-    value: PlaygroundConfig[K]
-  ) => void
-  onParameterEnabledChange: (
-    key: keyof ParameterEnabled,
-    value: boolean
-  ) => void
-  parameterEnabled: ParameterEnabled
 }
 
 export function PlaygroundInputTools({
-  config,
+  acceptsChatImages,
+  onImageCountChange,
   disabled,
   hasMessages = false,
   onClearMessages,
-  onConfigChange,
-  onParameterEnabledChange,
-  parameterEnabled,
 }: PlaygroundInputToolsProps) {
   const { t } = useTranslation()
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false)
-
-  const handleFileAction = (action: string) => {
-    const notice = getAttachmentActionNotice(action)
-    toast.info(t(notice.title), {
-      description: notice.description,
-    })
-  }
-
-  const handleSearchAction = () => {
-    const notice = getSearchActionNotice()
-    toast.info(t(notice.title))
-  }
+  const attachments = usePromptInputAttachments()
+  useEffect(() => {
+    onImageCountChange?.(attachments.files.length)
+    return () => onImageCountChange?.(0)
+  }, [attachments.files.length, onImageCountChange])
 
   const handleClearMessages = () => {
     onClearMessages?.()
@@ -92,89 +62,55 @@ export function PlaygroundInputTools({
     toast.success(t('Conversation cleared'))
   }
 
+  const showClear = hasMessages && Boolean(onClearMessages)
+  if (!acceptsChatImages && !showClear) {
+    return null
+  }
+
   return (
     <>
-      <PromptInputTools className='bg-background/70 border-border/60 rounded-lg border p-1 shadow-xs'>
-        <Tooltip>
-          <DropdownMenu>
+      <PromptInputTools>
+        {acceptsChatImages && (
+          <Tooltip>
             <TooltipTrigger
               render={
-                <DropdownMenuTrigger
-                  render={
-                    <PromptInputButton
-                      aria-label={t('Attach')}
-                      className='text-muted-foreground hover:text-foreground hover:bg-muted/70 font-medium'
-                      disabled={disabled}
-                      variant='ghost'
-                    />
-                  }
+                <PromptInputButton
+                  aria-label={t('Upload photo')}
+                  className='pg-composer-icon-btn text-muted-foreground hover:text-foreground hover:bg-muted/70 font-medium'
+                  disabled={disabled}
+                  onClick={attachments.openFileDialog}
+                  variant='ghost'
+                />
+              }
+            >
+              <PaperclipIcon size={15} />
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>{t('Upload photo')} · JPEG, PNG, WebP · 2 × 4 MiB</p>
+            </TooltipContent>
+          </Tooltip>
+        )}
+
+        {showClear && (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <PromptInputButton
+                  aria-label={t('Clear chat history')}
+                  className='pg-composer-icon-btn text-muted-foreground hover:text-destructive hover:bg-destructive/10 font-medium'
+                  disabled={disabled}
+                  onClick={() => setClearConfirmOpen(true)}
+                  variant='ghost'
                 >
-                  <PaperclipIcon size={16} />
-                </DropdownMenuTrigger>
+                  <Trash2Icon size={15} />
+                </PromptInputButton>
               }
             />
             <TooltipContent>
-              <p>{t('Attach')}</p>
+              <p>{t('Clear chat history')}</p>
             </TooltipContent>
-            <DropdownMenuContent align='start'>
-              {ATTACHMENT_ACTIONS.map(({ action, icon: Icon, label }) => (
-                <DropdownMenuItem
-                  key={action}
-                  onClick={() => handleFileAction(action)}
-                >
-                  <Icon className='mr-2' size={16} />
-                  {t(label)}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </Tooltip>
-
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <PromptInputButton
-                aria-label={t('Search')}
-                className='text-muted-foreground hover:text-foreground hover:bg-muted/70 font-medium'
-                disabled={disabled}
-                onClick={handleSearchAction}
-                variant='ghost'
-              >
-                <GlobeIcon size={16} />
-              </PromptInputButton>
-            }
-          />
-          <TooltipContent>
-            <p>{t('Search')}</p>
-          </TooltipContent>
-        </Tooltip>
-
-        <PlaygroundParameterPanel
-          config={config}
-          disabled={disabled}
-          onConfigChange={onConfigChange}
-          onParameterEnabledChange={onParameterEnabledChange}
-          parameterEnabled={parameterEnabled}
-        />
-
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <PromptInputButton
-                aria-label={t('Clear chat history')}
-                className='text-muted-foreground hover:text-destructive hover:bg-destructive/10 font-medium'
-                disabled={disabled || !hasMessages || !onClearMessages}
-                onClick={() => setClearConfirmOpen(true)}
-                variant='ghost'
-              >
-                <Trash2Icon size={16} />
-              </PromptInputButton>
-            }
-          />
-          <TooltipContent>
-            <p>{t('Clear chat history')}</p>
-          </TooltipContent>
-        </Tooltip>
+          </Tooltip>
+        )}
       </PromptInputTools>
 
       <ConfirmDialog

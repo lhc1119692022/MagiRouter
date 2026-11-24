@@ -31,19 +31,20 @@ const searchSchema = z.object({
 export const Route = createFileRoute('/(auth)/sign-in')({
   component: SignIn,
   validateSearch: searchSchema,
-  beforeLoad: async ({ search }) => {
-    // 根 guard 可能因为没有会话提示而跳过了 refresh。此处必须回源确认，
-    // 否则持有有效 Refresh Cookie 的用户会被要求重新输入密码。
-    await resolveAuthentication()
-
+  beforeLoad: ({ search }) => {
     const { auth } = useAuthStore.getState()
 
-    // 如果已经有用户信息，说明已登录
+    // 内存里已经有会话时立刻跳走，不做任何网络等待。
     if (auth.user) {
       const target =
         sanitizeAuthRedirect(search?.redirect, window.location.origin) ??
         '/dashboard'
       throw redirect({ href: target, replace: true })
     }
+
+    // 冷启动可能只有 Refresh Cookie 而没有内存会话：后台复核一次即可。
+    // 这里刻意不 await —— 刷新一旦被网络或浏览器锁拖住，等待就会让整个
+    // 登录页停在“检查中”渲染成白屏；结果回来后由页面自身完成跳转。
+    void resolveAuthentication()
   },
 })

@@ -1,7 +1,9 @@
-import { Link, useNavigate } from '@tanstack/react-router'
+import { Link } from '@tanstack/react-router'
 import { useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import { Skeleton } from '@/components/ui/skeleton'
+import { getModelPlaygroundModes } from '@/features/pricing/lib/filters'
 import { isTokenBasedModel } from '@/features/pricing/lib/model-helpers'
 import { formatPrice, formatRequestPrice } from '@/features/pricing/lib/price'
 import type { PricingModel } from '@/features/pricing/types'
@@ -12,17 +14,6 @@ interface ModelsSectionProps {
   isLoading: boolean
   priceRate: number
   usdExchangeRate: number
-  isAuthenticated: boolean
-}
-
-function inferModelTypeLabel(model: PricingModel): string {
-  const combined = `${model.model_name} ${model.tags ?? ''} ${model.description ?? ''}`
-  if (/video|seedance|kling|veo|sora|minimax/i.test(combined)) return '视频生成'
-  if (/image|flux|dall|midjourney|seedream|banana/i.test(combined)) {
-    return '图片生成'
-  }
-  if (/audio|tts|whisper|speech|transcrib/i.test(combined)) return '音频生成'
-  return '语言模型'
 }
 
 function pickVendorTint(vendorName?: string): { bg: string; color: string } {
@@ -114,8 +105,17 @@ function buildPriceSummary(
 }
 
 export function ModelsSection(props: ModelsSectionProps) {
-  const navigate = useNavigate()
-  const featured = useMemo(() => pickFeaturedModels(props.models), [props.models])
+  const { t } = useTranslation()
+  const modeLabels = {
+    chat: t('Text Chat'),
+    image: t('Image Generation'),
+    audio: t('Audio'),
+    video: t('Video Generation'),
+  }
+  const featured = useMemo(
+    () => pickFeaturedModels(props.models),
+    [props.models]
+  )
 
   if (!props.isLoading && props.models.length === 0) return null
 
@@ -124,13 +124,13 @@ export function ModelsSection(props: ModelsSectionProps) {
       <div className='el-container'>
         <div className='section-head'>
           <div>
-            <h2 className='el-h2'>热门模型</h2>
+            <h2 className='el-h2'>{t('Top models')}</h2>
             <p className='el-body-sm' style={{ marginTop: 8 }}>
-              当前开发者高频调用的主力模型，涵盖语言模型、图片生成与视频生成，悬浮卡片即可开始使用或查看详情。
+              {t('Open a supported model in Playground or view its details.')}
             </p>
           </div>
           <Link to='/pricing' className='el-btn el-btn-lg el-btn-white'>
-            浏览全部 {props.models.length || 0} 个模型 →
+            {t('Browse all {{count}} models', { count: props.models.length })} →
           </Link>
         </div>
 
@@ -145,12 +145,13 @@ export function ModelsSection(props: ModelsSectionProps) {
                 </div>
               ))
             : featured.map((model) => {
-                const iconKey = model.icon || model.vendor_icon || model.vendor_name
+                const iconKey =
+                  model.icon || model.vendor_icon || model.vendor_name
                 const tint = pickVendorTint(model.vendor_name)
                 const routesList = (model.enable_groups ?? []).slice(0, 2)
                 const routesText =
                   routesList.length > 0 ? routesList.join(' · ') : 'default'
-                const typeLabel = inferModelTypeLabel(model)
+                const [mode] = getModelPlaygroundModes(model)
                 const descText =
                   model.description?.trim() ||
                   `${model.vendor_name || '旗舰'} 稳定直连节点，支持统一密钥路由与实时按量计费。`
@@ -164,54 +165,64 @@ export function ModelsSection(props: ModelsSectionProps) {
                   <article
                     key={model.model_name}
                     className='hot-model-card'
-                    style={{ cursor: 'pointer' }}
-                    onClick={() =>
-                      void navigate({
-                        to: '/pricing/$modelId',
-                        params: { modelId: model.model_name },
-                      })
-                    }
+                    aria-label={model.model_name}
                   >
-                    <div className='hot-card-hover-overlay'>
-                      <button
-                        type='button'
-                        className='hot-hover-action'
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          void navigate({
-                            to: props.isAuthenticated ? '/playground' : '/sign-up',
-                          })
-                        }}
+                    <div className='hot-card-head'>
+                      <div
+                        className='vendor-app-icon'
+                        style={{ background: tint.bg, color: tint.color }}
                       >
-                        <svg
-                          width='18'
-                          height='18'
-                          viewBox='0 0 24 24'
-                          fill='none'
-                          stroke='currentColor'
-                          strokeWidth='1.8'
-                          strokeLinecap='round'
-                          strokeLinejoin='round'
-                          aria-hidden='true'
+                        {iconKey ? getLobeIcon(iconKey, 22) : null}
+                      </div>
+                      <span className='el-pill'>{routesText}</span>
+                    </div>
+
+                    <div>
+                      <h3 className='hot-model-title'>{model.model_name}</h3>
+                      <p className='hot-model-desc'>{descText}</p>
+                    </div>
+
+                    {mode && (
+                      <div className='hot-type-tags'>
+                        <span className='hot-type-tag'>{modeLabels[mode]}</span>
+                      </div>
+                    )}
+
+                    <div className='hot-price-line tabular-nums'>
+                      {priceSummary}
+                    </div>
+
+                    <div className='hot-card-hover-overlay'>
+                      {mode && (
+                        <Link
+                          to='/playground'
+                          search={{ mode, model: model.model_name }}
+                          className='hot-hover-action'
                         >
-                          <path d='M10 2v7.31' />
-                          <path d='M14 9.3V1.99' />
-                          <path d='M8.5 2h7' />
-                          <path d='M14 9.3a6.5 6.5 0 1 1-4 0' />
-                          <path d='M5.52 16h12.96' />
-                        </svg>
-                        <span>开始使用</span>
-                      </button>
-                      <button
-                        type='button'
+                          <svg
+                            width='18'
+                            height='18'
+                            viewBox='0 0 24 24'
+                            fill='none'
+                            stroke='currentColor'
+                            strokeWidth='1.8'
+                            strokeLinecap='round'
+                            strokeLinejoin='round'
+                            aria-hidden='true'
+                          >
+                            <path d='M10 2v7.31' />
+                            <path d='M14 9.3V1.99' />
+                            <path d='M8.5 2h7' />
+                            <path d='M14 9.3a6.5 6.5 0 1 1-4 0' />
+                            <path d='M5.52 16h12.96' />
+                          </svg>
+                          <span>{t('Get started')}</span>
+                        </Link>
+                      )}
+                      <Link
+                        to='/pricing/$modelId'
+                        params={{ modelId: model.model_name }}
                         className='hot-hover-action'
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          void navigate({
-                            to: '/pricing/$modelId',
-                            params: { modelId: model.model_name },
-                          })
-                        }}
                       >
                         <svg
                           width='18'
@@ -230,31 +241,8 @@ export function ModelsSection(props: ModelsSectionProps) {
                           <line x1='16' y1='17' x2='8' y2='17' />
                           <line x1='10' y1='9' x2='8' y2='9' />
                         </svg>
-                        <span>查看详情</span>
-                      </button>
-                    </div>
-
-                    <div className='hot-card-head'>
-                      <div
-                        className='vendor-app-icon'
-                        style={{ background: tint.bg, color: tint.color }}
-                      >
-                        {iconKey ? getLobeIcon(iconKey, 22) : null}
-                      </div>
-                      <span className='el-pill'>{routesText}</span>
-                    </div>
-
-                    <div>
-                      <h3 className='hot-model-title'>{model.model_name}</h3>
-                      <p className='hot-model-desc'>{descText}</p>
-                    </div>
-
-                    <div className='hot-type-tags'>
-                      <span className='hot-type-tag'>{typeLabel}</span>
-                    </div>
-
-                    <div className='hot-price-line tabular-nums'>
-                      {priceSummary}
+                        <span>{t('View details')}</span>
+                      </Link>
                     </div>
                   </article>
                 )

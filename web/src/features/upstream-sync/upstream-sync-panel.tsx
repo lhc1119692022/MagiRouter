@@ -71,7 +71,9 @@ export function UpstreamSyncPanel() {
 
   const gapText = sync.gap.matched
     ? t('{{n}} upstream commits not merged yet', { n: sync.gap.count })
-    : t('More than {{n}} upstream commits not merged yet', { n: sync.gap.count })
+    : t('More than {{n}} upstream commits not merged yet', {
+        n: sync.gap.count,
+      })
 
   let syncStatus: ReactNode
   if (sync.state === 'up-to-date') {
@@ -169,7 +171,9 @@ export function UpstreamSyncPanel() {
                   <Badge variant='outline' className='font-mono'>
                     {sync.latest.shortSha}
                   </Badge>
-                  <span className='truncate text-sm'>{sync.latest.message}</span>
+                  <span className='truncate text-sm'>
+                    {sync.latest.message}
+                  </span>
                 </div>
                 <div className='text-muted-foreground mt-2 text-xs'>
                   {formatDay(sync.latest.authoredAt)}
@@ -218,10 +222,7 @@ export function UpstreamSyncPanel() {
           </ul>
         )}
 
-        <details
-          className='group rounded-lg border'
-          open={Boolean(sync.error)}
-        >
+        <details className='group rounded-lg border' open={Boolean(sync.error)}>
           <summary className='text-muted-foreground cursor-pointer list-none px-3.5 py-2.5 text-xs select-none'>
             {t('How to merge upstream changes')}
           </summary>

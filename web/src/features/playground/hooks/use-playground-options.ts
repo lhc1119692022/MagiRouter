@@ -16,133 +16,73 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useQuery } from '@tanstack/react-query'
-/*
-Copyright (C) 2023-2026 QuantumNous
+import { skipToken, useQuery } from '@tanstack/react-query'
 
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU Affero General Public License as
-published by the Free Software Foundation, either version 3 of the
-License, or (at your option) any later version.
+import { useAuthStore } from '@/stores/auth-store'
 
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU Affero General Public License for more details.
-
-You should have received a copy of the GNU Affero General Public License
-along with this program. If not, see <https://www.gnu.org/licenses/>.
-
-For commercial licensing, please contact support@quantumnous.com
-*/
-import { useEffect } from 'react'
-import { useTranslation } from 'react-i18next'
-
-import { handleServerError } from '@/lib/handle-server-error'
-import { requireServerSuccess } from '@/lib/server-error-message'
-
-import { getUserGroups, getUserModels } from '../api'
-import {
-  getGroupFallback,
-  getModelFallback,
-  getOptionLoadErrorMessage,
-  shouldClearModelForGroup,
-} from '../lib'
-import type { GroupOption, ModelOption, PlaygroundConfig } from '../types'
+import { getPlaygroundKeyScope, getUserGroups, getUserModels } from '../api'
 
 type UsePlaygroundOptionsParams = {
-  currentGroup: string
-  currentModel: string
-  setGroups: (groups: GroupOption[]) => void
-  setModels: (models: ModelOption[]) => void
-  updateConfig: <K extends keyof PlaygroundConfig>(
-    key: K,
-    value: PlaygroundConfig[K]
-  ) => void
+  selectedKey?: { id: number; group?: string | null }
+  authoringGroup?: string
 }
 
-export function usePlaygroundOptions({
-  currentGroup,
-  currentModel,
-  setGroups,
-  setModels,
-  updateConfig,
-}: UsePlaygroundOptionsParams) {
-  const { t } = useTranslation()
-
-  const {
-    data: modelsData,
-    error: modelsError,
-    isError: isModelsError,
-    isLoading: isLoadingModels,
-  } = useQuery({
-    queryKey: ['playground-models', currentGroup],
-    queryFn: async () =>
-      requireServerSuccess(await getUserModels(currentGroup)),
-    enabled: currentGroup !== '',
+export function usePlaygroundOptions(props: UsePlaygroundOptionsParams) {
+  const user = useAuthStore((state) => state.auth.user?.id)
+  const selected = props.selectedKey
+  const authoringGroup = props.authoringGroup
+  const keyModels = useQuery({
+    queryKey: ['playground-key-models', user, selected?.id, selected?.group],
+    queryFn: selected
+      ? ({ signal }) =>
+          getPlaygroundKeyScope(
+            selected.id,
+            selected.group || undefined,
+            signal
+          )
+      : skipToken,
+    enabled: !!user && !!selected,
+    staleTime: 0,
+    refetchOnMount: 'always',
+    meta: { errorToast: false },
+    retry: false,
   })
-
-  const {
-    data: groupsData,
-    error: groupsError,
-    isError: isGroupsError,
-  } = useQuery({
-    queryKey: ['playground-groups'],
-    queryFn: async () => requireServerSuccess(await getUserGroups()),
+  const authoring = useQuery({
+    queryKey: ['playground-authoring-models', user, authoringGroup],
+    queryFn:
+      authoringGroup === undefined
+        ? skipToken
+        : () => getUserModels(authoringGroup, undefined, true),
+    enabled: !!user && authoringGroup !== undefined,
+    retry: false,
   })
-
-  useEffect(() => {
-    if (!isModelsError) return
-
-    handleServerError(
-      modelsError,
-      getOptionLoadErrorMessage(
-        modelsError,
-        t('Failed to load playground models')
-      )
-    )
-  }, [isModelsError, modelsError, t])
-
-  useEffect(() => {
-    if (!isGroupsError) return
-
-    handleServerError(
-      groupsError,
-      getOptionLoadErrorMessage(
-        groupsError,
-        t('Failed to load playground groups')
-      )
-    )
-  }, [isGroupsError, groupsError, t])
-
-  useEffect(() => {
-    if (!modelsData) return
-
-    setModels(modelsData)
-    const fallback = getModelFallback(modelsData, currentModel)
-
-    if (fallback) {
-      updateConfig('model', fallback)
-      return
-    }
-
-    if (shouldClearModelForGroup(modelsData, currentModel)) {
-      updateConfig('model', '')
-    }
-  }, [modelsData, currentModel, setModels, updateConfig])
-
-  useEffect(() => {
-    if (!groupsData) return
-
-    setGroups(groupsData)
-    const fallback = getGroupFallback(groupsData, currentGroup)
-
-    if (fallback) {
-      updateConfig('group', fallback)
-    }
-  }, [groupsData, currentGroup, setGroups, updateConfig])
-
+  const scope =
+    selected &&
+    keyModels.isSuccess &&
+    keyModels.isFetchedAfterMount &&
+    !keyModels.isPaused &&
+    keyModels.data.keyId === selected.id
+      ? keyModels.data
+      : undefined
+  const groups = useQuery({
+    queryKey: ['playground-groups', user],
+    queryFn: getUserGroups,
+    enabled: !!scope,
+  })
   return {
-    isLoadingModels,
+    scope,
+    groups: groups.data ?? [],
+    authorModels:
+      authoringGroup !== undefined && authoring.isSuccess
+        ? authoring.data
+        : undefined,
+    isLoadingModels:
+      authoringGroup !== undefined
+        ? authoring.isLoading
+        : !!selected && !scope && keyModels.isFetching,
+    modelsError:
+      authoringGroup !== undefined ? authoring.error : keyModels.error,
+    retryModels:
+      authoringGroup !== undefined ? authoring.refetch : keyModels.refetch,
   }
 }

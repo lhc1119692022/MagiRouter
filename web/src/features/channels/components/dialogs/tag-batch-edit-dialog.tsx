@@ -67,7 +67,7 @@ export function TagBatchEditDialog({
 
   // Fetch available groups
   const { data: groupsData, isLoading: isLoadingGroups } = useQuery({
-    queryKey: ['groups'],
+    queryKey: ['groups', 'billing'],
     queryFn: async () => requireServerSuccess(await getGroups()),
   })
 

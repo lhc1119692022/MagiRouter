@@ -1,5 +1,11 @@
 import { useNavigate } from '@tanstack/react-router'
-import { ArrowRight, BookOpen, FlaskConical, Search, Sparkles } from 'lucide-react'
+import {
+  ArrowRight,
+  BookOpen,
+  FlaskConical,
+  Search,
+  Sparkles,
+} from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -7,6 +13,7 @@ import { Dialog } from '@/components/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import { usePricingData } from '@/features/pricing/hooks'
 import { getLobeIcon } from '@/lib/lobe-icon'
+import { getOrdinaryModelTags } from '@/lib/model-task-capabilities'
 
 interface QuickModelSearchDialogProps {
   open: boolean
@@ -29,7 +36,7 @@ export function QuickModelSearchDialog(props: QuickModelSearchDialogProps) {
           model.model_name,
           model.vendor_name ?? '',
           model.description ?? '',
-          model.tags ?? '',
+          getOrdinaryModelTags(model.tags).join(' '),
         ]
           .join(' ')
           .toLowerCase()

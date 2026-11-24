@@ -74,6 +74,7 @@ type GroupFormValues = {
   MaxTokenAutoGroups: number
   DefaultUseAutoGroup: boolean
   GroupSpecialUsableGroup: string
+  UserManagementGroups: string
 }
 
 type GroupRatioFormProps = {
@@ -170,6 +171,7 @@ export const GroupRatioForm = memo(function GroupRatioForm({
             groupRatio={values.GroupRatio ?? ''}
             topupGroupRatio={values.TopupGroupRatio ?? ''}
             userUsableGroups={values.UserUsableGroups ?? ''}
+            userManagementGroups={values.UserManagementGroups ?? ''}
             groupGroupRatio={values.GroupGroupRatio ?? ''}
             autoGroups={values.AutoGroups ?? ''}
             maxTokenAutoGroupsField={
@@ -302,6 +304,32 @@ export const GroupRatioForm = memo(function GroupRatioForm({
                   <FormDescription>
                     {t(
                       'JSON map of group → description exposed when users create API keys.'
+                    )}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name='UserManagementGroups'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('User management only groups')}</FormLabel>
+                  <FormControl>
+                    <JsonCodeEditor
+                      value={field.value}
+                      onChange={field.onChange}
+                      name={field.name}
+                      onBlur={field.onBlur}
+                      textareaRef={field.ref}
+                      heightClassName='h-40 min-h-40 max-h-40'
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    {t(
+                      'JSON map of group → description for groups used for user management only. Excluded from billing ratios, Model Square, channels, and API key selection.'
                     )}
                   </FormDescription>
                   <FormMessage />
@@ -709,6 +737,28 @@ vip          0.5     ${t('No')}                ${t('Assigned by administrator on
                 <p className='text-muted-foreground text-sm leading-6'>
                   {t(
                     'Users only see groups marked as user selectable. Non-selectable groups can still be assigned by administrators.'
+                  )}
+                </p>
+              </AccordionContent>
+            </AccordionItem>
+
+            <AccordionItem value='user-management-only'>
+              <AccordionTrigger>
+                {t('User management only groups')}
+              </AccordionTrigger>
+              <AccordionContent className='space-y-3'>
+                <p className='text-muted-foreground text-sm leading-6'>
+                  {t(
+                    'Groups marked as user management only are assigned to users for top-up ratios, rate/concurrency limits, special ratio overrides, and special visibility rules. They are excluded from channel assignment, API key billing, auto groups, and Model Square pricing.'
+                  )}
+                </p>
+                <GuideCodeBlock>{`{
+  "default": "${t('Default user group')}",
+  "vip": "${t('VIP user group')}"
+}`}</GuideCodeBlock>
+                <p className='text-muted-foreground text-sm leading-6'>
+                  {t(
+                    'Users in a user-management-only group must select a billing group (or auto) when creating API keys.'
                   )}
                 </p>
               </AccordionContent>

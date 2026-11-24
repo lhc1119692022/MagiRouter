@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Plus, Trash2, Save } from 'lucide-react'
+import { ArrowDown, ArrowUp, Plus, Trash2, Save } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -219,6 +219,17 @@ export function FAQSection({ enabled, data }: FAQSectionProps) {
     }
   }
 
+  const moveQuestion = (from: number, to: number) => {
+    if (to < 0 || to >= faqList.length) return
+    setFaqList((previous) => {
+      const ordered = [...previous]
+      const [question] = ordered.splice(from, 1)
+      ordered.splice(to, 0, question)
+      return ordered
+    })
+    setHasChanges(true)
+  }
+
   const toggleSelectAll = (checked: boolean) => {
     setSelectedIds(checked ? faqList.map((item) => item.id) : [])
   }
@@ -232,6 +243,11 @@ export function FAQSection({ enabled, data }: FAQSectionProps) {
   return (
     <SettingsSection title={t('FAQ')}>
       <div className='space-y-4'>
+        <p className='text-muted-foreground text-sm'>
+          {t(
+            'Questions appear on the overview in this order. The first answer is expanded. The documentation link follows site navigation settings.'
+          )}
+        </p>
         <div className='flex flex-wrap items-center justify-between gap-2'>
           <div className='flex flex-wrap items-center gap-2'>
             <Button onClick={handleAdd} size='sm'>
@@ -296,6 +312,34 @@ export function FAQSection({ enabled, data }: FAQSectionProps) {
               header: t('Question'),
               cellClassName: 'max-w-xs truncate font-medium',
               cell: (faq) => faq.question,
+            },
+            {
+              id: 'order',
+              header: t('Order'),
+              cell: (_faq, index) => (
+                <div className='flex gap-1'>
+                  <Button
+                    type='button'
+                    variant='ghost'
+                    size='icon-sm'
+                    disabled={index === 0}
+                    onClick={() => moveQuestion(index, index - 1)}
+                    aria-label={t('Move up')}
+                  >
+                    <ArrowUp aria-hidden='true' />
+                  </Button>
+                  <Button
+                    type='button'
+                    variant='ghost'
+                    size='icon-sm'
+                    disabled={index === faqList.length - 1}
+                    onClick={() => moveQuestion(index, index + 1)}
+                    aria-label={t('Move down')}
+                  >
+                    <ArrowDown aria-hidden='true' />
+                  </Button>
+                </div>
+              ),
             },
             {
               id: 'answer',

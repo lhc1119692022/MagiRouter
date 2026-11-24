@@ -38,6 +38,11 @@ import { DataTableRowActions } from '../components/data-table-row-actions'
 import { ModelMutateDrawer } from '../components/drawers/model-mutate-drawer'
 import { ModelsDialogs } from '../components/models-dialogs'
 import { ModelsProvider } from '../components/models-provider'
+import {
+  modelFormSchema,
+  transformFormDataToModelPayload,
+  transformModelToFormDefaults,
+} from '../lib/model-form'
 import type { Model } from '../types'
 
 const model = {
@@ -74,6 +79,83 @@ function renderModelActions(currentModel: Model = model, role = 100) {
   )
   return client
 }
+
+it('offers six capability labels immediately, saves a selection, reopens it and restores automatic recognition', async () => {
+  let saved = { ...model, tags: 'Editorial,核心' }
+  vi.spyOn(api, 'get').mockImplementation(async (url) => ({
+    data: {
+      success: true,
+      data: url === '/api/models/7' ? saved : { items: [] },
+    },
+  }))
+  const put = vi.spyOn(api, 'put').mockImplementation(async (_url, data) => {
+    saved = { ...saved, ...(data as Partial<Model>) }
+    return { data: { success: true, data: saved } }
+  })
+  const client = renderModelActions(saved, 10)
+  const user = userEvent.setup()
+  await user.click(screen.getByRole('button', { name: 'Edit' }))
+  const labels = await screen.findByRole('group', {
+    name: 'Model capability labels',
+  })
+  expect(labels.querySelectorAll('[role="checkbox"]')).toHaveLength(6)
+  await user.click(
+    screen.getByRole('checkbox', { name: 'Speech transcription' })
+  )
+  await user.click(screen.getByRole('checkbox', { name: 'Image Generation' }))
+  await user.click(screen.getByRole('button', { name: 'Save metadata' }))
+  await waitFor(() => expect(put).toHaveBeenCalledTimes(1))
+  expect(saved.tags).toContain('Editorial,核心')
+  await user.click(screen.getByRole('button', { name: 'Edit' }))
+  expect(
+    await screen.findByRole('checkbox', { name: 'Speech transcription' })
+  ).toBeChecked()
+  expect(
+    screen.getByRole('checkbox', { name: 'Image Generation' })
+  ).toBeChecked()
+  expect(
+    screen.getByRole('checkbox', { name: 'Video Generation' })
+  ).not.toBeChecked()
+  await user.click(
+    screen.getByRole('checkbox', { name: 'Speech transcription' })
+  )
+  await user.click(screen.getByRole('checkbox', { name: 'Image Generation' }))
+  await user.click(screen.getByRole('button', { name: 'Save metadata' }))
+  await waitFor(() =>
+    expect(saved.tags).toBe('Editorial,核心,@mr:catalog:v1=none')
+  )
+  await user.click(screen.getByRole('button', { name: 'Edit' }))
+  await user.click(
+    await screen.findByRole('button', {
+      name: 'Restore automatic labels',
+    })
+  )
+  await user.click(screen.getByRole('button', { name: 'Save metadata' }))
+  await waitFor(() => expect(saved.tags).toBe('Editorial,核心'))
+  client.clear()
+})
+
+it('accepts 255 Unicode characters but refuses overflow or reserved declarations entered as ordinary tags', () => {
+  const original = {
+    ...model,
+    tags: 'not@mr:tasks:v1=stt,@mr:tasks:v1=unrelated,工作 团队',
+  }
+  const values = transformModelToFormDefaults(original)
+  expect(transformFormDataToModelPayload(values).tags).toBe(original.tags)
+  expect(
+    modelFormSchema.safeParse({ ...values, tags: ['🌊'.repeat(255)] }).success
+  ).toBe(true)
+  expect(
+    modelFormSchema.safeParse({
+      ...values,
+      tags: ['🌊'.repeat(255)],
+      capability_categories: [],
+    }).success
+  ).toBe(false)
+  expect(
+    modelFormSchema.safeParse({ ...values, tags: ['@mr:tasks:v1=tts'] }).success
+  ).toBe(false)
+})
 
 describe('model pricing entry', () => {
   it('saves pricing and opens connections for a channel model without creating metadata', async () => {

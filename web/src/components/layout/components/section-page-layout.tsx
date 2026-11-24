@@ -52,6 +52,7 @@ SectionPageLayoutBreadcrumb.displayName = 'SectionPageLayout.Breadcrumb'
 export type SectionPageLayoutProps = {
   children: ReactNode
   fixedContent?: boolean
+  scrollWithDocument?: boolean
   stackActionsOnMobile?: boolean
 }
 
@@ -64,6 +65,16 @@ export function SectionPageLayout(props: SectionPageLayoutProps) {
   let actions: ReactNode = null
   let content: ReactNode = null
   let breadcrumb: ReactNode = null
+  const scrollWithDocument =
+    !props.fixedContent && props.scrollWithDocument !== false
+  let contentClass =
+    'console-page-inner min-h-0 flex-1 overflow-auto pt-1 pb-6 sm:pb-8'
+  if (props.fixedContent) {
+    contentClass = 'console-page-inner min-h-0 flex-1 overflow-hidden pb-4'
+  }
+  if (scrollWithDocument) {
+    contentClass = 'console-page-inner console-document-content'
+  }
 
   Children.forEach(props.children, (node) => {
     if (!isValidElement(node)) return
@@ -80,44 +91,46 @@ export function SectionPageLayout(props: SectionPageLayoutProps) {
 
   return (
     <PageFooterProvider container={footerContainer}>
-      <Main>
-        <div className='shrink-0 px-3 pt-3 pb-2.5 sm:px-4 sm:pt-5 sm:pb-3'>
-          {breadcrumb != null && (
-            <div className='mb-2 sm:mb-3'>{breadcrumb}</div>
-          )}
-          <div className='flex flex-wrap items-center justify-between gap-x-3 gap-y-2 sm:gap-x-4'>
-            <div
-              className={
-                props.stackActionsOnMobile
-                  ? 'min-w-0 flex-1 max-sm:basis-full'
-                  : 'min-w-0 flex-1'
-              }
-            >
-              <h2 className='truncate text-base font-bold tracking-tight sm:text-lg'>
-                {title}
-              </h2>
-            </div>
-            {actions != null && (
-              <div className='flex max-w-full shrink-0 flex-wrap items-center justify-end gap-2 sm:gap-x-4'>
-                {actions}
+      <Main
+        className={
+          scrollWithDocument
+            ? 'console-document-page overflow-visible'
+            : undefined
+        }
+      >
+        <div
+          className={
+            scrollWithDocument
+              ? 'console-document-heading'
+              : 'w-full shrink-0 pt-4 sm:pt-6'
+          }
+        >
+          <div className='console-page-inner'>
+            {breadcrumb != null && <div className='mb-3'>{breadcrumb}</div>}
+            <div className='console-head-bar'>
+              <div className='console-head-left'>
+                <h1 className='console-h1'>{title}</h1>
               </div>
-            )}
+              {actions != null && (
+                <div
+                  className={
+                    props.stackActionsOnMobile
+                      ? 'console-head-right max-sm:basis-full'
+                      : 'console-head-right'
+                  }
+                >
+                  {actions}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
-        <div
-          className={
-            props.fixedContent
-              ? 'min-h-0 flex-1 overflow-hidden px-3 pt-1 pb-3 sm:px-4 sm:pt-1.5 sm:pb-4'
-              : 'min-h-0 flex-1 overflow-auto px-3 pt-1 pb-3 sm:px-4 sm:pt-1.5 sm:pb-4'
-          }
-        >
-          {content}
-        </div>
+        <div className={contentClass}>{content}</div>
 
         <div
           ref={setFooterContainer}
-          className='bg-background shrink-0 border-t px-3 py-2.5 empty:hidden sm:px-4 sm:py-3'
+          className='bg-background shrink-0 border-t px-4 pt-2.5 pb-4 empty:hidden sm:px-6 sm:pt-3 sm:pb-6'
         />
       </Main>
     </PageFooterProvider>

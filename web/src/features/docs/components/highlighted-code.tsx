@@ -9,14 +9,12 @@ const TOKEN_PATTERNS: Record<CodeLanguage, RegExp> = {
   json: /("(?:\\.|[^"\\])*")(?=\s*:)|("(?:\\.|[^"\\])*")|\b(true|false|null)\b|(-?\d+(?:\.\d+)?)/g,
   curl: /(#[^\n]*)|("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')|\b(curl|export|https?:\/\/[^\s'"]+)\b|(\s--?[a-zA-Z0-9-]+)/g,
   bash: /(#[^\n]*)|("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')|\b(export|curl|npm|npx|pnpm|claude|codex)\b|(\s--?[a-zA-Z0-9-]+)/g,
-  python: /(#[^\n]*)|("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')|\b(import|from|as|def|return|const|await|async|True|False|None|print)\b|\b(\d+(?:\.\d+)?)\b/g,
+  python:
+    /(#[^\n]*)|("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')|\b(import|from|as|def|return|const|await|async|True|False|None|print)\b|\b(\d+(?:\.\d+)?)\b/g,
   node: /(\/\/[^\n]*)|("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`)|\b(import|from|const|let|var|await|async|new|return|true|false|null|console)\b|\b(\d+(?:\.\d+)?)\b/g,
 }
 
-function tokenizeLine(
-  code: string,
-  language: CodeLanguage
-): ReactNode[] {
+function tokenizeLine(code: string, language: CodeLanguage): ReactNode[] {
   const pattern = new RegExp(TOKEN_PATTERNS[language].source, 'g')
   const nodes: ReactNode[] = []
   let lastIndex = 0

@@ -1,0 +1,175 @@
+.model-analytics .analytics-toolbar,
+.model-analytics .analytics-filter-left,
+.model-analytics .analytics-tools {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.model-analytics .analytics-toolbar {
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.model-analytics .analytics-filter-left {
+  gap: 10px;
+}
+.model-analytics .analytics-granularity {
+  color: var(--ink-subtle);
+  font-size: 12px;
+}
+.model-analytics .analytics-model-select {
+  width: fit-content;
+  min-width: 156px;
+  max-width: min(100%, 300px);
+  height: 34px;
+  border: none;
+}
+.analytics-option-meta {
+  margin-inline-start: auto;
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+.model-analytics .analytics-filter-left,
+.model-analytics .analytics-stat-strip {
+  line-height: normal;
+}
+
+.model-analytics .analytics-stat-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--hairline);
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--divider-color);
+  outline: var(--hairline) solid var(--ring-color);
+  outline-offset: calc(-1 * var(--hairline));
+  box-shadow: var(--shadow-sm);
+  margin: 0 0 16px;
+}
+
+.model-analytics .analytics-stat-cell {
+  background: var(--bg-elevated);
+  padding: 14px 15px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+html[data-theme='dark'] .model-analytics .analytics-stat-cell {
+  background: #161413;
+}
+.model-analytics .analytics-stat-cell dt {
+  font-size: 11.5px;
+  line-height: 16px;
+  color: var(--ink-muted);
+}
+.model-analytics .analytics-stat-cell dd {
+  margin: 0;
+  font-size: 19px;
+  line-height: 26px;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  color: var(--ink-strong);
+  overflow-wrap: anywhere;
+}
+.model-analytics .analytics-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.model-analytics .analytics-trend-chart {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 640 / 224;
+}
+@media (max-width: 440px) {
+  .model-analytics .analytics-filter-left {
+    width: 100%;
+  }
+  .model-analytics .analytics-granularity {
+    flex-basis: 100%;
+    line-height: 17px;
+  }
+  .model-analytics .analytics-stack > section:first-child .dash-panel-title {
+    flex-basis: 100%;
+    line-height: 21px;
+  }
+}
+.model-analytics .analytics-trend-chart .recharts-surface:focus-visible {
+  outline: 2px solid var(--ink-muted);
+  outline-offset: 2px;
+}
+.model-analytics .analytics-model-table {
+  padding: 0;
+  overflow: hidden;
+}
+.model-analytics .analytics-model-table .dash-panel-head {
+  flex-wrap: wrap;
+  padding: 16px 20px 12px;
+  margin: 0;
+  border-bottom: var(--hairline) solid var(--divider-color);
+}
+.model-analytics .keys-table {
+  min-width: 740px;
+}
+.model-analytics .keys-table td {
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 400;
+}
+.model-analytics .keys-table th {
+  font-size: 11.5px;
+  line-height: 16px;
+}
+.model-analytics .keys-table .dash-model-share-btn {
+  display: inline-block;
+  max-width: 22rem;
+  vertical-align: middle;
+}
+.model-analytics .analytics-share {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 100px;
+}
+.model-analytics .analytics-share .dash-share-track {
+  flex: 1;
+}
+.model-analytics .analytics-message {
+  text-align: center;
+  color: var(--ink-muted);
+  font-size: 13px;
+}
+.model-analytics .analytics-trend-chart.analytics-message {
+  display: grid;
+  place-items: center;
+}
+.model-analytics .analytics-extra {
+  margin-top: 14px;
+}
+.model-analytics .analytics-extra .dash-panel-head {
+  flex-wrap: wrap;
+}
+.model-analytics .analytics-tools {
+  gap: 8px;
+}
+.model-analytics .analytics-tools a,
+.model-analytics summary {
+  color: var(--ink-muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+.model-analytics .analytics-tools a {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.model-analytics .analytics-extra details[open] summary {
+  margin-bottom: 14px;
+}
+@media (max-width: 680px) {
+  .model-analytics .analytics-stat-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

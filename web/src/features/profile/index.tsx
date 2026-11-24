@@ -16,7 +16,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Main } from '@/components/layout'
+import { useTranslation } from 'react-i18next'
+
+import { IdentitySettingsLayout } from '@/components/layout/components/identity-settings-layout'
 import {
   CardStaggerContainer,
   CardStaggerItem,
@@ -32,6 +34,7 @@ import { SidebarModulesCard } from './components/sidebar-modules-card'
 import { useProfile } from './hooks'
 
 export function Profile() {
+  const { t } = useTranslation()
   const { profile, loading, refreshProfile } = useProfile()
   const { status } = useStatus()
   const permissions = useAuthStore((s) => s.auth.user?.permissions)
@@ -45,32 +48,36 @@ export function Profile() {
   // Older cached status payloads lack these fields; the site default is on.
   const quotaRemindEnabled = status?.quota_remind_enabled !== false
   const quotaRemindThreshold = status?.quota_remind_threshold ?? 0
+  const preferences = (
+    <>
+      <ProfileSettingsCard
+        profile={profile}
+        loading={loading}
+        onProfileUpdate={refreshProfile}
+        quotaRemindEnabled={quotaRemindEnabled}
+        quotaRemindThreshold={quotaRemindThreshold}
+      />
+      <LanguagePreferencesCard
+        profile={profile}
+        onProfileUpdate={refreshProfile}
+      />
+    </>
+  )
 
   return (
-    <Main>
-      <div className='min-h-0 flex-1 overflow-auto px-3 py-3 sm:px-4 sm:py-6'>
-        <CardStaggerContainer className='mx-auto flex w-full max-w-7xl flex-col gap-4 sm:gap-6'>
-          <CardStaggerItem>
-            <ProfileHeader profile={profile} loading={loading} />
-          </CardStaggerItem>
-
-          <CardStaggerItem>
-            <div className='grid gap-4 sm:gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.46fr)] xl:items-start'>
-              <div className='space-y-4 sm:space-y-6'>
-                <ProfileSettingsCard
-                  profile={profile}
-                  loading={loading}
-                  onProfileUpdate={refreshProfile}
-                  quotaRemindEnabled={quotaRemindEnabled}
-                  quotaRemindThreshold={quotaRemindThreshold}
-                />
-                <LanguagePreferencesCard
-                  profile={profile}
-                  onProfileUpdate={refreshProfile}
-                />
-              </div>
-
-              <div className='space-y-4 sm:space-y-6 xl:sticky xl:top-6'>
+    <IdentitySettingsLayout
+      surface='account'
+      title={t('Account', { context: 'sidebar' })}
+    >
+      <CardStaggerContainer className='identity-stack'>
+        <CardStaggerItem className='identity-stack'>
+          <ProfileHeader profile={profile} loading={loading} />
+        </CardStaggerItem>
+        <CardStaggerItem className='identity-grid identity-stack'>
+          {checkinEnabled || canConfigureSidebar ? (
+            <>
+              <div className='identity-stack'>{preferences}</div>
+              <div className='identity-stack'>
                 {checkinEnabled && (
                   <CheckinCalendarCard
                     checkinEnabled={checkinEnabled}
@@ -80,10 +87,12 @@ export function Profile() {
                 )}
                 {canConfigureSidebar && <SidebarModulesCard />}
               </div>
-            </div>
-          </CardStaggerItem>
-        </CardStaggerContainer>
-      </div>
-    </Main>
+            </>
+          ) : (
+            preferences
+          )}
+        </CardStaggerItem>
+      </CardStaggerContainer>
+    </IdentitySettingsLayout>
   )
 }

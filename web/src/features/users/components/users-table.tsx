@@ -225,6 +225,7 @@ export function UsersTable() {
         'No users available. Try adjusting your search or filters.'
       )}
       skeletonKeyPrefix='users-skeleton'
+      tableClassName='console-compact-table'
       applyHeaderSize
       toolbarProps={{
         searchPlaceholder: t('Filter by username, name or email...'),

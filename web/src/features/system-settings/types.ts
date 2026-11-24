@@ -32,6 +32,7 @@ export type SystemOptionsResponse = {
 export type UpdateOptionRequest = {
   key: string
   value: string | boolean | number
+  previous_value?: string
 }
 
 export type UpdateOptionResponse = {
@@ -206,6 +207,8 @@ export type AuthSettings = {
 }
 
 export type ContentSettings = {
+  'console_setting.official_model_prices': string
+  'console_setting.creation_presets': string
   'console_setting.api_info': string
   'console_setting.announcements': string
   'console_setting.faq': string
@@ -214,6 +217,7 @@ export type ContentSettings = {
   'console_setting.announcements_enabled': boolean
   'console_setting.faq_enabled': boolean
   'console_setting.uptime_kuma_enabled': boolean
+  SidebarModulesAdmin: string
   DataExportEnabled: boolean
   DataExportDefaultTime: string
   DataExportInterval: number
@@ -266,6 +270,7 @@ export type ModelSettings = {
   MaxTokenAutoGroups: number
   DefaultUseAutoGroup: boolean
   'group_ratio_setting.group_special_usable_group': string
+  'group_ratio_setting.user_management_groups': string
   'model_deployment.ionet.api_key': string
   'model_deployment.ionet.enabled': boolean
 }
@@ -306,6 +311,7 @@ export type BillingSettings = {
   MaxTokenAutoGroups: number
   DefaultUseAutoGroup: boolean
   'group_ratio_setting.group_special_usable_group': string
+  'group_ratio_setting.user_management_groups': string
   PayAddress: string
   EpayId: string
   EpayKey: string
@@ -406,6 +412,12 @@ export type SecuritySettings = {
   ModelRequestRateLimitSuccessCount: number
   ModelRequestRateLimitDurationMinutes: number
   ModelRequestRateLimitGroup: string
+  UserConcurrencyLimitEnabled: boolean
+  UserConcurrencyLimitDefault: number
+  UserConcurrencyLimitGroup: string
+  UserConcurrencyLimitWaitTimeoutSeconds: number
+  UserConcurrencyLimitMaxWaitExtra: number
+  UserConcurrencyLimitSlotTTLSeconds: number
   'fetch_setting.enable_ssrf_protection': boolean
   'fetch_setting.allow_private_ip': boolean
   'fetch_setting.domain_filter_mode': boolean

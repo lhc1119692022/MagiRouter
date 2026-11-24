@@ -64,6 +64,12 @@ import { toIntlLocale } from '@/i18n/languages'
 import dayjs from '@/lib/dayjs'
 import { formatTimestampRelative } from '@/lib/format'
 import { handleServerError } from '@/lib/handle-server-error'
+import {
+  NOTICE_CATEGORIES,
+  NOTICE_CATEGORY_LABELS,
+  noticeCategory,
+  type NoticeCategory,
+} from '@/lib/published-notices'
 
 import { SettingsSwitchField } from '../components/settings-form-layout'
 import { SettingsSection } from '../components/settings-section'
@@ -71,6 +77,9 @@ import { useUpdateOption } from '../hooks/use-update-option'
 
 type Announcement = {
   id: number
+  title?: string
+  category?: NoticeCategory
+  kindLabel?: string
   content: string
   publishDate: string
   type: 'default' | 'ongoing' | 'success' | 'warning' | 'error'
@@ -83,6 +92,9 @@ type AnnouncementsSectionProps = {
 }
 
 const announcementSchema = z.object({
+  title: z.string().trim().max(120),
+  category: z.enum(['auto', ...NOTICE_CATEGORIES]),
+  kindLabel: z.string().trim().max(32),
   content: z
     .string()
     .min(1, 'Content is required')
@@ -152,6 +164,9 @@ export function AnnouncementsSection({
   const form = useForm<AnnouncementFormValues>({
     resolver: zodResolver(announcementSchema),
     defaultValues: {
+      title: '',
+      category: 'auto',
+      kindLabel: '',
       content: '',
       publishDate: new Date().toISOString(),
       type: 'default',
@@ -195,6 +210,9 @@ export function AnnouncementsSection({
   const handleAdd = () => {
     setEditingAnnouncement(null)
     form.reset({
+      title: '',
+      category: 'auto',
+      kindLabel: '',
       content: '',
       publishDate: new Date().toISOString(),
       type: 'default',
@@ -206,6 +224,9 @@ export function AnnouncementsSection({
   const handleEdit = (announcement: Announcement) => {
     setEditingAnnouncement(announcement)
     form.reset({
+      title: announcement.title || '',
+      category: announcement.category ?? 'auto',
+      kindLabel: announcement.kindLabel || '',
       content: announcement.content,
       publishDate: announcement.publishDate,
       type: announcement.type,
@@ -253,16 +274,22 @@ export function AnnouncementsSection({
   }
 
   const handleSubmitForm = (values: AnnouncementFormValues) => {
+    const fields = {
+      ...values,
+      title: values.title || undefined,
+      category: values.category === 'auto' ? undefined : values.category,
+      kindLabel: values.kindLabel || undefined,
+    }
     if (editingAnnouncement) {
       setAnnouncements((prev) =>
         prev.map((item) =>
-          item.id === editingAnnouncement.id ? { ...item, ...values } : item
+          item.id === editingAnnouncement.id ? { ...item, ...fields } : item
         )
       )
       toast.success(t('Announcement updated. Click "Save Settings" to apply.'))
     } else {
       const newId = Math.max(...announcements.map((item) => item.id), 0) + 1
-      setAnnouncements((prev) => [...prev, { id: newId, ...values }])
+      setAnnouncements((prev) => [...prev, { id: newId, ...fields }])
       toast.success(t('Announcement added. Click "Save Settings" to apply.'))
     }
     setHasChanges(true)
@@ -303,6 +330,11 @@ export function AnnouncementsSection({
   return (
     <SettingsSection title={t('Announcements')}>
       <div className='space-y-4'>
+        <p className='text-muted-foreground text-sm'>
+          {t(
+            'Publish once for the overview, notification menu and timeline. The overview shows the four newest notices by publication date.'
+          )}
+        </p>
         <div className='flex flex-wrap items-center justify-between gap-2'>
           <div className='flex flex-wrap items-center gap-2'>
             <Button onClick={handleAdd} size='sm'>
@@ -369,7 +401,14 @@ export function AnnouncementsSection({
               id: 'content',
               header: t('Content'),
               cellClassName: 'max-w-xs truncate',
-              cell: (announcement) => announcement.content,
+              cell: (announcement) =>
+                announcement.title || announcement.content,
+            },
+            {
+              id: 'category',
+              header: t('Timeline category'),
+              cell: (announcement) =>
+                t(NOTICE_CATEGORY_LABELS[noticeCategory(announcement)]),
             },
             {
               id: 'publish-date',
@@ -464,6 +503,79 @@ export function AnnouncementsSection({
             onSubmit={form.handleSubmit(handleSubmitForm)}
             className='space-y-4'
           >
+            <FormField
+              control={form.control}
+              name='title'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('Notice headline')}</FormLabel>
+                  <FormControl>
+                    <Input {...field} maxLength={120} />
+                  </FormControl>
+                  <FormDescription>
+                    {t(
+                      'Optional. If blank, the first line of the content is the headline.'
+                    )}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name='category'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('Timeline category')}</FormLabel>
+                  <Select
+                    value={field.value}
+                    onValueChange={field.onChange}
+                    items={[
+                      { value: 'auto', label: t('Auto') },
+                      ...NOTICE_CATEGORIES.map((value) => ({
+                        value,
+                        label: t(NOTICE_CATEGORY_LABELS[value]),
+                      })),
+                    ]}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectGroup>
+                        <SelectItem value='auto'>{t('Auto')}</SelectItem>
+                        {NOTICE_CATEGORIES.map((value) => (
+                          <SelectItem value={value} key={value}>
+                            {t(NOTICE_CATEGORY_LABELS[value])}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name='kindLabel'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('Badge text (optional)')}</FormLabel>
+                  <FormControl>
+                    <Input {...field} maxLength={32} />
+                  </FormControl>
+                  <FormDescription>
+                    {t(
+                      'Use a label such as Model launch. If blank, the category is shown.'
+                    )}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
             <FormField
               control={form.control}
               name='content'

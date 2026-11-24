@@ -20,6 +20,7 @@ import { useTranslation } from 'react-i18next'
 
 import { SectionPageLayout } from '@/components/layout'
 
+import { UserConcurrencyDialog } from './components/user-concurrency-dialog'
 import { UsersDeleteDialog } from './components/users-delete-dialog'
 import { UsersMutateDrawer } from './components/users-mutate-drawer'
 import { UsersPrimaryButtons } from './components/users-primary-buttons'
@@ -28,7 +29,7 @@ import { UsersTable } from './components/users-table'
 
 function UsersContent() {
   const { t } = useTranslation()
-  const { open, setOpen, currentRow } = useUsers()
+  const { open, setOpen, currentRow, triggerRefresh } = useUsers()
 
   return (
     <>
@@ -46,6 +47,12 @@ function UsersContent() {
         open={open === 'create' || open === 'update'}
         onOpenChange={(isOpen) => !isOpen && setOpen(null)}
         currentRow={open === 'update' ? currentRow || undefined : undefined}
+      />
+      <UserConcurrencyDialog
+        open={open === 'concurrency'}
+        onOpenChange={(isOpen) => !isOpen && setOpen(null)}
+        user={open === 'concurrency' ? currentRow : null}
+        onSuccess={triggerRefresh}
       />
       <UsersDeleteDialog />
     </>

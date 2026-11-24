@@ -1,81 +1,33 @@
 import { Link } from '@tanstack/react-router'
-import { useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 
-import { EXCLUDED_GROUPS } from '@/features/pricing/constants'
-import {
-  getConfiguredGroupRatio,
-  isTokenBasedModel,
-} from '@/features/pricing/lib/model-helpers'
-import { calculateTokenPrice } from '@/features/pricing/lib/price'
-import type { PricingModel } from '@/features/pricing/types'
+import { toIntlLocale } from '@/i18n/languages'
+
+import type { CatalogQuote } from '../lib/catalog-quote'
 
 interface RoutesSectionProps {
-  usableGroup: Record<string, unknown>
-  groupRatio: Record<string, number>
-  models: PricingModel[]
-  priceRate: number
-}
-
-function formatDollarAmount(amount: number): string {
-  if (!Number.isFinite(amount)) return '18.75'
-  if (amount >= 1) return Number(amount.toFixed(4)).toString()
-  return Number(amount.toFixed(4)).toString()
+  quote?: CatalogQuote
+  loading: boolean
+  failed: boolean
 }
 
 export function RoutesSection(props: RoutesSectionProps) {
-  const exampleData = useMemo(() => {
-    const groups = Object.keys(props.usableGroup).filter(
-      (group) => !EXCLUDED_GROUPS.includes(group)
-    )
-    let cheapestGroup = 'GPT Pro'
-    let cheapestRatio = 0.25
-
-    if (groups.length > 0) {
-      const sortedGroups = groups
-        .map((group) => ({
-          group,
-          ratio: getConfiguredGroupRatio(props.groupRatio, group),
-        }))
-        .filter((entry) => Number.isFinite(entry.ratio) && entry.ratio > 0)
-        .sort((left, right) => left.ratio - right.ratio)
-
-      if (sortedGroups.length > 0) {
-        cheapestGroup = sortedGroups[0].group
-        cheapestRatio = sortedGroups[0].ratio
-      }
+  const { t, i18n } = useTranslation()
+  const { quote } = props
+  let message = t(
+    'No current token price is available for an eligible model and group.'
+  )
+  if (props.loading) message = t('Loading')
+  if (props.failed) message = t('Failed to load models')
+  const usd = new Intl.NumberFormat(
+    toIntlLocale(i18n.resolvedLanguage || i18n.language),
+    {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 0,
+      maximumSignificantDigits: 8,
     }
-
-    const tokenModels = props.models.filter((item) => isTokenBasedModel(item))
-    const preferredModel =
-      tokenModels.find((item) => /gpt-6\.2-sol/i.test(item.model_name)) ??
-      tokenModels.find((item) =>
-        (item.enable_groups ?? []).includes(cheapestGroup)
-      ) ??
-      tokenModels[0]
-
-    const modelName = preferredModel?.model_name ?? 'gpt-6.2-sol'
-    const officialPrice = preferredModel
-      ? calculateTokenPrice(preferredModel, 'input', 1)
-      : 18.75
-    const safeOfficial =
-      Number.isFinite(officialPrice) && officialPrice > 0
-        ? officialPrice
-        : 18.75
-    const actualQuota = safeOfficial * cheapestRatio
-    const actualCny = actualQuota * Math.max(props.priceRate || 1, 0.01)
-    const percentText = Math.round(cheapestRatio * 100)
-
-    return {
-      modelName,
-      cheapestGroup,
-      cheapestRatio,
-      percentText,
-      officialText: formatDollarAmount(safeOfficial),
-      actualText: formatDollarAmount(actualQuota),
-      cnyText: formatDollarAmount(actualCny),
-      rateText: Number((props.priceRate || 1).toFixed(2)).toString(),
-    }
-  }, [props.groupRatio, props.models, props.priceRate, props.usableGroup])
+  )
 
   return (
     <section id='home-billing' className='el-section-md'>
@@ -83,11 +35,8 @@ export function RoutesSection(props: RoutesSectionProps) {
         <div className='section-head'>
           <div>
             <h2 className='el-h2'>透明可预测的平台计费体系</h2>
-            <p
-              className='el-body-sm'
-              style={{ marginTop: 8, maxWidth: 720 }}
-            >
-              单一余额通用全站模型，无月租或最低消费，按量计费且失败免扣。
+            <p className='el-body-sm' style={{ marginTop: 8, maxWidth: 720 }}>
+              {t('Pricing')}
             </p>
           </div>
           <Link to='/pricing' className='el-btn el-btn-lg el-btn-white'>
@@ -105,84 +54,59 @@ export function RoutesSection(props: RoutesSectionProps) {
                   color: 'var(--btn-primary-fg)',
                 }}
               >
-                单次实际扣费
+                {t('Input price')}
               </span>
               <span className='formula-op'>=</span>
-              <span className='formula-node'>模型官方定价</span>
+              <span className='formula-node'>{t('Base Price')}</span>
               <span className='formula-op'>×</span>
               <span className='formula-node'>分组线路倍率</span>
             </div>
-            <span
-              className='el-pill'
-              style={{
-                background: 'var(--bg-elevated)',
-                color: 'var(--el-green-600)',
-              }}
-            >
-              ● 上游报错 / 超时请求 = $0 不计费
-            </span>
           </div>
 
-          <div className='billing-formula-example tabular-nums'>
-            <div className='example-head-row'>
-              <span className='example-caption'>
-                <strong>举例：</strong>以{' '}
-                <strong>{exampleData.modelName}</strong> 输入计费为例，套用上方公式
-              </span>
-              <span className='example-caption'>
-                {exampleData.cheapestRatio} 倍率（{exampleData.cheapestGroup}）=
-                按官方价 {exampleData.percentText}% 扣费 · 本站汇率 1:
-                {exampleData.rateText}
-              </span>
-            </div>
-            <div className='example-equation-row'>
-              <div className='example-step-card'>
-                <span className='example-step-label'>模型官方定价</span>
-                <div className='example-step-val'>
-                  ${exampleData.officialText} <small>/ 1M</small>
-                </div>
-                <span className='example-step-note'>
-                  {exampleData.modelName} 官方输入原价
+          {quote ? (
+            <section
+              className='billing-formula-example tabular-nums'
+              aria-label={t('Current catalog input price')}
+            >
+              <div className='example-head-row'>
+                <span className='example-caption'>
+                  <strong>{t('Current catalog input price')}</strong> ·{' '}
+                  {quote.modelName}
+                </span>
+                <span className='example-caption'>
+                  {t('Group')}: {quote.group}
                 </span>
               </div>
-              <span className='example-op' aria-hidden='true'>
-                ×
-              </span>
-              <div className='example-step-card'>
-                <span className='example-step-label'>分组线路倍率</span>
-                <div className='example-step-val'>
-                  {exampleData.cheapestRatio}
+              <div className='example-equation-row'>
+                <div className='example-step-card'>
+                  <span className='example-step-label'>{t('Base Price')}</span>
+                  <div className='example-step-val'>
+                    {usd.format(quote.baseUsd)} <small>USD / 1M</small>
+                  </div>
                 </div>
-                <span className='example-step-note'>
-                  只按官方价的 {exampleData.percentText}% 扣费
+                <span className='example-op' aria-hidden='true'>
+                  ×
                 </span>
-              </div>
-              <span className='example-op' aria-hidden='true'>
-                =
-              </span>
-              <div className='example-step-card'>
-                <span className='example-step-label'>单次实际扣费</span>
-                <div className='example-step-val'>
-                  ${exampleData.actualText} <small>/ 1M</small>
+                <div className='example-step-card'>
+                  <span className='example-step-label'>分组线路倍率</span>
+                  <div className='example-step-val'>{quote.groupRatio}</div>
                 </div>
-                <span className='example-step-note'>按公式扣减账户额度</span>
-              </div>
-              <span className='example-op' aria-hidden='true'>
-                →
-              </span>
-              <div className='example-step-card is-result'>
-                <span className='example-step-label'>
-                  本站汇率为 {exampleData.rateText}（实付）
+                <span className='example-op' aria-hidden='true'>
+                  =
                 </span>
-                <div className='example-step-val'>
-                  ¥{exampleData.cnyText} <small>/ 1M</small>
+                <div className='example-step-card'>
+                  <span className='example-step-label'>{t('Input price')}</span>
+                  <div className='example-step-val'>
+                    {usd.format(quote.inputUsd)} <small>USD / 1M</small>
+                  </div>
                 </div>
-                <span className='example-step-note'>
-                  ¥{exampleData.rateText} 充值 = $1 额度
-                </span>
               </div>
-            </div>
-          </div>
+            </section>
+          ) : (
+            <p role='status' className='billing-formula-example'>
+              {message}
+            </p>
+          )}
         </div>
 
         <div className='billing-grid-3'>
@@ -192,7 +116,8 @@ export function RoutesSection(props: RoutesSectionProps) {
               <span className='billing-card-num tabular-nums'>01</span>
             </div>
             <p className='el-body-sm' style={{ marginTop: 10 }}>
-              区分输入、输出、推理思考与 Prompt Cache 读写等多维度，完整对齐官方分档与缓存原生定价，并叠加平台分组折扣倍率（低至官方 {exampleData.percentText}% 成本），按百万 Tokens 实时结算。
+              区分输入、输出、推理思考与 Prompt Cache
+              读写。各模型支持的计费项和具体分组价格见模型广场。
             </p>
           </div>
 
@@ -202,7 +127,8 @@ export function RoutesSection(props: RoutesSectionProps) {
               <span className='billing-card-num tabular-nums'>02</span>
             </div>
             <p className='el-body-sm' style={{ marginTop: 10 }}>
-              提供极其丰富的计费方案，按模型原生形态灵活支持按 Token、按张、按秒、按分钟或按次（任务）计费，并细分分辨率、时长与功能档位；调用前清晰可预估，异常失败全额退回。
+              提供极其丰富的计费方案，按模型原生形态灵活支持按
+              Token、按张、按秒、按分钟或按次（任务）计费，并细分分辨率、时长与功能档位；调用前清晰可预估，异常失败全额退回。
             </p>
           </div>
 

@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import type { TFunction } from 'i18next'
 
 import { formatTimestampToDate } from '@/lib/format'
+import { getOrdinaryModelTags } from '@/lib/model-task-capabilities'
 
 import { getNameRuleConfig, getQuotaTypeConfig } from '../constants'
 import type { NameRule, Model } from '../types'
@@ -64,11 +65,7 @@ export function formatRelativeTime(timestamp: number): string {
  * Parse tags string to array
  */
 export function parseModelTags(tags: string | undefined): string[] {
-  if (!tags) return []
-  return tags
-    .split(',')
-    .map((tag) => tag.trim())
-    .filter(Boolean)
+  return getOrdinaryModelTags(tags)
 }
 
 /**

@@ -18,6 +18,13 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { z } from 'zod'
 
+import {
+  MODEL_CAPABILITY_CATEGORIES,
+  encodeModelCategoryTags,
+  getConfiguredModelCategories,
+  isModelCatalogDeclaration,
+} from '@/lib/model-task-capabilities'
+
 import type { Model } from '../types'
 import { parseModelTags as parseTagsFromUtils } from './model-utils'
 
@@ -28,20 +35,56 @@ import { parseModelTags as parseTagsFromUtils } from './model-utils'
 /**
  * Model form validation schema
  */
-export const modelFormSchema = z.object({
-  id: z.number().optional(),
-  model_name: z.string().min(1, 'Model name is required'),
-  description: z.string().default(''),
-  icon: z.string().default(''),
-  tags: z.array(z.string()).default([]),
-  vendor_id: z.number(),
-  endpoints: z.string().default(''),
-  name_rule: z.number().min(0).max(3).default(0),
-  status: z.boolean().default(true),
-  sync_official: z.boolean().default(true),
-  enable_groups: z.array(z.string()).default([]),
-  quota_types: z.array(z.number()).default([]),
-})
+export const modelFormSchema = z
+  .object({
+    id: z.number().optional(),
+    model_name: z.string().min(1, 'Model name is required'),
+    description: z.string().default(''),
+    icon: z.string().default(''),
+    tags: z.array(z.string()).default([]),
+    capability_categories: z
+      .array(z.enum(MODEL_CAPABILITY_CATEGORIES))
+      .optional(),
+    previous_tags: z.string().optional(),
+    vendor_id: z.number(),
+    endpoints: z.string().default(''),
+    name_rule: z.number().min(0).max(3).default(0),
+    status: z.boolean().default(true),
+    sync_official: z.boolean().default(true),
+    enable_groups: z.array(z.string()).default([]),
+    quota_types: z.array(z.number()).default([]),
+  })
+  .superRefine((value, context) => {
+    if (
+      value.tags
+        .join(',')
+        .split(',')
+        .some((tag) => isModelCatalogDeclaration(tag.trim()))
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['tags'],
+        message:
+          'Use the task capability controls instead of adding reserved tags.',
+      })
+    }
+    if (
+      [
+        ...encodeModelCategoryTags(
+          value.tags,
+          value.capability_categories,
+          value.previous_tags
+        ),
+      ].length > 255
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['tags'],
+        message:
+          'Tags and task capabilities exceed 255 characters. Shorten the tags before saving.',
+      })
+    }
+  })
 
 export type ModelFormValues = z.infer<typeof modelFormSchema>
 
@@ -90,6 +133,8 @@ export function transformModelToFormDefaults(model: Model): ModelFormValues {
     description: model.description || '',
     icon: model.icon || '',
     tags: parseTagsFromUtils(model.tags),
+    capability_categories: getConfiguredModelCategories(model.tags),
+    previous_tags: model.tags,
     vendor_id: model.vendor_id ?? 0,
     endpoints: model.endpoints || '',
     name_rule: model.name_rule || 0,
@@ -111,7 +156,11 @@ export function transformFormDataToModelPayload(
     model_name: formData.model_name,
     description: formData.description || '',
     icon: formData.icon || '',
-    tags: formatTagsArray(formData.tags),
+    tags: encodeModelCategoryTags(
+      formData.tags,
+      formData.capability_categories,
+      formData.previous_tags
+    ),
     vendor_id: formData.vendor_id,
     endpoints: formData.endpoints || '',
     name_rule: formData.name_rule,

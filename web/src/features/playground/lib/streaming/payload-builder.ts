@@ -18,11 +18,19 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import type {
   ChatCompletionRequest,
+  ChatCompletionMessage,
   Message,
   PlaygroundConfig,
-  ParameterEnabled,
 } from '../../types'
-import { formatMessageForAPI, isValidMessage } from '../message/message-utils'
+import {
+  buildMessageContent,
+  formatMessageForAPI,
+  isValidMessage,
+} from '../message/message-utils'
+import {
+  isValidPlaygroundParameterValue,
+  PLAYGROUND_PARAMETER_CONTROLS,
+} from '../parameters/playground-parameters'
 
 /**
  * Build API request payload from messages and config
@@ -30,43 +38,64 @@ import { formatMessageForAPI, isValidMessage } from '../message/message-utils'
 export function buildChatCompletionPayload(
   messages: Message[],
   config: PlaygroundConfig,
-  parameterEnabled: ParameterEnabled
+  draft?: string,
+  imageUrls?: string[]
 ): ChatCompletionRequest {
   // Filter and format valid messages
-  const processedMessages = messages
+  let processedMessages: ChatCompletionMessage[] = messages
     .filter(isValidMessage)
     .map(formatMessageForAPI)
+  if (draft?.trim()) processedMessages.push({ role: 'user', content: draft })
+  const current = processedMessages.at(-1)
+  if (
+    imageUrls?.length &&
+    current?.role === 'user' &&
+    typeof current.content === 'string'
+  ) {
+    current.content = buildMessageContent(current.content, imageUrls)
+  }
+  let remaining = config.historyTurns
+  if (remaining > 0) {
+    for (let index = processedMessages.length - 1; index >= 0; index--) {
+      if (processedMessages[index].role !== 'user' || --remaining !== 0) {
+        continue
+      }
+      processedMessages = processedMessages.filter(
+        (message, position) => position >= index || message.role === 'system'
+      )
+      break
+    }
+  }
 
-  const payload: ChatCompletionRequest = {
+  return {
     model: config.model,
     group: config.group,
     messages: processedMessages,
     stream: config.stream,
+    ...getChatParameterOverrides(config),
+    ...(config.web_search
+      ? { web_search_options: { search_context_size: 'medium' as const } }
+      : {}),
+  }
+}
+
+export function getChatParameterOverrides(config: PlaygroundConfig) {
+  const overrides: Pick<
+    ChatCompletionRequest,
+    keyof PlaygroundConfig['parameterEnabled'] | 'reasoning_effort'
+  > = {}
+  if (config.reasoning_effort) {
+    overrides.reasoning_effort = config.reasoning_effort
+  }
+  for (const control of PLAYGROUND_PARAMETER_CONTROLS) {
+    const value = config[control.key]
+    if (
+      config.parameterEnabled[control.key] &&
+      isValidPlaygroundParameterValue(control, value)
+    ) {
+      overrides[control.key] = value
+    }
   }
 
-  if (parameterEnabled.temperature) {
-    payload.temperature = config.temperature
-  }
-
-  if (parameterEnabled.top_p) {
-    payload.top_p = config.top_p
-  }
-
-  if (parameterEnabled.max_tokens) {
-    payload.max_tokens = config.max_tokens
-  }
-
-  if (parameterEnabled.frequency_penalty) {
-    payload.frequency_penalty = config.frequency_penalty
-  }
-
-  if (parameterEnabled.presence_penalty) {
-    payload.presence_penalty = config.presence_penalty
-  }
-
-  if (parameterEnabled.seed && config.seed !== null) {
-    payload.seed = config.seed
-  }
-
-  return payload
+  return overrides
 }

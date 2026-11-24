@@ -22,6 +22,7 @@ import { useTranslation } from 'react-i18next'
 
 import { ErrorState } from '@/components/error-state'
 import { SectionPageLayout } from '@/components/layout'
+import { cn } from '@/lib/utils'
 
 import { useSystemOptions, getOptionValue } from '../hooks/use-system-options'
 import type { SystemOption } from '../types'
@@ -42,6 +43,7 @@ type SettingsPageProps<
   ) => ReactNode
   getSectionMeta: (sectionId: TSectionId) => {
     titleKey: string
+    scrollWithDocument?: boolean
   }
   extraArgs?: TExtraArgs
   loadingMessage?: string
@@ -53,6 +55,7 @@ type SettingsPageProps<
 
 type SettingsPageFrameProps = {
   title: ReactNode
+  scrollWithDocument?: boolean
   children: ReactNode
 }
 
@@ -67,7 +70,7 @@ function SettingsPageFrame(props: SettingsPageFrameProps) {
       actionsContainer={actionsContainer}
       titleStatusContainer={titleStatusContainer}
     >
-      <SectionPageLayout>
+      <SectionPageLayout scrollWithDocument={props.scrollWithDocument}>
         <SectionPageLayout.Title>
           <span className='inline-flex max-w-full min-w-0 items-center gap-2 align-middle'>
             <span className='truncate'>{props.title}</span>
@@ -84,7 +87,12 @@ function SettingsPageFrame(props: SettingsPageFrameProps) {
           />
         </SectionPageLayout.Actions>
         <SectionPageLayout.Content>
-          <div className='flex h-full min-h-0 w-full flex-col gap-4'>
+          <div
+            className={cn(
+              'flex w-full flex-col gap-4',
+              props.scrollWithDocument === false && 'h-full min-h-0'
+            )}
+          >
             {props.children}
           </div>
         </SectionPageLayout.Content>
@@ -128,35 +136,33 @@ export function SettingsPage<
       : baseSettings
   }, [data?.data, defaultSettings, resolveSettings])
 
+  let sectionContent: ReactNode
   if (isLoading) {
-    return (
-      <SettingsPageFrame title={t(sectionMeta.titleKey)}>
-        <div className='text-muted-foreground flex min-h-40 items-center justify-center text-sm'>
-          {t(loadingMessage)}
-        </div>
-      </SettingsPageFrame>
+    sectionContent = (
+      <div className='text-muted-foreground flex min-h-40 items-center justify-center text-sm'>
+        {t(loadingMessage)}
+      </div>
+    )
+  } else if (isError && !data) {
+    sectionContent = (
+      <ErrorState
+        title={t('Failed to load settings')}
+        onRetry={() => void refetch()}
+      />
+    )
+  } else {
+    sectionContent = getSectionContent(
+      activeSection,
+      settings,
+      ...((extraArgs ?? []) as TExtraArgs)
     )
   }
-
-  if (isError && !data) {
-    return (
-      <SettingsPageFrame title={t(sectionMeta.titleKey)}>
-        <ErrorState
-          title={t('Failed to load settings')}
-          onRetry={() => void refetch()}
-        />
-      </SettingsPageFrame>
-    )
-  }
-
-  const sectionContent = getSectionContent(
-    activeSection,
-    settings,
-    ...((extraArgs ?? []) as TExtraArgs)
-  )
 
   return (
-    <SettingsPageFrame title={t(sectionMeta.titleKey)}>
+    <SettingsPageFrame
+      title={t(sectionMeta.titleKey)}
+      scrollWithDocument={sectionMeta.scrollWithDocument}
+    >
       {sectionContent}
     </SettingsPageFrame>
   )

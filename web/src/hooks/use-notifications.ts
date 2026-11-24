@@ -63,7 +63,7 @@ function getAnnouncementKey(item: Record<string, unknown>): string {
  * Hook to manage notifications (Notice + Announcements)
  * Provides unread counts and read status management
  */
-export function useNotifications() {
+export function useNotifications(scope: 'header' | 'timeline' = 'header') {
   const [popoverOpen, setPopoverOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<'notice' | 'announcements'>(
     'notice'
@@ -73,6 +73,7 @@ export function useNotifications() {
   const {
     data: noticeResponse,
     isLoading: noticeLoading,
+    isError: noticeFailed,
     refetch: refetchNotice,
   } = useQuery({
     queryKey: ['notice'],
@@ -81,15 +82,18 @@ export function useNotifications() {
   })
 
   // Fetch Announcements from status
-  const { status, loading: statusLoading } = useStatus()
-  const announcementsEnabled = status?.announcements_enabled ?? false
+  const { status, loading: statusLoading, error: statusError } = useStatus()
+  const announcementsEnabled =
+    Boolean(status) && status?.announcements_enabled !== false
   const announcements = useMemo<Record<string, unknown>[]>(() => {
-    if (!announcementsEnabled) return []
-    return ((status?.announcements || []) as Record<string, unknown>[]).slice(
-      0,
-      20
-    )
-  }, [announcementsEnabled, status?.announcements])
+    if (!announcementsEnabled || !Array.isArray(status?.announcements)) {
+      return []
+    }
+    const records = status.announcements.filter(
+      (item) => item && typeof item === 'object'
+    ) as Record<string, unknown>[]
+    return scope === 'timeline' ? records : records.slice(0, 20)
+  }, [announcementsEnabled, scope, status?.announcements])
 
   // Notification store
   const {
@@ -171,6 +175,8 @@ export function useNotifications() {
     notice: noticeContent,
     announcements,
     loading: noticeLoading || statusLoading,
+    noticeFailed,
+    announcementsFailed: Boolean(statusError),
 
     // Unread counts
     unreadCount: unreadCounts.total,

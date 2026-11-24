@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -13,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -395,6 +397,59 @@ func TestFetchModelsUsesSharedChannelFetchBehavior(t *testing.T) {
 	require.JSONEq(t, `{"success":true,"message":"","data":["claude-sonnet"]}`, recorder.Body.String())
 }
 
+func TestOpenAIModelDiscoveryUsesChannelProxy(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		assert.Equal(t, "/v1/models", request.URL.Path)
+		_, _ = w.Write([]byte(`{"data":[{"id":"direct-model"}]}`))
+	}))
+	t.Cleanup(origin.Close)
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		assert.Equal(t, http.MethodGet, request.Method)
+		assert.Equal(t, origin.URL+"/v1/models", request.URL.String())
+		assert.Equal(t, "Bearer fixture-key", request.Header.Get("Authorization"))
+		_, _ = w.Write([]byte(`{"data":[{"id":"proxied-model"}]}`))
+	}))
+	t.Cleanup(proxy.Close)
+	t.Cleanup(func() { service.InvalidateProxyClient(proxy.URL) })
+	router := gin.New()
+	const path = "/api/channel/fetch_models"
+	router.POST(path, FetchModels)
+	router.GET(path+"/:id", FetchUpstreamModels)
+
+	invalidProxyURL, err := url.Parse(proxy.URL)
+	require.NoError(t, err)
+	invalidProxyURL.Path = "/not-a-proxy"
+	invalidProxyURL.User = url.UserPassword("fixture", t.Name())
+	invalidProxy := invalidProxyURL.String()
+	for _, test := range []struct {
+		name  string
+		proxy *string
+		want  string
+	}{
+		{name: "draft with proxy", proxy: &proxy.URL, want: `{"success":true,"message":"","data":["proxied-model"]}`},
+		{name: "draft without proxy", want: `{"success":true,"message":"","data":["direct-model"]}`},
+		{name: "invalid draft proxy does not fall back or expose credentials", proxy: &invalidProxy, want: `{"success":false,"message":"proxy URL must not include a path"}`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			body, err := common.Marshal(fetchModelsRequest{BaseURL: &origin.URL, Type: constant.ChannelTypeOpenAI, Key: "fixture-key", Proxy: test.proxy})
+			require.NoError(t, err)
+			recorder := httptest.NewRecorder()
+			router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body)))
+			assert.JSONEq(t, test.want, recorder.Body.String())
+		})
+	}
+
+	t.Run("saved channel", func(t *testing.T) {
+		channel := &model.Channel{Type: constant.ChannelTypeOpenAI, Name: "proxy fixture", Key: "fixture-key", BaseURL: &origin.URL}
+		channel.SetSetting(dto.ChannelSettings{Proxy: proxy.URL})
+		require.NoError(t, db.Create(channel).Error)
+		recorder := httptest.NewRecorder()
+		router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path+"/"+strconv.Itoa(channel.Id), nil))
+		assert.JSONEq(t, `{"success":true,"message":"","data":["proxied-model"]}`, recorder.Body.String())
+	})
+}
+
 func TestFetchNewAPIModelsUsesOpenAIContract(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/v1/models", r.URL.Path)
@@ -416,6 +471,36 @@ func TestFetchNewAPIModelsUsesOpenAIContract(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, []string{"gpt-5", "gpt-5-mini"}, models)
+}
+
+func TestOllamaModelDiscoveryUsesChannelProxy(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	origin := "http://ollama-fixture.invalid"
+	proxy := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		assert.Equal(t, http.MethodGet, request.Method)
+		assert.Equal(t, origin+"/api/tags", request.URL.String())
+		assert.Equal(t, "Bearer fixture-key", request.Header.Get("Authorization"))
+		_, _ = writer.Write([]byte(`{"models":[{"name":"ollama-proxy-fixture"}]}`))
+	}))
+	t.Cleanup(proxy.Close)
+	t.Cleanup(func() { service.InvalidateProxyClient(proxy.URL) })
+	channel := &model.Channel{Name: "Ollama fixture", Type: constant.ChannelTypeOllama, BaseURL: &origin, Key: "fixture-key"}
+	channel.SetSetting(dto.ChannelSettings{Proxy: proxy.URL})
+	require.NoError(t, db.Create(channel).Error)
+	router := gin.New()
+	const path = "/api/channel/fetch_models"
+	router.POST(path, FetchModels)
+	router.GET(path+"/:id", FetchUpstreamModels)
+	body, err := common.Marshal(fetchModelsRequest{Type: channel.Type, BaseURL: &origin, Proxy: &proxy.URL, Key: channel.Key})
+	require.NoError(t, err)
+	for _, request := range []*http.Request{
+		httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body)),
+		httptest.NewRequest(http.MethodGet, path+"/"+strconv.Itoa(channel.Id), nil),
+	} {
+		recorder := httptest.NewRecorder()
+		router.ServeHTTP(recorder, request)
+		require.JSONEq(t, `{"success":true,"message":"","data":["ollama-proxy-fixture"]}`, recorder.Body.String())
+	}
 }
 
 func TestNormalizeModelNames(t *testing.T) {

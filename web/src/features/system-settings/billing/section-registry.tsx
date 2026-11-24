@@ -51,6 +51,7 @@ const getGroupDefaults = (settings: BillingSettings) => ({
   DefaultUseAutoGroup: settings.DefaultUseAutoGroup,
   GroupSpecialUsableGroup:
     settings['group_ratio_setting.group_special_usable_group'],
+  UserManagementGroups: settings['group_ratio_setting.user_management_groups'],
 })
 
 const BILLING_SECTIONS = [
@@ -105,6 +106,7 @@ const BILLING_SECTIONS = [
   {
     id: 'model-pricing',
     titleKey: 'Model Pricing',
+    scrollWithDocument: false,
     build: (settings: BillingSettings) => (
       <RatioSettingsCard
         titleKey='Model Pricing'

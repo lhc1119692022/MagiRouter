@@ -1,4 +1,5 @@
 import { Link, useNavigate } from '@tanstack/react-router'
+import { useTranslation } from 'react-i18next'
 
 import { HtmlContent } from '@/components/html-content'
 import {
@@ -8,29 +9,22 @@ import {
 import { MagiRouterWordmark } from '@/components/layout/components/magirouter-wordmark'
 import { useStatus } from '@/hooks/use-status'
 import { useSystemConfig } from '@/hooks/use-system-config'
+import { getDocumentationLink } from '@/lib/documentation-link'
+import { parseHeaderNavModules } from '@/lib/nav-modules'
 import { useAuthStore } from '@/stores/auth-store'
 
 export function BrandFooter() {
   const navigate = useNavigate()
+  const { t } = useTranslation()
   const { status } = useStatus()
+  const modules = parseHeaderNavModules(status?.HeaderNavModules)
   const { systemName, footerHtml } = useSystemConfig()
   const { auth } = useAuthStore()
   const isAuthenticated = Boolean(auth.user)
   const displayName = systemName || 'MagiRouter'
   const currentYear = new Date().getFullYear()
 
-  const docsLink =
-    typeof status?.docs_link === 'string' ? status.docs_link.trim() : ''
-  const isDefaultUpstreamDocs =
-    docsLink === 'https://docs.newapi.pro' ||
-    docsLink === 'https://docs.newapi.pro/'
-  const externalDocsHref =
-    docsLink &&
-    docsLink !== '/docs' &&
-    !isDefaultUpstreamDocs &&
-    /^https?:\/\//i.test(docsLink)
-      ? docsLink
-      : ''
+  const docs = getDocumentationLink(status?.docs_link)
 
   const goProtected = (target: string) => {
     if (isAuthenticated) {
@@ -48,61 +42,71 @@ export function BrandFooter() {
             <Link to='/' className='brand-lockup' aria-label={displayName}>
               <MagiRouterWordmark height={22} />
             </Link>
-            <p
-              className='el-body-sm'
-              style={{ marginTop: 12, maxWidth: 240 }}
-            >
-              优先支持 OpenAI Responses、Anthropic Messages 与 Gemini 协议的多模型统一路由网关。
+            <p className='el-body-sm' style={{ marginTop: 12, maxWidth: 240 }}>
+              {t(
+                'One gateway for OpenAI Responses, Chat Completions, Anthropic Messages and Gemini.'
+              )}
             </p>
           </div>
 
           <div>
             <div className='el-eyebrow'>产品</div>
             <ul className='footer-list'>
-              <li>
-                <Link to='/pricing'>模型广场</Link>
-              </li>
-              <li>
-                <a href='/#home-billing'>平台计费体系</a>
-              </li>
-              <li>
-                <button
-                  type='button'
-                  onClick={() => goProtected('/playground')}
-                >
-                  AI 创作
-                </button>
-              </li>
-              <li>
-                <button
-                  type='button'
-                  onClick={() => goProtected('/dashboard')}
-                >
-                  控制台
-                </button>
-              </li>
+              {modules.pricing.enabled && (
+                <li>
+                  <Link to='/pricing'>{t('Model Square')}</Link>
+                </li>
+              )}
+              {modules.home && (
+                <li>
+                  <a href='/#home-billing'>平台计费体系</a>
+                </li>
+              )}
+              {modules.creation && (
+                <li>
+                  <button type='button' onClick={() => goProtected('/create')}>
+                    {t('AI Studio')}
+                  </button>
+                </li>
+              )}
+              {modules.console && (
+                <li>
+                  <button
+                    type='button'
+                    onClick={() => goProtected('/dashboard')}
+                  >
+                    {t('Console')}
+                  </button>
+                </li>
+              )}
             </ul>
           </div>
 
           <div>
             <div className='el-eyebrow'>开发者</div>
             <ul className='footer-list'>
-              <li>
-                <a href='/#home-integration'>快速接入</a>
-              </li>
-              <li>
-                {externalDocsHref ? (
-                  <a
-                    href={externalDocsHref}
-                    target='_blank'
-                    rel='noopener noreferrer'
-                  >
-                    开发文档
-                  </a>
-                ) : (
-                  <Link to='/docs'>开发文档</Link>
-                )}
-              </li>
+              {modules.home && (
+                <li>
+                  <a href='/#home-integration'>快速接入</a>
+                </li>
+              )}
+              {modules.docs && (
+                <li>
+                  {docs.external ? (
+                    <a
+                      href={docs.href}
+                      target='_blank'
+                      rel='noopener noreferrer'
+                    >
+                      {t('Developer documentation')}
+                    </a>
+                  ) : (
+                    <Link to='/docs' search={docs.search} hash={docs.hash}>
+                      {t('Developer documentation')}
+                    </Link>
+                  )}
+                </li>
+              )}
               <li>
                 <a
                   href='https://ccswitch.io'
@@ -112,18 +116,22 @@ export function BrandFooter() {
                   CC Switch 接入
                 </a>
               </li>
-              <li>
-                <Link to='/rankings'>模型排行榜</Link>
-              </li>
+              {modules.rankings.enabled && (
+                <li>
+                  <Link to='/rankings'>{t('Rankings')}</Link>
+                </li>
+              )}
             </ul>
           </div>
 
           <div>
             <div className='el-eyebrow'>平台与条款</div>
             <ul className='footer-list'>
-              <li>
-                <Link to='/about'>时间线</Link>
-              </li>
+              {modules.about && (
+                <li>
+                  <Link to='/about'>{t('Timeline')}</Link>
+                </li>
+              )}
               <li>
                 <Link to='/user-agreement'>服务条款</Link>
               </li>

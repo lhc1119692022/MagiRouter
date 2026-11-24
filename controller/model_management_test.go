@@ -23,6 +23,9 @@ import (
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/QuantumNous/new-api/setting/config"
+	"github.com/QuantumNous/new-api/setting/console_setting"
+	"github.com/QuantumNous/new-api/setting/model_setting"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -480,6 +483,122 @@ func TestModelPricingConversionDatabaseMatrix(t *testing.T) {
 	}
 }
 
+func testOfficialReferencePrices(t *testing.T, database *gorm.DB) {
+	const option = console_setting.OfficialModelPricesOption
+	const persisted = `{"studio-unknown":{"source_url":"https://prices.example.test/text","input_usd_per_million":0,"output_usd_per_million":4.5},"studio-request":{"source_url":"https://prices.example.test/media","usd_per_request":0},"STUDIO-FREE":{"source_url":"https://prices.example.test/free","usd_per_request":1},"studio-private":{"source_url":"https://prices.example.test/private","usd_per_request":9}}`
+	oldReferences := console_setting.GetConsoleSetting().OfficialModelPrices
+	oldSelfUse := operation_setting.SelfUseModeEnabled
+	oldRatios := ratio_setting.ModelRatio2JSONString()
+	oldPrices := ratio_setting.ModelPrice2JSONString()
+	oldConfig := config.GlobalConfig.ExportAllConfigs()
+	t.Cleanup(func() {
+		require.NoError(t, database.Where(&model.Option{Key: option}).Delete(&model.Option{}).Error)
+		delete(common.OptionMap, option)
+		console_setting.GetConsoleSetting().OfficialModelPrices = oldReferences
+		operation_setting.SelfUseModeEnabled = oldSelfUse
+		require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(oldRatios))
+		require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(oldPrices))
+		config.UpdateConfigFromMap(config.GlobalConfig.Get("billing_setting"), map[string]string{"billing_mode": oldConfig["billing_setting.billing_mode"], "billing_expr": oldConfig["billing_setting.billing_expr"]})
+		model.InvalidatePricingCache()
+	})
+	operation_setting.SelfUseModeEnabled = false
+	const ratios = `{"studio-free":0,"studio-defined":37.5,"qwen3.8-max":2.5}`
+	const prices = `{"studio-request":0}`
+	require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(ratios))
+	require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(prices))
+	config.UpdateConfigFromMap(config.GlobalConfig.Get("billing_setting"), map[string]string{"billing_mode": `{"studio-tier":"tiered_expr"}`, "billing_expr": `{"studio-tier":"tier(\"base\", p * 2)"}`})
+	require.NoError(t, database.AutoMigrate(&model.SystemTask{}))
+	for _, route := range []model.Channel{
+		{Name: "Reference prices", Group: "default", Models: "studio-unknown,studio-unknown-v2,studio-free,studio-defined,studio-request,studio-tier,matrix-task,qwen3.8-max@thinking:on@temperature:0.2", Type: constant.ChannelTypeOpenAI},
+		{Name: "Private reference", Group: "studio-private-only", Models: "studio-private", Type: constant.ChannelTypeOpenAI},
+	} {
+		route.Status = common.ChannelStatusEnabled
+		require.NoError(t, route.Insert())
+		t.Cleanup(func() { require.NoError(t, route.Delete()) })
+	}
+	write := func(value any) int {
+		t.Helper()
+		return modelManagementRequest(t, UpdateOption, http.MethodPut, "/api/option/", OptionUpdateRequest{Key: option, Value: value}, nil).Code
+	}
+	require.Equal(t, http.StatusOK, write(persisted))
+	for _, invalid := range []any{
+		nil, `[]`, `{"studio-*":{"source_url":"https://prices.example.test","usd_per_request":1}}`,
+		`{"model":{"source_url":"http://prices.example.test","usd_per_request":1}}`,
+		`{"model":{"source_url":"https://someone@prices.example.test","usd_per_request":1}}`,
+		`{"model":{"source_url":"https://prices.example.test","usd_per_request":1,"output_usd_per_million":0}}`,
+		`{"model":{"source_url":"https://prices.example.test","input_usd_per_million":-1}}`,
+		`{"model":{"source_url":"https://prices.example.test","usd_per_request":1e999}}`,
+		`{"model":{"source_url":"https://prices.example.test","usd_per_request":null}}`,
+		`{"model":{"source_url":"https://prices.example.test","usd_per_request":1,"currency":"EUR"}}`,
+		`{"model":{"source_url":"https://prices.example.test"}}`,
+		`{"model":{"usd_per_request":1}}`,
+	} {
+		require.Equal(t, http.StatusBadRequest, write(invalid))
+	}
+	var stored model.Option
+	require.NoError(t, database.Where(&model.Option{Key: option}).Take(&stored).Error)
+	require.JSONEq(t, persisted, stored.Value)
+	console_setting.GetConsoleSetting().OfficialModelPrices = "{}"
+	require.NoError(t, model.LoadOptionsFromDatabase())
+	model.RefreshPricing()
+	read := func(viewer int) map[string]map[string]any {
+		t.Helper()
+		response := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(response)
+		ctx.Request = httptest.NewRequest(http.MethodGet, "/api/pricing", nil)
+		ctx.Set("id", viewer)
+		if viewer > 0 {
+			user, err := model.GetUserCache(viewer)
+			require.NoError(t, err)
+			user.WriteContext(ctx)
+		}
+		GetPricing(ctx)
+		var result struct {
+			Success bool
+			Data    []map[string]any
+		}
+		require.NoError(t, common.Unmarshal(response.Body.Bytes(), &result))
+		require.True(t, result.Success)
+		byName := make(map[string]map[string]any)
+		for _, row := range result.Data {
+			byName[row["model_name"].(string)] = row
+		}
+		return byName
+	}
+	public := read(0)
+	require.Equal(t, map[string]any{"source_url": "https://prices.example.test/text", "input_usd_per_million": 0.0, "output_usd_per_million": 4.5}, public["studio-unknown"]["official_price"])
+	require.Equal(t, map[string]any{"source_url": "https://prices.example.test/media", "usd_per_request": 0.0}, public["studio-request"]["official_price"])
+	require.NotContains(t, public, "studio-private")
+	for _, name := range []string{"studio-free", "studio-unknown-v2"} {
+		require.Contains(t, public, name)
+		require.NotContains(t, public[name], "official_price")
+	}
+	require.Equal(t, true, public["studio-unknown"]["price_unconfigured"])
+	require.Equal(t, 37.5, public["studio-unknown"]["model_ratio"])
+	for _, name := range []string{"studio-free", "studio-defined", "studio-request", "studio-tier", "matrix-task", "qwen3.8-max@thinking:on@temperature:0.2"} {
+		require.Contains(t, public, name)
+		require.NotContains(t, public[name], "price_unconfigured", name)
+	}
+	require.Equal(t, 2.5, public["qwen3.8-max@thinking:on@temperature:0.2"]["model_ratio"])
+	require.Equal(t, 37.5, public["studio-defined"]["model_ratio"])
+	require.Equal(t, 0.0, public["studio-free"]["model_ratio"])
+	require.Equal(t, 1.0, public["studio-request"]["quota_type"])
+	require.Equal(t, "tiered_expr", public["studio-tier"]["billing_mode"])
+	viewer := &model.User{Username: "reference-viewer", AffCode: "refview", Status: common.UserStatusEnabled}
+	viewer.SetSetting(dto.UserSetting{AcceptUnsetRatioModel: true})
+	require.NoError(t, database.Create(viewer).Error)
+	t.Cleanup(func() { require.NoError(t, database.Unscoped().Delete(viewer).Error) })
+	require.NotContains(t, read(viewer.Id)["studio-unknown"], "price_unconfigured")
+	require.Equal(t, true, read(0)["studio-unknown"]["price_unconfigured"], "the viewer preference must not mutate the public catalog cache")
+	operation_setting.SelfUseModeEnabled = true
+	model.RefreshPricing()
+	require.NotContains(t, read(0)["studio-unknown"], "price_unconfigured")
+	require.JSONEq(t, ratios, ratio_setting.ModelRatio2JSONString())
+	require.JSONEq(t, prices, ratio_setting.ModelPrice2JSONString())
+	require.Equal(t, http.StatusOK, write("{}"))
+	require.NotContains(t, read(0)["studio-unknown"], "official_price")
+}
+
 func TestModelManagementDatabaseMatrix(t *testing.T) {
 	_, err := jsplugin.DefaultRegistry.Register(`
 export const meta = {apiVersion: 1, key: "model-management-task", name: "Management task fixture", version: "1.0.0", author: {name: "Test"}, models: ["matrix-task"], fetchMode: "per_task", usageSchema: {seconds: {type: "number", unit: "second"}}};
@@ -497,6 +616,147 @@ export function parseTaskResult() { return {}; }
 			}
 			db := modelManagementDB(t, dialect.kind, os.Getenv(dialect.env))
 
+			t.Run("official_reference_prices", func(t *testing.T) { testOfficialReferencePrices(t, db) })
+
+			t.Run("playground_chat_controls", func(t *testing.T) {
+				const group = "studio-profile-test"
+				previousGlobal := *model_setting.GetGlobalSettings()
+				t.Cleanup(func() {
+					*model_setting.GetGlobalSettings() = previousGlobal
+				})
+				model_setting.GetGlobalSettings().PassThroughRequestEnabled = false
+				model_setting.GetGlobalSettings().ChatCompletionsToResponsesPolicy = model_setting.ChatCompletionsToResponsesPolicy{
+					Enabled:     false,
+					AllChannels: true,
+				}
+				for _, route := range []model.Channel{
+					{Name: "primary", Group: group, Models: "public-alias,ambiguous,legacy,unknown,conditional,gpt-4o-search-preview,gpt-5-search-api-2025-10-14,o1", Type: constant.ChannelTypeOpenAI, ModelMapping: common.GetPointer(`{"public-alias":"hop","hop":"gpt-6.1-sol","ambiguous":"gpt-6.1-sol","legacy":"gpt-4.1","conditional":"gpt-5.2"}`)},
+					{Name: "fallback", Group: group, Models: "ambiguous", Type: constant.ChannelTypeOpenAI, ModelMapping: common.GetPointer(`{"ambiguous":"unverified-name"}`)},
+					{Name: "other-group", Group: group + "-private", Models: "public-alias", Type: constant.ChannelTypeOpenAI},
+					{Name: "gemini", Group: group, Models: "gemini-3-pro-preview", Type: constant.ChannelTypeGemini},
+					{Name: "claude", Group: group, Models: "claude-opus-5-5,claude-sonnet-4-5-20250929,mixed-search", Type: constant.ChannelTypeAnthropic, ModelMapping: common.GetPointer(`{"mixed-search":"claude-opus-5-5"}`)},
+					{Name: "claude-passthrough", Group: group, Models: "claude-passthrough,mixed-search", Type: constant.ChannelTypeAnthropic, ModelMapping: common.GetPointer(`{"claude-passthrough":"claude-opus-5-5","mixed-search":"claude-opus-5-5"}`), Setting: common.GetPointer(`{"pass_through_body_enabled":true}`)},
+					{Name: "openai-passthrough", Group: group, Models: "gpt-6.1-sol", Type: constant.ChannelTypeOpenAI, Setting: common.GetPointer(`{"pass_through_body_enabled":true}`)},
+					{Name: "custom-relay", Group: group, Models: "gpt-6.2-sol", Type: constant.ChannelTypeCustom},
+					{Name: "azure", Group: group, Models: "azure-gpt-4.1", Type: constant.ChannelTypeAzure, ModelMapping: common.GetPointer(`{"azure-gpt-4.1":"gpt-4.1"}`)},
+				} {
+					route.Status = common.ChannelStatusEnabled
+					require.NoError(t, route.Insert())
+					t.Cleanup(func() { require.NoError(t, route.Delete()) })
+				}
+				profiles, err := model.GetPlaygroundChatControls([]string{group})
+				require.NoError(t, err)
+				assert.Equal(t, []string{"low", "medium", "high", "xhigh", "max"}, profiles["public-alias"].Efforts)
+				assert.Equal(t, "medium", profiles["public-alias"].DefaultEffort)
+				assert.Empty(t, profiles["public-alias"].Sampling)
+				assert.True(t, profiles["public-alias"].ImageInput)
+				assert.True(t, profiles["legacy"].ImageInput)
+				assert.False(t, profiles["unknown"].ImageInput)
+				assert.False(t, profiles["ambiguous"].ImageInput)
+				assert.Empty(t, profiles["unknown"].Fields)
+				assert.Empty(t, profiles["ambiguous"].Efforts)
+				assert.Equal(t, "always", profiles["legacy"].Sampling)
+				assert.Equal(t, "none_only", profiles["conditional"].Sampling)
+				assert.Equal(t, []string{"low", "high"}, profiles["gemini-3-pro-preview"].Efforts)
+				assert.Equal(t, "medium", profiles["claude-opus-5-5"].DefaultEffort)
+				assert.True(t, profiles["claude-opus-5-5"].WebSearch)
+				assert.True(t, profiles["claude-sonnet-4-5-20250929"].WebSearch)
+				assert.Equal(t, []string{"max_tokens"}, profiles["claude-sonnet-4-5-20250929"].Fields)
+				assert.Empty(t, profiles["claude-sonnet-4-5-20250929"].Efforts)
+				assert.Empty(t, profiles["claude-sonnet-4-5-20250929"].DefaultEffort)
+				assert.True(t, profiles["gemini-3-pro-preview"].WebSearch)
+				assert.False(t, profiles["public-alias"].WebSearch)
+				assert.False(t, profiles["legacy"].WebSearch)
+				assert.False(t, profiles["azure-gpt-4.1"].WebSearch)
+				assert.False(t, profiles["o1"].WebSearch)
+				assert.True(t, profiles["gpt-4o-search-preview"].WebSearch)
+				assert.Equal(t, []string{"max_tokens"}, profiles["gpt-4o-search-preview"].Fields)
+				assert.Empty(t, profiles["gpt-4o-search-preview"].Efforts)
+				assert.Empty(t, profiles["gpt-4o-search-preview"].Sampling)
+				assert.True(t, profiles["gpt-5-search-api-2025-10-14"].WebSearch)
+				assert.Equal(t, []string{"max_tokens"}, profiles["gpt-5-search-api-2025-10-14"].Fields)
+				assert.False(t, profiles["claude-passthrough"].WebSearch)
+				assert.Equal(t, []string{"low", "medium", "high", "xhigh", "max"}, profiles["claude-passthrough"].Efforts)
+				assert.Equal(t, "medium", profiles["claude-passthrough"].DefaultEffort)
+				assert.False(t, profiles["mixed-search"].WebSearch)
+				assert.Equal(t, []string{"low", "medium", "high", "xhigh", "max"}, profiles["mixed-search"].Efforts)
+				assert.Equal(t, "medium", profiles["mixed-search"].DefaultEffort)
+				assert.Equal(t, []string{"low", "medium", "high", "xhigh", "max"}, profiles["gpt-6.1-sol"].Efforts)
+				assert.Equal(t, "medium", profiles["gpt-6.1-sol"].DefaultEffort)
+				assert.False(t, profiles["gpt-6.1-sol"].WebSearch)
+				assert.Equal(t, []string{"low", "medium", "high"}, profiles["gpt-6.2-sol"].Efforts)
+				assert.False(t, profiles["gpt-6.2-sol"].WebSearch)
+				mixed, err := model.GetPlaygroundChatControls([]string{group, group + "-private"})
+				require.NoError(t, err)
+				assert.Empty(t, mixed["public-alias"].Efforts)
+				assert.False(t, mixed["public-alias"].ImageInput)
+				assert.False(t, mixed["public-alias"].WebSearch)
+
+				model_setting.GetGlobalSettings().ChatCompletionsToResponsesPolicy = model_setting.ChatCompletionsToResponsesPolicy{
+					Enabled:       true,
+					AllChannels:   true,
+					ModelPatterns: []string{"[invalid", "^(public-alias|legacy|ambiguous|unknown|o1|azure-gpt-4\\.1)$"},
+				}
+				upgraded, err := model.GetPlaygroundChatControls([]string{group})
+				require.NoError(t, err)
+				assert.True(t, upgraded["public-alias"].WebSearch)
+				assert.True(t, upgraded["legacy"].WebSearch)
+				assert.True(t, upgraded["azure-gpt-4.1"].WebSearch)
+				assert.False(t, upgraded["conditional"].WebSearch)
+				assert.False(t, upgraded["o1"].WebSearch)
+				assert.False(t, upgraded["unknown"].WebSearch)
+				assert.False(t, upgraded["ambiguous"].WebSearch)
+				assert.True(t, upgraded["gpt-4o-search-preview"].WebSearch)
+				assert.False(t, upgraded["claude-passthrough"].WebSearch)
+				assert.False(t, upgraded["mixed-search"].WebSearch)
+				mixedUpgraded, err := model.GetPlaygroundChatControls([]string{group, group + "-private"})
+				require.NoError(t, err)
+				assert.False(t, mixedUpgraded["public-alias"].WebSearch)
+
+				model_setting.GetGlobalSettings().PassThroughRequestEnabled = true
+				passThroughProfiles, err := model.GetPlaygroundChatControls([]string{group})
+				require.NoError(t, err)
+				assert.False(t, passThroughProfiles["claude-opus-5-5"].WebSearch)
+				assert.False(t, passThroughProfiles["gemini-3-pro-preview"].WebSearch)
+				assert.False(t, passThroughProfiles["gpt-4o-search-preview"].WebSearch)
+				assert.False(t, passThroughProfiles["public-alias"].WebSearch)
+				assert.Equal(t, []string{"low", "medium", "high", "xhigh", "max"}, passThroughProfiles["public-alias"].Efforts)
+				assert.Equal(t, []string{"low", "medium", "high", "xhigh", "max"}, passThroughProfiles["claude-opus-5-5"].Efforts)
+				assert.Equal(t, []string{"low", "high"}, passThroughProfiles["gemini-3-pro-preview"].Efforts)
+				assert.False(t, passThroughProfiles["legacy"].WebSearch)
+			})
+
+			t.Run("catalog_task_metadata", func(t *testing.T) {
+				const name = "capability-test-only"
+				channel := model.Channel{Name: name, Group: "default", Models: name, Type: 1, Status: common.ChannelStatusEnabled}
+				require.NoError(t, channel.Insert())
+				entry := &model.Model{ModelName: name, Tags: "ordinary", Status: 1, SyncOfficial: 1}
+				require.NoError(t, entry.Insert())
+				t.Cleanup(func() {
+					require.NoError(t, db.Where("channel_id = ?", channel.Id).Delete(&model.Ability{}).Error)
+					require.NoError(t, db.Delete(&channel).Error)
+					require.NoError(t, db.Unscoped().Delete(entry).Error)
+					model.RefreshPricing()
+				})
+				for _, declaration := range []string{"@mr:tasks:v1=stt+i2i", "@mr:tasks:v1=none", "@mr:catalog:v1=text+other", "@mr:catalog:v1=none", "@mr:tasks:v1=i2i,@mr:catalog:v1=auto", "@mr:tasks:v1=stt,@mr:catalog:v1=transcription+audio"} {
+					entry.Tags = "ordinary," + declaration
+					response := modelManagementRequest(t, UpdateModelMeta, http.MethodPut, "/api/models/", entry, nil)
+					require.Contains(t, response.Body.String(), `"success":true`)
+					var persisted model.Model
+					require.NoError(t, db.First(&persisted, entry.Id).Error)
+					require.Equal(t, entry.Tags, persisted.Tags)
+					public := httptest.NewRecorder()
+					viewer, _ := gin.CreateTestContext(public)
+					viewer.Request = httptest.NewRequest(http.MethodGet, "/api/pricing", nil)
+					GetPricing(viewer)
+					require.Contains(t, public.Body.String(), `"tags":"`+entry.Tags+`"`)
+					update := model.MetadataSyncUpdate{MetadataSyncSelection: model.MetadataSyncSelection{ModelName: name, RecordVersion: model.MetadataRecordVersion(&persisted, nil, nil), Fields: []string{"tags"}}, Values: model.MetadataValues{Tags: "new tag,@mr:tasks:v1=t2v,@mr:catalog:v1=video", Status: 1}}
+					_, err := model.ApplyMetadataSync([]model.MetadataSyncUpdate{update}, nil)
+					require.NoError(t, err)
+					require.NoError(t, db.First(&persisted, entry.Id).Error)
+					require.Equal(t, "new tag,"+declaration, persisted.Tags)
+				}
+			})
 			t.Run("square_states_follow_catalog_policy", func(t *testing.T) {
 				records := []model.Model{
 					{ModelName: "square-visible", Status: 1},

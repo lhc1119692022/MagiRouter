@@ -16,29 +16,17 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Link, useNavigate } from '@tanstack/react-router'
+import { useNavigate, useSearch } from '@tanstack/react-router'
 import {
   ArrowDownAZ,
   ArrowUpDown,
-  BookOpen,
-  Boxes,
   Check,
   ChevronDown,
-  Compass,
-  FlaskConical,
-  Home,
-  KeyRound,
   LayoutGrid,
   List,
   LogIn,
-  Radio,
-  ScrollText,
   Search,
-  Settings,
-  ShieldCheck,
   SlidersHorizontal,
-  Users,
-  Wallet,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -46,46 +34,38 @@ import { useTranslation } from 'react-i18next'
 import { PublicLayout } from '@/components/layout'
 import { BrandFooter } from '@/features/magirouter-home/components/brand-footer'
 import { getLobeIcon } from '@/lib/lobe-icon'
+import {
+  getModelCategories,
+  type ModelCapabilityCategory,
+} from '@/lib/model-task-capabilities'
 import { useAuthStore } from '@/stores/auth-store'
 
+import { LoadingSkeleton, PricingTable, ModelDetailsDrawer } from './components'
+import { CatalogNavigation } from './components/catalog-navigation'
+import { TaskCapabilityFilters } from './components/task-capability-filters'
+import { ZmModelCardGrid } from './components/zm-model-card-grid'
 import {
-  LoadingSkeleton,
-  PricingTable,
-  ModelDetailsDrawer,
-} from './components'
-import {
-  ZmModelCardGrid,
-  inferModelTaskCapabilities,
-  type TaskCapabilityFilter,
-} from './components/zm-model-card-grid'
-import {
-  EXCLUDED_GROUPS,
   FILTER_ALL,
   QUOTA_TYPES,
   SORT_OPTIONS,
   VIEW_MODES,
   getSortLabels,
+  getQuotaTypeLabels,
   type SortOption,
 } from './constants'
 import { useFilters } from './hooks/use-filters'
 import { usePricingData } from './hooks/use-pricing-data'
-
-const TASK_FILTER_OPTIONS: {
-  id: Exclude<TaskCapabilityFilter, 'all'>
-  label: string
-}[] = [
-  { id: 'text', label: '语言模型' },
-  { id: 'image', label: '图片生成' },
-  { id: 'video', label: '视频生成' },
-  { id: 'audio', label: '音频生成' },
-]
+import {
+  getCatalogFacets,
+  expandTaskFilters,
+  getModelPlaygroundModes,
+} from './lib/filters'
 
 export function Pricing() {
   const { t } = useTranslation()
-  const navigate = useNavigate()
+  const navigate = useNavigate({ from: '/pricing/' })
   const { auth } = useAuthStore()
   const isAuthenticated = Boolean(auth.user)
-  const isAdmin = Boolean(auth.user && auth.user.role >= 10)
 
   const [selectedModelName, setSelectedModelName] = useState<string | null>(
     null
@@ -93,7 +73,31 @@ export function Pricing() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [extraFiltersOpen, setExtraFiltersOpen] = useState(false)
   const [sortMenuOpen, setSortMenuOpen] = useState(false)
-  const [taskFilter, setTaskFilter] = useState<TaskCapabilityFilter>('all')
+  const taskFilter = useSearch({
+    from: '/pricing/',
+    select: (search) => search.task,
+  })
+  const taskFilters = useMemo(
+    () => (!taskFilter ? [] : [taskFilter].flat()),
+    [taskFilter]
+  )
+  const selectedTasks = useMemo(
+    () => expandTaskFilters(taskFilters),
+    [taskFilters]
+  )
+  const setTaskFilter = useCallback(
+    (tasks: ModelCapabilityCategory[]) => {
+      void navigate({
+        to: '/pricing',
+        search: (previous) => ({
+          ...previous,
+          task: tasks.length > 1 ? tasks : tasks[0],
+        }),
+        resetScroll: false,
+      })
+    },
+    [navigate]
+  )
   const [bannerSlide, setBannerSlide] = useState(0)
   const sortDropdownRef = useRef<HTMLDivElement>(null)
 
@@ -118,6 +122,7 @@ export function Pricing() {
     usableGroup,
     endpointMap,
     autoGroups,
+    catalogReady,
     isLoading,
     priceRate,
     usdExchangeRate,
@@ -126,7 +131,8 @@ export function Pricing() {
   const {
     searchInput,
     sortBy,
-    vendorFilter,
+    selectedVendors,
+    availableGroups,
     groupFilter,
     quotaTypeFilter,
     tagFilter,
@@ -135,7 +141,7 @@ export function Pricing() {
     showRechargePrice,
     setSearchInput,
     setSortBy,
-    setVendorFilter,
+    toggleVendor,
     setGroupFilter,
     setQuotaTypeFilter,
     setTagFilter,
@@ -147,14 +153,16 @@ export function Pricing() {
     availableTags,
     clearFilters,
     clearSearch,
-  } = useFilters(models || [])
+  } = useFilters(models, usableGroup, catalogReady)
 
   const displayedModels = useMemo(() => {
-    if (taskFilter === 'all') return filteredModels
+    if (!selectedTasks.length) return filteredModels
     return filteredModels.filter((model) =>
-      inferModelTaskCapabilities(model).includes(taskFilter)
+      getModelCategories(model).some((category) =>
+        selectedTasks.includes(category)
+      )
     )
-  }, [filteredModels, taskFilter])
+  }, [filteredModels, selectedTasks])
 
   const handleModelClick = useCallback((modelName: string) => {
     setSelectedModelName(modelName)
@@ -170,13 +178,14 @@ export function Pricing() {
     [models, selectedModelName]
   )
 
-  const availableGroups = useMemo(
-    () =>
-      Object.keys(usableGroup || {}).filter(
-        (groupName) => !EXCLUDED_GROUPS.includes(groupName)
-      ),
-    [usableGroup]
+  const facets = useMemo(
+    () => getCatalogFacets(models, usableGroup),
+    [models, usableGroup]
   )
+  const hasExtraOptions =
+    availableGroups.length > 0 ||
+    facets.quotaTypes.length > 0 ||
+    availableTags.length > 0
 
   const extraActiveCount = useMemo(
     () =>
@@ -187,37 +196,48 @@ export function Pricing() {
   )
 
   const anyFilterActive =
-    hasActiveFilters || taskFilter !== 'all' || Boolean(searchInput.trim())
+    hasActiveFilters || taskFilters.length > 0 || Boolean(searchInput.trim())
 
   const handleClearAll = useCallback(() => {
     clearFilters()
     clearSearch()
-    setTaskFilter('all')
-  }, [clearFilters, clearSearch])
+    void navigate({
+      to: '/pricing',
+      search: (previous) => ({
+        ...previous,
+        search: undefined,
+        task: undefined,
+        vendor: undefined,
+        group: undefined,
+        quotaType: undefined,
+        endpointType: undefined,
+        tag: undefined,
+      }),
+      resetScroll: false,
+    })
+  }, [clearFilters, clearSearch, navigate])
 
   const sortLabels = useMemo(() => getSortLabels(t), [t])
 
   const bannerSlides = useMemo(() => {
-    const flagshipModel = models?.[0]?.model_name || 'gpt-6.2-sol'
-    const secondaryModel =
-      models?.find((item) =>
-        inferModelTaskCapabilities(item).includes('video')
-      )?.model_name ||
-      models?.[1]?.model_name ||
-      flagshipModel
+    const flagshipModel = models?.[0]?.model_name
+    const videoModel = models?.find((item) =>
+      getModelPlaygroundModes(item).includes('video')
+    )?.model_name
     const lowestRatioEntry = Object.entries(groupRatio || {})
       .filter(
-        ([groupName, ratio]) =>
-          !EXCLUDED_GROUPS.includes(groupName) && ratio > 0
+        ([groupName, ratio]) => facets.groups.includes(groupName) && ratio > 0
       )
       .sort((first, second) => first[1] - second[1])[0]
     const cheapestLabel = lowestRatioEntry
       ? `${lowestRatioEntry[0]} 分组低至 ×${lowestRatioEntry[1]} 倍率`
-      : '全站 1:1 汇率透明计费，失败请求自动免扣'
+      : t('Browse model pricing')
 
     return [
       {
-        title: `${flagshipModel} 等 ${models?.length || 0} 个模型稳定在线`,
+        title: flagshipModel
+          ? `${flagshipModel} · ${t('Model Pricing')}`
+          : t('No models available'),
         subtitle: `一个 API 密钥统一调用 OpenAI Responses、Anthropic Messages 与 Gemini 原生协议，${cheapestLabel}。`,
         ctaLabel: '立即体验',
         onAction: () => {
@@ -229,32 +249,38 @@ export function Pricing() {
         },
       },
       {
-        title: `多模态创作现已接入 · ${secondaryModel}`,
+        title: videoModel
+          ? `${t('Video Generation')} · ${videoModel}`
+          : t('Playground'),
         subtitle:
           '在 Playground 中一站式调试文本推理、图像生成、视频制作与语音合成，实时生成可复用的 cURL 与 JSON 请求。',
         ctaLabel: '打开 Playground',
         onAction: () => {
-          void navigate({ to: '/playground' })
+          void navigate({
+            to: '/playground',
+            search: videoModel
+              ? { mode: 'video', model: videoModel }
+              : undefined,
+          })
         },
       },
       {
         title: '官方定价 × 分组倍率 · 失败免扣费',
-        subtitle:
-          '公开展示每个模型的输入输出单价、24 小时可用率与可用分组；上游报错或超时未交付不扣减账户额度。',
+        subtitle: t('Browse model pricing'),
         ctaLabel: '查看文档说明',
         onAction: () => {
           void navigate({ to: '/docs' })
         },
       },
     ]
-  }, [groupRatio, models, navigate])
+  }, [facets.groups, groupRatio, models, navigate, t])
 
   const activeSlide = bannerSlides[bannerSlide] || bannerSlides[0]
 
   const sortedVendors = useMemo(() => {
-    if (!vendors || vendors.length === 0) return []
-    return [...vendors]
-  }, [vendors])
+    const visibleIds = new Set(models.map((model) => model.vendor_id))
+    return vendors.filter((vendor) => visibleIds.has(vendor.id))
+  }, [models, vendors])
 
   const renderPricingContent = () => {
     if (viewMode === VIEW_MODES.CARD) {
@@ -343,181 +369,24 @@ export function Pricing() {
           }
         >
           <div className='console-sidebar-rail'>
-            <aside className='console-sidebar' aria-label='控制台侧边栏'>
-              <div className='console-sidebar-scroll'>
-                <div className='sidebar-section'>
-                  <div className='sidebar-nav-list'>
-                    <Link
-                      to={isAuthenticated ? '/dashboard' : '/'}
-                      className='sidebar-nav-item'
-                      title={isAuthenticated ? '控制台' : '平台首页'}
-                    >
-                      <Home className='size-4 shrink-0' />
-                      <span className='sidebar-nav-label'>
-                        {isAuthenticated ? '控制台' : '平台首页'}
-                      </span>
-                    </Link>
-                    <Link
-                      to='/pricing'
-                      className='sidebar-nav-item is-active'
-                      title='模型广场'
-                    >
-                      <LayoutGrid className='size-4 shrink-0' />
-                      <span className='sidebar-nav-label'>模型广场</span>
-                    </Link>
-                  </div>
-                </div>
+            <aside className='console-sidebar' aria-label={t('Console')}>
+              <CatalogNavigation />
 
-                <div className='sidebar-section'>
-                  <div className='sidebar-group-title'>配置</div>
-                  <div className='sidebar-nav-list'>
-                    <Link
-                      to={isAuthenticated ? '/keys' : '/sign-in'}
-                      className='sidebar-nav-item'
-                      title='API 密钥'
-                    >
-                      <KeyRound className='size-4 shrink-0' />
-                      <span className='sidebar-nav-label'>API 密钥</span>
-                    </Link>
-                    {isAdmin && (
-                      <Link
-                        to='/channels'
-                        className='sidebar-nav-item'
-                        title='渠道状态'
-                      >
-                        <Radio className='size-4 shrink-0' />
-                        <span className='sidebar-nav-label'>渠道状态</span>
-                      </Link>
-                    )}
-                  </div>
-                </div>
-
-                <div className='sidebar-section'>
-                  <div className='sidebar-group-title'>账号与文档</div>
-                  <div className='sidebar-nav-list'>
-                    {isAuthenticated && (
-                      <>
-                        <Link
-                          to='/usage-logs'
-                          className='sidebar-nav-item'
-                          title='调用日志'
-                        >
-                          <ScrollText className='size-4 shrink-0' />
-                          <span className='sidebar-nav-label'>调用日志</span>
-                        </Link>
-                        <Link
-                          to='/wallet'
-                          className='sidebar-nav-item'
-                          title='钱包与充值'
-                        >
-                          <Wallet className='size-4 shrink-0' />
-                          <span className='sidebar-nav-label'>钱包与充值</span>
-                        </Link>
-                        <Link
-                          to='/security'
-                          className='sidebar-nav-item'
-                          title='账户安全'
-                        >
-                          <ShieldCheck className='size-4 shrink-0' />
-                          <span className='sidebar-nav-label'>安全</span>
-                        </Link>
-                      </>
-                    )}
-                    <Link
-                      to='/about'
-                      className='sidebar-nav-item'
-                      title='时间线与公告'
-                    >
-                      <Compass className='size-4 shrink-0' />
-                      <span className='sidebar-nav-label'>时间线</span>
-                    </Link>
-                    <Link
-                      to='/docs'
-                      className='sidebar-nav-item'
-                      title='开发文档'
-                    >
-                      <BookOpen className='size-4 shrink-0' />
-                      <span className='sidebar-nav-label'>开发文档</span>
-                    </Link>
-                  </div>
-                </div>
-
-                {isAdmin && (
-                  <div className='sidebar-section'>
-                    <div className='sidebar-group-title'>管理</div>
-                    <div className='sidebar-nav-list'>
-                      <Link
-                        to='/channels'
-                        className='sidebar-nav-item'
-                        title='渠道管理'
-                      >
-                        <Radio className='size-4 shrink-0' />
-                        <span className='sidebar-nav-label'>渠道管理</span>
-                      </Link>
-                      <Link
-                        to='/users'
-                        className='sidebar-nav-item'
-                        title='用户与账务'
-                      >
-                        <Users className='size-4 shrink-0' />
-                        <span className='sidebar-nav-label'>用户与账务</span>
-                      </Link>
-                      <Link
-                        to='/models'
-                        className='sidebar-nav-item'
-                        title='模型管理'
-                      >
-                        <Boxes className='size-4 shrink-0' />
-                        <span className='sidebar-nav-label'>模型管理</span>
-                      </Link>
-                      <Link
-                        to='/system-settings'
-                        className='sidebar-nav-item'
-                        title='系统设置'
-                      >
-                        <Settings className='size-4 shrink-0' />
-                        <span className='sidebar-nav-label'>系统设置</span>
-                      </Link>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div className='sidebar-footer'>
-                {isAuthenticated ? (
-                  <button
-                    type='button'
-                    className='sidebar-playground-card'
-                    title='画布 / Playground'
-                    onClick={() => void navigate({ to: '/playground' })}
-                  >
-                    <span className='sidebar-playground-icon' aria-hidden='true'>
-                      <FlaskConical className='size-4' />
-                    </span>
-                    <span className='sidebar-playground-text'>
-                      <span className='sidebar-playground-title'>
-                        画布 / Playground
-                      </span>
-                      <span className='sidebar-playground-sub'>
-                        在线调试与多模态创作
-                      </span>
-                    </span>
-                    <span className='sidebar-playground-arrow' aria-hidden='true'>
-                      ↗
-                    </span>
-                  </button>
-                ) : (
+              {!isAuthenticated && (
+                <div className='sidebar-footer'>
                   <button
                     type='button'
                     className='sidebar-login-btn'
-                    title='登录 / 注册'
+                    title={t('Log in / Register')}
                     onClick={() => void navigate({ to: '/sign-in' })}
                   >
                     <LogIn className='size-4 shrink-0' />
-                    <span className='sidebar-cta-label'>登录 / 注册</span>
+                    <span className='sidebar-cta-label'>
+                      {t('Log in / Register')}
+                    </span>
                   </button>
-                )}
-              </div>
+                </div>
+              )}
             </aside>
           </div>
 
@@ -565,7 +434,7 @@ export function Pricing() {
                 <div className='catalog-title-group'>
                   <h1 className='catalog-h1'>全部模型</h1>
                   <span className='catalog-count tabular-nums'>
-                    {displayedModels.length} 个在线模型
+                    {displayedModels.length} {t('models')}
                   </span>
                 </div>
 
@@ -638,9 +507,7 @@ export function Pricing() {
                     type='button'
                     className='sort-trigger-btn tabular-nums'
                     title='切换每百万 / 每千 Token 计价单位'
-                    onClick={() =>
-                      setTokenUnit(tokenUnit === 'M' ? 'K' : 'M')
-                    }
+                    onClick={() => setTokenUnit(tokenUnit === 'M' ? 'K' : 'M')}
                   >
                     <span>{tokenUnit === 'M' ? '/1M' : '/1K'}</span>
                   </button>
@@ -695,189 +562,196 @@ export function Pricing() {
                 </div>
               </div>
 
-              <div className='filter-rows'>
-                <div className='filter-header-row'>
-                  <div className='filter-line'>
-                    <span className='filter-group-label'>模型厂商</span>
-                    <div className='filter-pills-wrap'>
-                      {sortedVendors.map((vendor) => {
-                        const active = vendorFilter === vendor.name
-                        const vendorLogo = vendor.icon
-                          ? getLobeIcon(vendor.icon, 14)
-                          : null
-                        return (
-                          <button
-                            key={vendor.id ?? vendor.name}
-                            type='button'
-                            className={
-                              active ? 'filter-pill is-active' : 'filter-pill'
-                            }
-                            onClick={() =>
-                              setVendorFilter(active ? FILTER_ALL : vendor.name)
-                            }
-                          >
-                            {vendorLogo && (
-                              <span className='filter-vendor-logo'>
-                                {vendorLogo}
-                              </span>
-                            )}
-                            <span>{vendor.name}</span>
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </div>
-                  <div className='filter-top-actions'>
-                    {anyFilterActive && (
-                      <button
-                        type='button'
-                        className='filter-clear-link'
-                        onClick={handleClearAll}
+              {(models.length > 0 || anyFilterActive) && (
+                <div className='filter-rows'>
+                  <div className='filter-header-row'>
+                    {sortedVendors.length > 0 && (
+                      <div
+                        className='filter-line'
+                        role='group'
+                        aria-label={t('Model manufacturers')}
                       >
-                        重置
-                      </button>
-                    )}
-                    <button
-                      type='button'
-                      className={
-                        extraFiltersOpen || extraActiveCount > 0
-                          ? 'filter-expand-btn is-open'
-                          : 'filter-expand-btn'
-                      }
-                      aria-expanded={extraFiltersOpen}
-                      onClick={() =>
-                        setExtraFiltersOpen((previous) => !previous)
-                      }
-                    >
-                      <SlidersHorizontal className='size-3.5' />
-                      <span>筛选</span>
-                      {extraActiveCount > 0 && (
-                        <span className='filter-badge-count'>
-                          {extraActiveCount}
+                        <span className='filter-group-label'>
+                          {t('Model manufacturers')}
                         </span>
-                      )}
-                    </button>
-                  </div>
-                </div>
-
-                <div className='filter-line'>
-                  <span className='filter-group-label'>任务能力</span>
-                  <div className='filter-pills-wrap'>
-                    {TASK_FILTER_OPTIONS.map((option) => {
-                      const active = taskFilter === option.id
-                      return (
+                        <div className='filter-pills-wrap'>
+                          {sortedVendors.map((vendor) => {
+                            const active = selectedVendors.includes(vendor.name)
+                            const vendorLogo = vendor.icon
+                              ? getLobeIcon(vendor.icon, 14)
+                              : null
+                            return (
+                              <button
+                                key={vendor.id ?? vendor.name}
+                                type='button'
+                                aria-pressed={active}
+                                className={
+                                  active
+                                    ? 'filter-pill is-active'
+                                    : 'filter-pill'
+                                }
+                                onClick={() => toggleVendor(vendor.name)}
+                              >
+                                {vendorLogo && (
+                                  <span className='filter-vendor-logo'>
+                                    {vendorLogo}
+                                  </span>
+                                )}
+                                <span>{vendor.name}</span>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
+                    <div className='filter-top-actions'>
+                      {anyFilterActive && (
                         <button
-                          key={option.id}
+                          type='button'
+                          className='filter-clear-link'
+                          onClick={handleClearAll}
+                        >
+                          {t('Reset')}
+                        </button>
+                      )}
+                      {hasExtraOptions && (
+                        <button
                           type='button'
                           className={
-                            active ? 'filter-pill is-active' : 'filter-pill'
+                            extraFiltersOpen || extraActiveCount > 0
+                              ? 'filter-expand-btn is-open'
+                              : 'filter-expand-btn'
                           }
+                          aria-expanded={extraFiltersOpen}
                           onClick={() =>
-                            setTaskFilter(active ? 'all' : option.id)
+                            setExtraFiltersOpen((previous) => !previous)
                           }
                         >
-                          {option.label}
+                          <SlidersHorizontal className='size-3.5' />
+                          <span>{t('Filters')}</span>
+                          {extraActiveCount > 0 && (
+                            <span className='filter-badge-count'>
+                              {extraActiveCount}
+                            </span>
+                          )}
                         </button>
-                      )
-                    })}
-                  </div>
-                </div>
-
-                {extraFiltersOpen && (
-                  <div className='extra-filter-rows'>
-                    {availableGroups.length > 0 && (
-                      <div className='filter-line'>
-                        <span className='filter-group-label'>倍率分组</span>
-                        <div className='filter-pills-wrap'>
-                          {availableGroups.map((groupName) => {
-                            const active = groupFilter === groupName
-                            const ratioValue = groupRatio?.[groupName]
-                            return (
-                              <button
-                                key={groupName}
-                                type='button'
-                                className={
-                                  active
-                                    ? 'filter-pill is-active'
-                                    : 'filter-pill'
-                                }
-                                onClick={() =>
-                                  setGroupFilter(
-                                    active ? FILTER_ALL : groupName
-                                  )
-                                }
-                              >
-                                {groupName}
-                                {typeof ratioValue === 'number'
-                                  ? ` ×${ratioValue}`
-                                  : ''}
-                              </button>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    )}
-
-                    <div className='filter-line'>
-                      <span className='filter-group-label'>定价类型</span>
-                      <div className='filter-pills-wrap'>
-                        {(
-                          [
-                            { id: QUOTA_TYPES.TOKEN, label: '按 Token' },
-                            { id: QUOTA_TYPES.REQUEST, label: '按次计费' },
-                            { id: QUOTA_TYPES.TASK, label: '按任务 / 阶梯' },
-                          ] as const
-                        ).map((item) => {
-                          const active = quotaTypeFilter === item.id
-                          return (
-                            <button
-                              key={item.id}
-                              type='button'
-                              className={
-                                active ? 'filter-pill is-active' : 'filter-pill'
-                              }
-                              onClick={() =>
-                                setQuotaTypeFilter(
-                                  active ? QUOTA_TYPES.ALL : item.id
-                                )
-                              }
-                            >
-                              {item.label}
-                            </button>
-                          )
-                        })}
-                      </div>
+                      )}
                     </div>
-
-                    {availableTags.length > 0 && (
-                      <div className='filter-line'>
-                        <span className='filter-group-label'>模型标签</span>
-                        <div className='filter-pills-wrap'>
-                          {availableTags.slice(0, 14).map((tag) => {
-                            const active = tagFilter === tag
-                            return (
-                              <button
-                                key={tag}
-                                type='button'
-                                className={
-                                  active
-                                    ? 'filter-pill is-active'
-                                    : 'filter-pill'
-                                }
-                                onClick={() =>
-                                  setTagFilter(active ? FILTER_ALL : tag)
-                                }
-                              >
-                                {tag}
-                              </button>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    )}
                   </div>
-                )}
-              </div>
+
+                  <TaskCapabilityFilters
+                    available={facets.categories}
+                    selected={selectedTasks}
+                    onChange={setTaskFilter}
+                  />
+
+                  {hasExtraOptions && extraFiltersOpen && (
+                    <div className='extra-filter-rows'>
+                      {availableGroups.length > 0 && (
+                        <div
+                          className='filter-line'
+                          role='group'
+                          aria-label={t('Multiplier groups')}
+                        >
+                          <span className='filter-group-label'>
+                            {t('Multiplier groups')}
+                          </span>
+                          <div className='filter-pills-wrap'>
+                            {availableGroups.map((groupName) => {
+                              const active = groupFilter === groupName
+                              const ratioValue = groupRatio?.[groupName]
+                              return (
+                                <button
+                                  key={groupName}
+                                  type='button'
+                                  aria-pressed={active}
+                                  className={
+                                    active
+                                      ? 'filter-pill is-active'
+                                      : 'filter-pill'
+                                  }
+                                  onClick={() =>
+                                    setGroupFilter(
+                                      active ? FILTER_ALL : groupName
+                                    )
+                                  }
+                                >
+                                  {groupName}
+                                  {typeof ratioValue === 'number'
+                                    ? ` ×${ratioValue}`
+                                    : ''}
+                                </button>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {facets.quotaTypes.length > 0 && (
+                        <div className='filter-line'>
+                          <span className='filter-group-label'>
+                            {t('Pricing Type')}
+                          </span>
+                          <div className='filter-pills-wrap'>
+                            {facets.quotaTypes.map((quota) => {
+                              const active = quotaTypeFilter === quota
+                              return (
+                                <button
+                                  key={quota}
+                                  type='button'
+                                  aria-pressed={active}
+                                  className={
+                                    active
+                                      ? 'filter-pill is-active'
+                                      : 'filter-pill'
+                                  }
+                                  onClick={() =>
+                                    setQuotaTypeFilter(
+                                      active ? QUOTA_TYPES.ALL : quota
+                                    )
+                                  }
+                                >
+                                  {getQuotaTypeLabels(t)[quota]}
+                                </button>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {availableTags.length > 0 && (
+                        <div className='filter-line'>
+                          <span className='filter-group-label'>
+                            {t('Model Tags')}
+                          </span>
+                          <div className='filter-pills-wrap'>
+                            {availableTags.slice(0, 14).map((tag) => {
+                              const active = tagFilter === tag
+                              return (
+                                <button
+                                  key={tag}
+                                  type='button'
+                                  aria-pressed={active}
+                                  className={
+                                    active
+                                      ? 'filter-pill is-active'
+                                      : 'filter-pill'
+                                  }
+                                  onClick={() =>
+                                    setTagFilter(active ? FILTER_ALL : tag)
+                                  }
+                                >
+                                  {tag}
+                                </button>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {renderPricingContent()}
             </div>

@@ -16,31 +16,58 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useState } from 'react'
+import { GlobeIcon, SparklesIcon } from 'lucide-react'
+import { useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 
 import {
   PromptInput,
+  PromptInputAttachment,
+  PromptInputAttachments,
+  PromptInputHeader,
   PromptInputFooter,
   PromptInputTextarea,
   type PromptInputMessage,
 } from '@/components/ai-elements/prompt-input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
+import { REQUEST_PLUGIN_EFFORT_LABELS } from '@/features/task-plugins/lib/request-plugins'
+import { cn } from '@/lib/utils'
 
-import { getSubmittableInputText } from '../../lib'
-import type {
-  ModelOption,
-  GroupOption,
-  ParameterEnabled,
-  PlaygroundConfig,
-} from '../../types'
+import {
+  CHAT_IMAGE_LIMIT,
+  CHAT_IMAGE_MAX_BYTES,
+  CHAT_IMAGE_TYPES,
+  getSubmittableInputText,
+  selectedChatImageUrls,
+} from '../../lib'
+import type { ModelOption, GroupOption, ChatReasoningEffort } from '../../types'
+import { PlaygroundStarterPrompts } from '../chat/playground-starter-prompts'
 import { PlaygroundInputControls } from './playground-input-controls'
 import { PlaygroundInputTools } from './playground-input-tools'
 
+const DEFAULT_REASONING_VALUE = '__default__'
+
 interface PlaygroundInputProps {
-  config: PlaygroundConfig
-  onSubmit: (text: string) => void
+  initialPrompt?: string
+  draft?: { value: string; onChange: (text: string) => void }
+  acceptsChatImages?: boolean
+  onImageCountChange?: (count: number) => void
+  onSubmit: (text: string, imageUrls?: string[]) => void
   onStop?: () => void
   disabled?: boolean
+  canSubmit?: boolean
   isGenerating?: boolean
   models: ModelOption[]
   modelValue: string
@@ -48,25 +75,34 @@ interface PlaygroundInputProps {
   isModelLoading?: boolean
   groups: GroupOption[]
   groupValue: string
-  onGroupChange: (value: string) => void
+  onGroupChange?: (value: string) => void
   hasMessages?: boolean
-  onConfigChange: <K extends keyof PlaygroundConfig>(
-    key: K,
-    value: PlaygroundConfig[K]
-  ) => void
   onClearMessages?: () => void
-  onParameterEnabledChange: (
-    key: keyof ParameterEnabled,
-    value: boolean
-  ) => void
-  parameterEnabled: ParameterEnabled
+  showModelSelector?: boolean
+  showWelcome?: boolean
+  priceQuote?: ReactNode
+  reasoning?: {
+    choices: ChatReasoningEffort[]
+    value: ChatReasoningEffort | ''
+    defaultValue?: ChatReasoningEffort
+    onChange: (value: ChatReasoningEffort | '') => void
+  }
+  webSearch?: {
+    supported: boolean
+    enabled: boolean
+    onChange: (enabled: boolean) => void
+  }
 }
 
 export function PlaygroundInput({
-  config,
+  acceptsChatImages = false,
+  onImageCountChange,
+  initialPrompt,
+  draft,
   onSubmit,
   onStop,
   disabled,
+  canSubmit = true,
   isGenerating,
   models,
   modelValue,
@@ -74,70 +110,227 @@ export function PlaygroundInput({
   isModelLoading = false,
   groups,
   groupValue,
-  onGroupChange,
   hasMessages = false,
-  onConfigChange,
   onClearMessages,
-  onParameterEnabledChange,
-  parameterEnabled,
+  showModelSelector = true,
+  showWelcome = false,
+  priceQuote,
+  reasoning,
+  webSearch,
 }: PlaygroundInputProps) {
   const { t } = useTranslation()
-  const [text, setText] = useState('')
+  const [localText, setLocalText] = useState(initialPrompt ?? '')
+  const text = draft?.value ?? localText
+  const setText = draft?.onChange ?? setLocalText
+  const textarea = useRef<HTMLTextAreaElement>(null)
 
   const handleSubmit = (message: PromptInputMessage) => {
-    const submittableText = getSubmittableInputText(message, disabled)
+    const submittableText = getSubmittableInputText(
+      message,
+      disabled || !canSubmit
+    )
 
     if (!submittableText) return
-    onSubmit(submittableText)
+    const files = message.files ?? []
+    const images =
+      files.length && acceptsChatImages ? selectedChatImageUrls(files) : []
+    if (!images || (files.length && !acceptsChatImages)) {
+      toast.error(t('No files match the accepted types.'))
+      throw new Error('Invalid chat image')
+    }
+    if (images.length) onSubmit(submittableText, images)
+    else onSubmit(submittableText)
     setText('')
   }
 
   return (
-    <div className='grid shrink-0 gap-4 px-1 md:pb-4'>
+    <div className='pg-chat-composer'>
+      {showWelcome && (
+        <h2 className='pg-chat-welcome-title'>
+          {t('What would you like to know?')}
+        </h2>
+      )}
       <PromptInput
-        className='relative'
-        groupClassName='bg-background/95 dark:bg-background/80 border-border/70 shadow-[0_18px_60px_-32px_rgba(0,0,0,0.65)] ring-1 ring-foreground/5 rounded-xl overflow-hidden transition-all duration-200 focus-within:border-primary/45 focus-within:ring-primary/15 focus-within:shadow-[0_22px_70px_-34px_rgba(0,0,0,0.75)]'
+        key={JSON.stringify([groupValue, modelValue, acceptsChatImages])}
+        accept={CHAT_IMAGE_TYPES.join(',')}
+        multiple
+        attachmentsEnabled={acceptsChatImages && !disabled}
+        maxFiles={CHAT_IMAGE_LIMIT}
+        maxFileSize={CHAT_IMAGE_MAX_BYTES}
+        onError={(error) => toast.error(error.message)}
+        aria-label={t('Text Chat')}
+        groupClassName='pg-chat-input-box'
+        onSubmitCapture={(event) => {
+          if (disabled || !canSubmit || !text.trim()) {
+            event.preventDefault()
+            event.stopPropagation()
+          }
+        }}
         onSubmit={handleSubmit}
       >
+        {acceptsChatImages && (
+          <PromptInputHeader className='empty:hidden'>
+            <PromptInputAttachments>
+              {(file) => <PromptInputAttachment data={file} />}
+            </PromptInputAttachments>
+          </PromptInputHeader>
+        )}
         <PromptInputTextarea
+          ref={textarea}
+          aria-label={t('Ask anything')}
           autoComplete='off'
           autoCorrect='off'
           autoCapitalize='off'
           spellCheck={false}
-          className='min-h-20 px-5 pt-4 pb-3 leading-7 md:min-h-24 md:text-base'
+          className='min-h-14 px-4 pt-3.5 pb-1 text-base leading-6 break-words sm:px-5'
           disabled={disabled}
           onChange={(event) => setText(event.target.value)}
           placeholder={t('Ask anything')}
           value={text}
         />
 
-        <PromptInputFooter className='border-border/60 bg-muted/20 dark:bg-muted/10 border-t px-3 py-2.5 backdrop-blur'>
+        <PromptInputFooter className='pg-chat-composer-footer'>
           <PlaygroundInputControls
+            allowSubmit={canSubmit}
             disabled={disabled}
             groups={groups}
-            groupValue={groupValue}
             isGenerating={isGenerating}
             isModelLoading={isModelLoading}
             models={models}
             modelValue={modelValue}
-            onGroupChange={onGroupChange}
             onModelChange={onModelChange}
             onStop={onStop}
             text={text}
+            priceQuote={priceQuote}
+            showModelSelector={showModelSelector}
             tools={
-              <PlaygroundInputTools
-                config={config}
-                disabled={disabled}
-                hasMessages={hasMessages}
-                onConfigChange={onConfigChange}
-                onClearMessages={onClearMessages}
-                onParameterEnabledChange={onParameterEnabledChange}
-                parameterEnabled={parameterEnabled}
-              />
+              <>
+                {reasoning &&
+                  (reasoning.choices.length > 0 ? (
+                    <Select
+                      value={reasoning.value || DEFAULT_REASONING_VALUE}
+                      disabled={disabled}
+                      onValueChange={(value) => {
+                        if (!value || value === DEFAULT_REASONING_VALUE) {
+                          reasoning.onChange('')
+                          return
+                        }
+                        reasoning.onChange(
+                          reasoning.choices.find(
+                            (choice) => choice === value
+                          ) ?? ''
+                        )
+                      }}
+                    >
+                      <SelectTrigger
+                        aria-label={t('Thinking level')}
+                        className='pg-composer-select rounded-full border-0 bg-[var(--bg-elevated)] py-0 data-[size=default]:h-[30px] dark:bg-[#1c1917] dark:hover:bg-[#24201d]'
+                      >
+                        <SparklesIcon size={13} aria-hidden='true' />
+                        <SelectValue>
+                          {reasoning.value
+                            ? `${t('Thinking')} · ${REQUEST_PLUGIN_EFFORT_LABELS[reasoning.value]}`
+                            : `${t('Thinking')} · ${t('Default')}`}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent
+                        side='top'
+                        align='start'
+                        alignItemWithTrigger={false}
+                        className='pg-composer-select-content'
+                      >
+                        <SelectItem value={DEFAULT_REASONING_VALUE}>
+                          {reasoning.defaultValue
+                            ? `${t('Default')} · ${REQUEST_PLUGIN_EFFORT_LABELS[reasoning.defaultValue]}`
+                            : t('Use provider default')}
+                        </SelectItem>
+                        {reasoning.choices.map((value) => (
+                          <SelectItem key={value} value={value} lang='en'>
+                            {REQUEST_PLUGIN_EFFORT_LABELS[value]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Tooltip>
+                      <TooltipTrigger render={<span className='inline-flex' />}>
+                        <button
+                          type='button'
+                          disabled
+                          aria-label={t('Thinking level')}
+                          className='pg-composer-pill is-muted'
+                        >
+                          <SparklesIcon size={13} aria-hidden='true' />
+                          <span>
+                            {t('Thinking')} · {t('Default')}
+                          </span>
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>
+                          {t(
+                            'Current model or route does not declare selectable thinking levels; provider default will be used.'
+                          )}
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
+                  ))}
+                {webSearch && (
+                  <Tooltip>
+                    <TooltipTrigger render={<span className='inline-flex' />}>
+                      <button
+                        type='button'
+                        aria-pressed={webSearch.supported && webSearch.enabled}
+                        disabled={disabled || !webSearch.supported}
+                        className={cn(
+                          'pg-composer-pill',
+                          webSearch.supported && webSearch.enabled && 'is-on',
+                          !webSearch.supported && 'is-muted'
+                        )}
+                        onClick={() => {
+                          if (webSearch.supported) {
+                            webSearch.onChange(!webSearch.enabled)
+                          }
+                        }}
+                      >
+                        <GlobeIcon size={13} aria-hidden='true' />
+                        <span>{t('Online search')}</span>
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>
+                        {webSearch.supported
+                          ? t(
+                              'Enable web search (gateway converts web_search_options to the upstream provider format; search fees may apply).'
+                            )
+                          : t(
+                              'Web search is not declared for this model or route (only enabled on verified non-passthrough routes).'
+                            )}
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+                <PlaygroundInputTools
+                  acceptsChatImages={acceptsChatImages}
+                  onImageCountChange={onImageCountChange}
+                  disabled={disabled}
+                  hasMessages={hasMessages}
+                  onClearMessages={onClearMessages}
+                />
+              </>
             }
           />
         </PromptInputFooter>
       </PromptInput>
+      {showWelcome && (
+        <PlaygroundStarterPrompts
+          disabled={disabled}
+          onSelectPrompt={(prompt) => {
+            setText(prompt)
+            textarea.current?.focus({ preventScroll: true })
+          }}
+        />
+      )}
     </div>
   )
 }

@@ -11,6 +11,7 @@ import {
   Video,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import { PublicLayout } from '@/components/layout'
 import { BrandFooter } from '@/features/magirouter-home/components/brand-footer'
@@ -32,7 +33,6 @@ import {
   buildDocsModelFamilies,
   buildModelDocArticle,
   buildStaticDocs,
-  inferDocsModality,
   type DocsArticle,
   type DocsModality,
   type DocsModelFamily,
@@ -115,6 +115,7 @@ function getMethodBadgeClass(method: string): string {
 }
 
 export function DocsCenter() {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const search = useSearch({ from: '/docs/' })
   const { status } = useStatus()
@@ -122,8 +123,7 @@ export function DocsCenter() {
   const baseUrl = resolveBaseUrl(status?.server_address)
 
   const [query, setQuery] = useState('')
-  const [codeTab, setCodeTab] =
-    useState<Exclude<CodeLanguage, 'bash'>>('curl')
+  const [codeTab, setCodeTab] = useState<Exclude<CodeLanguage, 'bash'>>('curl')
   const [expandedFamilies, setExpandedFamilies] = useState<string[]>([])
   const [exportOpen, setExportOpen] = useState(false)
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
@@ -219,45 +219,16 @@ export function DocsCenter() {
     return map
   }, [orderedArticles])
 
-  const activeArticle = useMemo(() => {
-    const requestedId = search.doc
-    if (requestedId && articleById.has(requestedId)) {
-      return articleById.get(requestedId) as DocsArticle
+  const requestedArticle = search.doc ? articleById.get(search.doc) : undefined
+  const activeArticle = requestedArticle ?? orderedArticles[0] ?? staticDocs[0]
+  let modelMessage = ''
+  if (search.doc?.startsWith('model:')) {
+    if (pricing.isLoading) modelMessage = t('Loading')
+    else if (pricing.error) modelMessage = t('Failed to load models')
+    else if (!requestedArticle) {
+      modelMessage = t('Model documentation unavailable')
     }
-    if (requestedId && requestedId.startsWith('model:')) {
-      const dynamicModelId = requestedId.slice('model:'.length).trim()
-      if (dynamicModelId) {
-        const liveModel = liveModelMap.get(dynamicModelId)
-        const cap = inferDocsModality({
-          model_name: dynamicModelId,
-          tags: liveModel?.tags,
-          supported_endpoint_types: liveModel?.supported_endpoint_types,
-        })
-        const fallbackFamily: DocsModelFamily = {
-          name: liveModel?.vendor_name
-            ? `${liveModel.vendor_name} 系列`
-            : '在线模型',
-          cap,
-          vendor: liveModel?.vendor_name || 'MagiRouter',
-          models: [dynamicModelId],
-        }
-        return buildModelDocArticle(
-          dynamicModelId,
-          baseUrl,
-          fallbackFamily,
-          liveModel
-        )
-      }
-    }
-    return orderedArticles[0] ?? staticDocs[0]
-  }, [
-    articleById,
-    baseUrl,
-    liveModelMap,
-    orderedArticles,
-    search.doc,
-    staticDocs,
-  ])
+  }
 
   const activeIndex = orderedArticles.findIndex(
     (article) => article.id === activeArticle.id
@@ -389,9 +360,8 @@ export function DocsCenter() {
                 {DOCS_GROUP_ORDER.map((groupName) => {
                   if (groupName === 'API 概览') {
                     const visibleBlocks = DOCS_MODALITY_ORDER.map((cap) => {
-                      const families = modelFamilies.filter(
-                        (family) => family.cap === cap
-                      )
+                      const families = modelFamilies
+                        .filter((family) => family.cap === cap)
                         .map((family) => {
                           const matchedModels = family.models.filter(
                             (modelId) =>
@@ -433,7 +403,10 @@ export function DocsCenter() {
                         <div className='docs-group-title'>{groupName}</div>
                         <div className='docs-nav-list'>
                           {visibleBlocks.map((block) => (
-                            <div key={block.cap} className='docs-modality-block'>
+                            <div
+                              key={block.cap}
+                              className='docs-modality-block'
+                            >
                               <div className='docs-cap-divider'>
                                 {block.title}
                               </div>
@@ -442,7 +415,10 @@ export function DocsCenter() {
                                   Boolean(normalizedQuery) ||
                                   expandedFamilies.includes(family.name)
                                 return (
-                                  <div key={family.name} className='docs-folder'>
+                                  <div
+                                    key={family.name}
+                                    className='docs-folder'
+                                  >
                                     <button
                                       type='button'
                                       onClick={() => toggleFamily(family.name)}
@@ -522,7 +498,8 @@ export function DocsCenter() {
                       <div className='docs-group-title'>{groupName}</div>
                       <div className='docs-nav-list'>
                         {groupArticles.map((article) => {
-                          const isActive = activeArticle.id === article.id
+                          const isActive =
+                            !modelMessage && activeArticle.id === article.id
                           return (
                             <button
                               key={article.id}
@@ -545,406 +522,448 @@ export function DocsCenter() {
             </aside>
 
             <article className='docs-article' id='docs-article-host'>
-              <div className='docs-breadcrumb'>
-                <span>开发文档</span>
-                <span>/</span>
-                <span>{activeArticle.group}</span>
-                {activeArticle.cap && (
-                  <>
-                    <span>/</span>
-                    <span>{DOCS_MODALITY_TITLES[activeArticle.cap]}</span>
-                  </>
-                )}
-                {activeArticle.familyName && (
-                  <>
-                    <span>/</span>
-                    <span>{activeArticle.familyName}</span>
-                  </>
-                )}
-                <span>/</span>
-                <span style={{ color: 'var(--ink-strong)' }}>
-                  {activeArticle.title}
-                </span>
-              </div>
-
-              <div className='docs-title-row'>
-                <h1 className='docs-article-title'>{activeArticle.title}</h1>
-                <div className='docs-export-wrap' ref={exportMenuRef}>
-                  <button
-                    type='button'
-                    className='el-btn el-btn-sm el-btn-white'
-                    aria-haspopup='menu'
-                    aria-expanded={exportOpen}
-                    onClick={() => setExportOpen((prev) => !prev)}
-                  >
-                    {copiedKey === 'markdown' || copiedKey === 'html' ? (
-                      <Check size={14} />
-                    ) : (
-                      <Copy size={14} />
-                    )}
-                    <span>
-                      {copiedKey === 'markdown' || copiedKey === 'html'
-                        ? '已复制'
-                        : '复制 Markdown'}
-                    </span>
-                    <ChevronDown size={13} />
-                  </button>
-                  {exportOpen && (
-                    <div
-                      className='docs-export-menu'
-                      role='menu'
-                      aria-label='文档复制与下载选项'
+              {modelMessage ? (
+                <div aria-live='polite' aria-busy={pricing.isLoading}>
+                  <h1 className='docs-article-title'>{modelMessage}</h1>
+                  {!pricing.isLoading && (
+                    <Link
+                      to='/docs'
+                      search={{}}
+                      className='el-btn el-btn-sm el-btn-white'
                     >
-                      <div className='docs-export-group-label'>当前文档</div>
-                      <button
-                        type='button'
-                        className='docs-export-item'
-                        role='menuitem'
-                        onClick={() => {
-                          void copyWithFeedback(
-                            'markdown',
-                            buildDocMarkdown(activeArticle)
-                          )
-                          setExportOpen(false)
-                        }}
-                      >
-                        <span>复制当前 Markdown</span>
-                        <span className='docs-export-ext'>.md</span>
-                      </button>
-                      <button
-                        type='button'
-                        className='docs-export-item'
-                        role='menuitem'
-                        onClick={handleDownloadCurrentMarkdown}
-                      >
-                        <span>下载当前 Markdown</span>
-                        <span className='docs-export-ext'>.md</span>
-                      </button>
-                      <button
-                        type='button'
-                        className='docs-export-item'
-                        role='menuitem'
-                        onClick={() => {
-                          void copyWithFeedback(
-                            'html',
-                            buildDocHtml(activeArticle)
-                          )
-                          setExportOpen(false)
-                        }}
-                      >
-                        <span>复制当前 HTML</span>
-                        <span className='docs-export-ext'>.html</span>
-                      </button>
-                      <button
-                        type='button'
-                        className='docs-export-item'
-                        role='menuitem'
-                        onClick={handleDownloadCurrentHtml}
-                      >
-                        <span>下载当前 HTML</span>
-                        <span className='docs-export-ext'>.html</span>
-                      </button>
-                      <div className='docs-export-sep' />
-                      <div className='docs-export-group-label'>全量文档</div>
-                      <button
-                        type='button'
-                        className='docs-export-item'
-                        role='menuitem'
-                        onClick={() => {
-                          void copyWithFeedback('markdown', buildAllMarkdown())
-                          setExportOpen(false)
-                        }}
-                      >
-                        <span>复制全量指南</span>
-                        <span className='docs-export-ext'>.md</span>
-                      </button>
-                      <button
-                        type='button'
-                        className='docs-export-item'
-                        role='menuitem'
-                        onClick={handleDownloadAllMarkdown}
-                      >
-                        <span>下载全量 Markdown</span>
-                        <span className='docs-export-ext'>.md</span>
-                      </button>
-                    </div>
+                      {t('Back to documentation')}
+                    </Link>
                   )}
-                </div>
-              </div>
-
-              <p
-                style={{
-                  margin: '-6px 0 0',
-                  fontSize: '15px',
-                  lineHeight: 1.65,
-                  color: 'var(--ink-muted)',
-                }}
-              >
-                {activeArticle.summary}
-              </p>
-
-              {activeArticle.urlValue && (
-                <div className='docs-url-bar'>
-                  <div className='docs-url-main'>
-                    <span className='docs-url-label'>
-                      {activeArticle.urlLabel}
-                    </span>
-                    <code className='docs-url-value'>
-                      {activeArticle.urlValue}
-                    </code>
-                  </div>
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      flexWrap: 'wrap',
-                    }}
-                  >
+                  {pricing.error && (
                     <button
                       type='button'
-                      className='el-btn el-btn-sm el-btn-white'
-                      onClick={() =>
-                        void copyWithFeedback('url', activeArticle.urlValue)
-                      }
+                      className='el-btn el-btn-sm el-btn-ghost'
+                      onClick={() => void pricing.refetch()}
                     >
-                      {copiedKey === 'url' ? '已复制' : '复制地址'}
+                      {t('Retry')}
                     </button>
-                    {isModelDoc && (
-                      <Link
-                        to='/playground'
-                        className='el-btn el-btn-sm el-btn-primary'
-                      >
-                        在 Playground 调试 →
-                      </Link>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {activeArticle.sections.map((section) => (
-                <div
-                  key={section.id}
-                  id={`doc-sec-${section.id}`}
-                  className='docs-section-block scroll-mt-24'
-                >
-                  <h2>{section.title}</h2>
-                  {section.paragraphs.map((paragraph) => (
-                    <p key={`${section.id}-${paragraph.slice(0, 40)}`}>
-                      {paragraph}
-                    </p>
-                  ))}
-                  {section.table && (
-                    <div className='docs-table-wrap'>
-                      <table className='docs-param-table'>
-                        <thead>
-                          <tr>
-                            {section.table.headers.map((header) => (
-                              <th key={header}>{header}</th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {section.table.rows.map((row) => {
-                            const rowKey = row.join('|')
-                            const headers = section.table?.headers ?? []
-                            return (
-                              <tr key={rowKey}>
-                                {row.map((cell, cellIndex) => (
-                                  <td
-                                    key={`${rowKey}-${headers[cellIndex] ?? cell}`}
-                                  >
-                                    {cellIndex === 1 && !cell.includes(' ') ? (
-                                      <code>{cell}</code>
-                                    ) : (
-                                      cell
-                                    )}
-                                  </td>
-                                ))}
-                              </tr>
-                            )
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
                   )}
                 </div>
-              ))}
+              ) : (
+                <>
+                  <div className='docs-breadcrumb'>
+                    <span>开发文档</span>
+                    <span>/</span>
+                    <span>{activeArticle.group}</span>
+                    {activeArticle.cap && (
+                      <>
+                        <span>/</span>
+                        <span>{DOCS_MODALITY_TITLES[activeArticle.cap]}</span>
+                      </>
+                    )}
+                    {activeArticle.familyName && (
+                      <>
+                        <span>/</span>
+                        <span>{activeArticle.familyName}</span>
+                      </>
+                    )}
+                    <span>/</span>
+                    <span style={{ color: 'var(--ink-strong)' }}>
+                      {activeArticle.title}
+                    </span>
+                  </div>
 
-              <div
-                id='doc-sec-reference'
-                className='docs-section-block scroll-mt-24'
-              >
-                <h2>接口端点与调用示例</h2>
-                <div
-                  id='docs-inline-ref-host'
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '12px',
-                  }}
-                >
-                  <div className='docs-ref-card'>
-                    <div className='docs-ref-head'>
-                      <span>Endpoints</span>
-                      <span>
-                        {activeArticle.familyName || activeArticle.group}
-                      </span>
-                    </div>
-                    <div className='docs-ref-endpoints'>
-                      {activeArticle.endpoints.map((endpoint) => {
-                        const epKey = `ep:${endpoint.method}:${endpoint.path}`
-                        return (
-                          <div key={epKey} className='docs-ref-ep-row'>
-                            <span className='docs-ref-ep-main'>
-                              <span
-                                className={getMethodBadgeClass(endpoint.method)}
-                              >
-                                {endpoint.method}
-                              </span>
-                              <span className='docs-ref-ep-path'>
-                                {endpoint.path}
-                              </span>
-                            </span>
-                            <button
-                              type='button'
-                              className='docs-ref-copy'
-                              onClick={() =>
-                                void copyWithFeedback(
-                                  epKey,
-                                  `${baseUrl}${endpoint.path}`
-                                )
-                              }
-                            >
-                              {copiedKey === epKey ? '已复制' : '复制'}
-                            </button>
+                  <div className='docs-title-row'>
+                    <h1 className='docs-article-title'>
+                      {activeArticle.title}
+                    </h1>
+                    <div className='docs-export-wrap' ref={exportMenuRef}>
+                      <button
+                        type='button'
+                        className='el-btn el-btn-sm el-btn-white'
+                        aria-haspopup='menu'
+                        aria-expanded={exportOpen}
+                        onClick={() => setExportOpen((prev) => !prev)}
+                      >
+                        {copiedKey === 'markdown' || copiedKey === 'html' ? (
+                          <Check size={14} />
+                        ) : (
+                          <Copy size={14} />
+                        )}
+                        <span>
+                          {copiedKey === 'markdown' || copiedKey === 'html'
+                            ? '已复制'
+                            : '复制 Markdown'}
+                        </span>
+                        <ChevronDown size={13} />
+                      </button>
+                      {exportOpen && (
+                        <div
+                          className='docs-export-menu'
+                          role='menu'
+                          aria-label='文档复制与下载选项'
+                        >
+                          <div className='docs-export-group-label'>
+                            当前文档
                           </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-
-                  <div className='docs-ref-card'>
-                    <div className='docs-ref-head'>
-                      <div className='docs-ref-tabs'>
-                        {CODE_TABS.map((tab) => (
                           <button
-                            key={tab.value}
                             type='button'
-                            onClick={() => setCodeTab(tab.value)}
-                            className={cn(
-                              'docs-ref-tab',
-                              codeTab === tab.value && 'is-active'
-                            )}
+                            className='docs-export-item'
+                            role='menuitem'
+                            onClick={() => {
+                              void copyWithFeedback(
+                                'markdown',
+                                buildDocMarkdown(activeArticle)
+                              )
+                              setExportOpen(false)
+                            }}
                           >
-                            {tab.label}
+                            <span>复制当前 Markdown</span>
+                            <span className='docs-export-ext'>.md</span>
                           </button>
-                        ))}
+                          <button
+                            type='button'
+                            className='docs-export-item'
+                            role='menuitem'
+                            onClick={handleDownloadCurrentMarkdown}
+                          >
+                            <span>下载当前 Markdown</span>
+                            <span className='docs-export-ext'>.md</span>
+                          </button>
+                          <button
+                            type='button'
+                            className='docs-export-item'
+                            role='menuitem'
+                            onClick={() => {
+                              void copyWithFeedback(
+                                'html',
+                                buildDocHtml(activeArticle)
+                              )
+                              setExportOpen(false)
+                            }}
+                          >
+                            <span>复制当前 HTML</span>
+                            <span className='docs-export-ext'>.html</span>
+                          </button>
+                          <button
+                            type='button'
+                            className='docs-export-item'
+                            role='menuitem'
+                            onClick={handleDownloadCurrentHtml}
+                          >
+                            <span>下载当前 HTML</span>
+                            <span className='docs-export-ext'>.html</span>
+                          </button>
+                          <div className='docs-export-sep' />
+                          <div className='docs-export-group-label'>
+                            全量文档
+                          </div>
+                          <button
+                            type='button'
+                            className='docs-export-item'
+                            role='menuitem'
+                            onClick={() => {
+                              void copyWithFeedback(
+                                'markdown',
+                                buildAllMarkdown()
+                              )
+                              setExportOpen(false)
+                            }}
+                          >
+                            <span>复制全量指南</span>
+                            <span className='docs-export-ext'>.md</span>
+                          </button>
+                          <button
+                            type='button'
+                            className='docs-export-item'
+                            role='menuitem'
+                            onClick={handleDownloadAllMarkdown}
+                          >
+                            <span>下载全量 Markdown</span>
+                            <span className='docs-export-ext'>.md</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <p
+                    style={{
+                      margin: '-6px 0 0',
+                      fontSize: '15px',
+                      lineHeight: 1.65,
+                      color: 'var(--ink-muted)',
+                    }}
+                  >
+                    {activeArticle.summary}
+                  </p>
+
+                  {activeArticle.urlValue && (
+                    <div className='docs-url-bar'>
+                      <div className='docs-url-main'>
+                        <span className='docs-url-label'>
+                          {activeArticle.urlLabel}
+                        </span>
+                        <code className='docs-url-value'>
+                          {activeArticle.urlValue}
+                        </code>
                       </div>
-                      <button
-                        type='button'
-                        className='docs-ref-copy'
-                        onClick={() =>
-                          void copyWithFeedback(
-                            'snippet',
-                            activeArticle.snippets[codeTab]
-                          )
-                        }
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          flexWrap: 'wrap',
+                        }}
                       >
-                        {copiedKey === 'snippet' ? '已复制' : '复制示例'}
-                      </button>
+                        <button
+                          type='button'
+                          className='el-btn el-btn-sm el-btn-white'
+                          onClick={() =>
+                            void copyWithFeedback('url', activeArticle.urlValue)
+                          }
+                        >
+                          {copiedKey === 'url' ? '已复制' : '复制地址'}
+                        </button>
+                        {isModelDoc && (
+                          <Link
+                            to='/playground'
+                            className='el-btn el-btn-sm el-btn-primary'
+                          >
+                            在 Playground 调试 →
+                          </Link>
+                        )}
+                      </div>
                     </div>
-                    <HighlightedCode
-                      code={activeArticle.snippets[codeTab]}
-                      language={codeTab}
-                      className='docs-ref-pre'
-                    />
-                  </div>
+                  )}
 
-                  <div className='docs-ref-card'>
-                    <div className='docs-ref-head'>
-                      <span>{activeArticle.responseTitle}</span>
-                      <button
-                        type='button'
-                        className='docs-ref-copy'
-                        onClick={() =>
-                          void copyWithFeedback(
-                            'response',
-                            activeArticle.responseJson
-                          )
-                        }
-                      >
-                        {copiedKey === 'response' ? '已复制' : '复制响应'}
-                      </button>
+                  {activeArticle.sections.map((section) => (
+                    <div
+                      key={section.id}
+                      id={`doc-sec-${section.id}`}
+                      className='docs-section-block scroll-mt-24'
+                    >
+                      <h2>{section.title}</h2>
+                      {section.paragraphs.map((paragraph) => (
+                        <p key={`${section.id}-${paragraph.slice(0, 40)}`}>
+                          {paragraph}
+                        </p>
+                      ))}
+                      {section.table && (
+                        <div className='docs-table-wrap'>
+                          <table className='docs-param-table'>
+                            <thead>
+                              <tr>
+                                {section.table.headers.map((header) => (
+                                  <th key={header}>{header}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {section.table.rows.map((row) => {
+                                const rowKey = row.join('|')
+                                const headers = section.table?.headers ?? []
+                                return (
+                                  <tr key={rowKey}>
+                                    {row.map((cell, cellIndex) => (
+                                      <td
+                                        key={`${rowKey}-${headers[cellIndex] ?? cell}`}
+                                      >
+                                        {cellIndex === 1 &&
+                                        !cell.includes(' ') ? (
+                                          <code>{cell}</code>
+                                        ) : (
+                                          cell
+                                        )}
+                                      </td>
+                                    ))}
+                                  </tr>
+                                )
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
                     </div>
-                    <HighlightedCode
-                      code={activeArticle.responseJson}
-                      language='json'
-                      className='docs-ref-pre'
-                    />
-                  </div>
-                </div>
-              </div>
+                  ))}
 
-              <div className='docs-pager'>
-                {prevArticle ? (
-                  <button
-                    type='button'
-                    className='docs-pager-card'
-                    onClick={() => selectArticle(prevArticle.id)}
+                  <div
+                    id='doc-sec-reference'
+                    className='docs-section-block scroll-mt-24'
                   >
-                    <span className='el-eyebrow'>← 上一篇</span>
-                    <span
+                    <h2>接口端点与调用示例</h2>
+                    <div
+                      id='docs-inline-ref-host'
                       style={{
-                        fontSize: '14px',
-                        fontWeight: 500,
-                        color: 'var(--ink-strong)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '12px',
                       }}
                     >
-                      {prevArticle.title}
-                    </span>
-                  </button>
-                ) : (
-                  <div />
-                )}
-                {nextArticle ? (
-                  <button
-                    type='button'
-                    className='docs-pager-card is-next'
-                    onClick={() => selectArticle(nextArticle.id)}
-                  >
-                    <span className='el-eyebrow'>下一篇 →</span>
-                    <span
-                      style={{
-                        fontSize: '14px',
-                        fontWeight: 500,
-                        color: 'var(--ink-strong)',
-                      }}
-                    >
-                      {nextArticle.title}
-                    </span>
-                  </button>
-                ) : (
-                  <div />
-                )}
-              </div>
+                      <div className='docs-ref-card'>
+                        <div className='docs-ref-head'>
+                          <span>Endpoints</span>
+                          <span>
+                            {activeArticle.familyName || activeArticle.group}
+                          </span>
+                        </div>
+                        <div className='docs-ref-endpoints'>
+                          {activeArticle.endpoints.map((endpoint) => {
+                            const epKey = `ep:${endpoint.method}:${endpoint.path}`
+                            return (
+                              <div key={epKey} className='docs-ref-ep-row'>
+                                <span className='docs-ref-ep-main'>
+                                  <span
+                                    className={getMethodBadgeClass(
+                                      endpoint.method
+                                    )}
+                                  >
+                                    {endpoint.method}
+                                  </span>
+                                  <span className='docs-ref-ep-path'>
+                                    {endpoint.path}
+                                  </span>
+                                </span>
+                                <button
+                                  type='button'
+                                  className='docs-ref-copy'
+                                  onClick={() =>
+                                    void copyWithFeedback(
+                                      epKey,
+                                      `${baseUrl}${endpoint.path}`
+                                    )
+                                  }
+                                >
+                                  {copiedKey === epKey ? '已复制' : '复制'}
+                                </button>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+
+                      <div className='docs-ref-card'>
+                        <div className='docs-ref-head'>
+                          <div className='docs-ref-tabs'>
+                            {CODE_TABS.map((tab) => (
+                              <button
+                                key={tab.value}
+                                type='button'
+                                onClick={() => setCodeTab(tab.value)}
+                                className={cn(
+                                  'docs-ref-tab',
+                                  codeTab === tab.value && 'is-active'
+                                )}
+                              >
+                                {tab.label}
+                              </button>
+                            ))}
+                          </div>
+                          <button
+                            type='button'
+                            className='docs-ref-copy'
+                            onClick={() =>
+                              void copyWithFeedback(
+                                'snippet',
+                                activeArticle.snippets[codeTab]
+                              )
+                            }
+                          >
+                            {copiedKey === 'snippet' ? '已复制' : '复制示例'}
+                          </button>
+                        </div>
+                        <HighlightedCode
+                          code={activeArticle.snippets[codeTab]}
+                          language={codeTab}
+                          className='docs-ref-pre'
+                        />
+                      </div>
+
+                      <div className='docs-ref-card'>
+                        <div className='docs-ref-head'>
+                          <span>{activeArticle.responseTitle}</span>
+                          <button
+                            type='button'
+                            className='docs-ref-copy'
+                            onClick={() =>
+                              void copyWithFeedback(
+                                'response',
+                                activeArticle.responseJson
+                              )
+                            }
+                          >
+                            {copiedKey === 'response' ? '已复制' : '复制响应'}
+                          </button>
+                        </div>
+                        <HighlightedCode
+                          code={activeArticle.responseJson}
+                          language='json'
+                          className='docs-ref-pre'
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className='docs-pager'>
+                    {prevArticle ? (
+                      <button
+                        type='button'
+                        className='docs-pager-card'
+                        onClick={() => selectArticle(prevArticle.id)}
+                      >
+                        <span className='el-eyebrow'>← 上一篇</span>
+                        <span
+                          style={{
+                            fontSize: '14px',
+                            fontWeight: 500,
+                            color: 'var(--ink-strong)',
+                          }}
+                        >
+                          {prevArticle.title}
+                        </span>
+                      </button>
+                    ) : (
+                      <div />
+                    )}
+                    {nextArticle ? (
+                      <button
+                        type='button'
+                        className='docs-pager-card is-next'
+                        onClick={() => selectArticle(nextArticle.id)}
+                      >
+                        <span className='el-eyebrow'>下一篇 →</span>
+                        <span
+                          style={{
+                            fontSize: '14px',
+                            fontWeight: 500,
+                            color: 'var(--ink-strong)',
+                          }}
+                        >
+                          {nextArticle.title}
+                        </span>
+                      </button>
+                    ) : (
+                      <div />
+                    )}
+                  </div>
+                </>
+              )}
             </article>
 
             <aside className='docs-toc' aria-label='本页目录'>
-              <div className='docs-toc-title'>本页目录</div>
-              {tocItems.map((item) => (
-                <button
-                  key={item.id}
-                  type='button'
-                  onClick={() => scrollToSection(item.id)}
-                  className={cn(
-                    'docs-toc-link',
-                    activeSectionId === item.id && 'is-active'
-                  )}
-                >
-                  {item.title}
-                </button>
-              ))}
+              {!modelMessage && (
+                <>
+                  <div className='docs-toc-title'>本页目录</div>
+                  {tocItems.map((item) => (
+                    <button
+                      key={item.id}
+                      type='button'
+                      onClick={() => scrollToSection(item.id)}
+                      className={cn(
+                        'docs-toc-link',
+                        activeSectionId === item.id && 'is-active'
+                      )}
+                    >
+                      {item.title}
+                    </button>
+                  ))}
+                </>
+              )}
             </aside>
           </div>
         </div>

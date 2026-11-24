@@ -22,32 +22,19 @@ import { useTranslation } from 'react-i18next'
 
 import { useThemeCustomization } from '@/context/theme-customization-provider'
 import { getSuccessRateColor } from '@/features/performance-metrics/lib/format'
+import type { SuccessRatePoint } from '@/features/performance-metrics/types'
+import { formatTimestampToDate } from '@/lib/format'
 import { useThemeRadiusPx } from '@/lib/theme-radius'
 import { useChartTheme } from '@/lib/use-chart-theme'
 import { cn } from '@/lib/utils'
 import { VCHART_OPTION } from '@/lib/vchart'
 
-import type { LatencyTimePoint, UptimeDayPoint } from '../lib/mock-stats'
+import type { LatencyTimePoint } from '../lib/mock-stats'
 
 function formatHourLabel(iso: string): string {
   const date = new Date(iso)
   const hours = date.getHours()
   return `${String(hours).padStart(2, '0')}:00`
-}
-
-function formatDayLabel(date: string): string {
-  const parsed = new Date(date)
-  if (date.includes('T')) {
-    return parsed.toLocaleString(undefined, {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-    })
-  }
-  return parsed.toLocaleDateString(undefined, {
-    month: 'short',
-    day: 'numeric',
-  })
 }
 
 function getChartThemeTokens(resolvedTheme: string) {
@@ -67,11 +54,6 @@ const UPTIME_AXIS_MAX = 100
 const UPTIME_FOCUSED_AXIS_MIN = 95
 const UPTIME_MINOR_OUTAGE_AXIS_MIN = 90
 
-function toUptimeChartValue(value: number): number {
-  if (!Number.isFinite(value)) return 0
-  return Math.min(UPTIME_AXIS_MAX, Math.max(0, value))
-}
-
 function getUptimeAxisMin(values: number[]): number {
   const finiteValues = values.filter((value) => Number.isFinite(value))
   if (finiteValues.length === 0) return UPTIME_FOCUSED_AXIS_MIN
@@ -83,10 +65,6 @@ function getUptimeAxisMin(values: number[]): number {
   }
 
   return Math.max(0, Math.floor((minValue - 5) / 10) * 10)
-}
-
-function stripUptimePointSuffix(value: string): string {
-  return value.replace(/__(start|end)$/, '')
 }
 
 // ---------------------------------------------------------------------------
@@ -192,7 +170,7 @@ export function LatencyTrendChart(props: {
 // ---------------------------------------------------------------------------
 
 export function UptimeTrendChart(props: {
-  series: UptimeDayPoint[]
+  series: SuccessRatePoint[]
   className?: string
 }) {
   const { t } = useTranslation()
@@ -202,30 +180,18 @@ export function UptimeTrendChart(props: {
   const spec = useMemo(() => {
     if (props.series.length === 0) return null
 
-    const rawData = props.series.map((point) => ({
-      date: formatDayLabel(point.date),
-      uptime: toUptimeChartValue(point.uptime_pct),
-      incidents: point.incidents,
-      outage: point.outage_minutes,
+    const data = props.series.map((point) => ({
+      date: formatTimestampToDate(point.ts),
+      uptime: point.success_rate,
     }))
-    const data =
-      rawData.length === 1
-        ? [
-            { ...rawData[0], date: `${rawData[0].date}__start` },
-            { ...rawData[0], date: `${rawData[0].date}__end` },
-          ]
-        : rawData
-    const axisMin = getUptimeAxisMin(rawData.map((point) => point.uptime))
+    const axisMin = getUptimeAxisMin(data.map((point) => point.uptime))
 
     return {
       type: 'line' as const,
       data: [{ id: 'uptime', values: data }],
       xField: 'date',
       yField: 'uptime',
-      smooth: true,
-      line: {
-        style: { stroke: '#10b981', lineWidth: 2 },
-      },
+      line: { visible: false },
       point: {
         visible: true,
         style: {
@@ -239,20 +205,13 @@ export function UptimeTrendChart(props: {
       tooltip: {
         mark: {
           title: {
-            value: (d: { date: string }) => stripUptimePointSuffix(d.date),
+            value: (datum: { date: string }) => datum.date,
           },
           content: [
             {
-              key: t('Uptime'),
-              value: (d: { uptime: number }) => `${d.uptime.toFixed(2)}%`,
-            },
-            {
-              key: t('Incidents'),
-              value: (d: { incidents: number }) => `${d.incidents}`,
-            },
-            {
-              key: t('Outage'),
-              value: (d: { outage: number }) => `${d.outage} ${t('minutes')}`,
+              key: t('Success rate'),
+              value: (datum: { uptime: number }) =>
+                `${datum.uptime.toFixed(2)}%`,
             },
           ],
         },
@@ -261,8 +220,6 @@ export function UptimeTrendChart(props: {
         {
           orient: 'bottom',
           label: {
-            formatMethod: (val: number | string) =>
-              stripUptimePointSuffix(String(val)),
             style: { fill: textColor, fontSize: 10 },
             autoLimit: true,
           },
@@ -293,7 +250,7 @@ export function UptimeTrendChart(props: {
           props.className
         )}
       >
-        {t('No uptime data available')}
+        {t('Not monitored')}
       </div>
     )
   }

@@ -54,6 +54,7 @@ import {
 
 const sectionCardClassName = 'min-w-0 shadow-none'
 const sectionHeaderClassName = 'gap-2 border-b'
+const EMPTY_GROUP_OPTIONS: string[] = []
 
 type Rule = {
   _id: string
@@ -162,14 +163,19 @@ function GroupSelect(props: GroupSelectProps) {
 
 type GroupSpecialUsableRulesEditorProps = {
   value: string
-  groupOptions: string[]
+  groupOptions?: string[]
+  userGroupOptions?: string[]
+  billingGroupOptions?: string[]
+  userManagementGroups?: Set<string>
   onChange: (value: string) => void
 }
 
 type GroupSectionProps = {
   groupName: string
   items: Rule[]
-  groupOptions: string[]
+  userGroupOptions: string[]
+  billingGroupOptions: string[]
+  userManagementGroups?: Set<string>
   onUpdate: (id: string, field: keyof Rule, val: string | boolean) => void
   onRemove: (id: string) => void
   onAdd: (groupName: string) => void
@@ -179,7 +185,7 @@ type GroupSectionProps = {
 function GroupSection(props: GroupSectionProps) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(true)
-  const isKnownGroup = props.groupOptions.includes(props.groupName)
+  const isKnownGroup = props.userGroupOptions.includes(props.groupName)
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
@@ -238,93 +244,118 @@ function GroupSection(props: GroupSectionProps) {
         </div>
         <CollapsibleContent>
           <div className='space-y-2 border-t p-3'>
-            {props.items.map((rule) => (
-              <div
-                key={rule._id}
-                className='grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-lg border p-3 sm:grid-cols-[130px_minmax(0,1fr)_minmax(0,1fr)_auto] sm:border-0 sm:p-0'
-              >
-                <Select
-                  value={rule.visible ? 'visible' : 'hidden'}
-                  onValueChange={(v) =>
-                    v !== null &&
-                    props.onUpdate(rule._id, 'visible', v === 'visible')
-                  }
+            {props.items.map((rule) => {
+              const isUserManagementTarget =
+                Boolean(rule.targetGroup) &&
+                Boolean(props.userManagementGroups?.has(rule.targetGroup))
+              const isUnknownTarget =
+                Boolean(rule.targetGroup) &&
+                !isUserManagementTarget &&
+                !props.billingGroupOptions.includes(rule.targetGroup)
+
+              return (
+                <div
+                  key={rule._id}
+                  className='grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-lg border p-3 sm:grid-cols-[130px_minmax(0,1fr)_minmax(0,1fr)_auto] sm:border-0 sm:p-0'
                 >
-                  <SelectTrigger
-                    className='w-full sm:w-[130px]'
-                    aria-label={t('Group visibility')}
-                  >
-                    <SelectValue>
-                      <StatusBadge
-                        label={rule.visible ? t('Extra visible') : t('Hidden')}
-                        variant={rule.visible ? 'info' : 'danger'}
-                        copyable={false}
-                      />
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent alignItemWithTrigger={false}>
-                    <SelectGroup>
-                      <SelectItem value='visible'>
-                        <StatusBadge
-                          label={t('Extra visible')}
-                          variant='info'
-                          copyable={false}
-                        />
-                      </SelectItem>
-                      <SelectItem value='hidden'>
-                        <StatusBadge
-                          label={t('Hidden')}
-                          variant='danger'
-                          copyable={false}
-                        />
-                      </SelectItem>
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-                <div className='col-start-1 row-start-2 flex min-w-0 items-center gap-1.5 sm:col-start-auto sm:row-start-auto'>
-                  <GroupSelect
-                    className='min-w-0 flex-1'
-                    options={props.groupOptions}
-                    value={rule.targetGroup}
-                    placeholder={t('Group name')}
-                    onValueChange={(v) =>
-                      props.onUpdate(rule._id, 'targetGroup', v)
+                  <Select
+                    value={rule.visible ? 'visible' : 'hidden'}
+                    onValueChange={(value) =>
+                      value !== null &&
+                      props.onUpdate(rule._id, 'visible', value === 'visible')
                     }
-                  />
-                  {rule.targetGroup &&
-                    !props.groupOptions.includes(rule.targetGroup) && (
+                  >
+                    <SelectTrigger
+                      className='w-full sm:w-[130px]'
+                      aria-label={t('Group visibility')}
+                    >
+                      <SelectValue>
+                        <StatusBadge
+                          label={
+                            rule.visible ? t('Extra visible') : t('Hidden')
+                          }
+                          variant={rule.visible ? 'info' : 'danger'}
+                          copyable={false}
+                        />
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent alignItemWithTrigger={false}>
+                      <SelectGroup>
+                        <SelectItem value='visible'>
+                          <StatusBadge
+                            label={t('Extra visible')}
+                            variant='info'
+                            copyable={false}
+                          />
+                        </SelectItem>
+                        <SelectItem value='hidden'>
+                          <StatusBadge
+                            label={t('Hidden')}
+                            variant='danger'
+                            copyable={false}
+                          />
+                        </SelectItem>
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                  <div className='col-start-1 row-start-2 flex min-w-0 items-center gap-1.5 sm:col-start-auto sm:row-start-auto'>
+                    <GroupSelect
+                      className='min-w-0 flex-1'
+                      options={props.billingGroupOptions}
+                      value={rule.targetGroup}
+                      placeholder={t('Group name')}
+                      onValueChange={(value) =>
+                        props.onUpdate(rule._id, 'targetGroup', value)
+                      }
+                    />
+                    {isUserManagementTarget && (
+                      <StatusBadge
+                        variant='warning'
+                        copyable={false}
+                        className='shrink-0'
+                      >
+                        <AlertTriangle className='mr-1 h-3 w-3' />
+                        {t('User management only')}
+                      </StatusBadge>
+                    )}
+                    {isUnknownTarget && (
                       <AlertTriangle
                         className='text-destructive h-4 w-4 shrink-0'
                         aria-label={t('Not in pricing table')}
                       />
                     )}
-                </div>
-                {rule.visible ? (
-                  <Input
-                    className='col-start-1 row-start-3 min-w-0 sm:col-start-auto sm:row-start-auto'
-                    aria-label={t('Description')}
-                    value={rule.description}
-                    placeholder={t('Description')}
-                    onChange={(e) =>
-                      props.onUpdate(rule._id, 'description', e.target.value)
-                    }
-                  />
-                ) : (
-                  <div className='text-muted-foreground hidden px-3 text-sm sm:block'>
-                    -
                   </div>
-                )}
-                <Button
-                  variant='ghost'
-                  size='sm'
-                  className='text-destructive col-start-2 row-start-1 size-8 p-0 sm:col-start-auto sm:row-start-auto'
-                  aria-label={t('Delete rule')}
-                  onClick={() => props.onRemove(rule._id)}
-                >
-                  <Trash2 className='h-4 w-4' />
-                </Button>
-              </div>
-            ))}
+                  {rule.visible ? (
+                    <Input
+                      className='col-start-1 row-start-3 min-w-0 sm:col-start-auto sm:row-start-auto'
+                      aria-label={t('Description')}
+                      value={rule.description}
+                      placeholder={t('Description')}
+                      onChange={(event) =>
+                        props.onUpdate(
+                          rule._id,
+                          'description',
+                          event.target.value
+                        )
+                      }
+                    />
+                  ) : (
+                    <div className='text-muted-foreground hidden px-3 text-sm sm:block'>
+                      -
+                    </div>
+                  )}
+                  <Button
+                    variant='ghost'
+                    size='sm'
+                    className='text-destructive col-start-2 row-start-1 size-8 p-0 sm:col-start-auto sm:row-start-auto'
+                    aria-label={t('Delete rule')}
+                    onClick={() => props.onRemove(rule._id)}
+                  >
+                    <Trash2 className='h-4 w-4' />
+                  </Button>
+                </div>
+              )
+            })}
           </div>
         </CollapsibleContent>
       </div>
@@ -339,6 +370,10 @@ export function GroupSpecialUsableRulesEditor(
   const [rules, setRules] = useState<Rule[]>(() =>
     flattenRules(safeParseJson(props.value))
   )
+  const userGroupOptions =
+    props.userGroupOptions ?? props.groupOptions ?? EMPTY_GROUP_OPTIONS
+  const billingGroupOptions =
+    props.billingGroupOptions ?? props.groupOptions ?? EMPTY_GROUP_OPTIONS
 
   const { onChange } = props
   const emitChange = useCallback(
@@ -409,9 +444,9 @@ export function GroupSpecialUsableRulesEditor(
   }, [rules])
 
   const newGroupCandidates = useMemo(() => {
-    const used = new Set(grouped.map((g) => g.name))
-    return props.groupOptions.filter((name) => !used.has(name))
-  }, [grouped, props.groupOptions])
+    const used = new Set(grouped.map((group) => group.name))
+    return userGroupOptions.filter((name) => !used.has(name))
+  }, [grouped, userGroupOptions])
 
   return (
     <Card className={sectionCardClassName}>
@@ -436,7 +471,9 @@ export function GroupSpecialUsableRulesEditor(
                 key={group.name}
                 groupName={group.name}
                 items={group.items}
-                groupOptions={props.groupOptions}
+                userGroupOptions={userGroupOptions}
+                billingGroupOptions={billingGroupOptions}
+                userManagementGroups={props.userManagementGroups}
                 onUpdate={updateRule}
                 onRemove={removeRule}
                 onAdd={addRuleToGroup}

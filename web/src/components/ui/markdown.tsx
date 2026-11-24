@@ -762,6 +762,32 @@ function renderMarkdown(
   return addExternalLinkAttributes(html, baseUrl)
 }
 
+export function MarkdownLabel({ children }: { children: string }) {
+  const html = useMemo(
+    () =>
+      DOMPurify.sanitize(
+        markdownParser.parseInline(children, markdownOptions),
+        {
+          ALLOWED_TAGS: [
+            'strong',
+            'b',
+            'em',
+            'i',
+            'code',
+            'del',
+            's',
+            'sub',
+            'sup',
+            'br',
+          ],
+          ALLOWED_ATTR: [],
+        }
+      ),
+    [children]
+  )
+  return <span dangerouslySetInnerHTML={{ __html: html }} />
+}
+
 export function Markdown(props: MarkdownProps) {
   const html = useMemo(
     () => renderMarkdown(props.children, props.breaks, props.baseUrl),

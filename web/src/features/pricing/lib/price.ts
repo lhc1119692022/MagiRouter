@@ -65,6 +65,7 @@ export function calculateTokenPrice(
   type: PriceType,
   ratio: number
 ): number {
+  if (model.price_unconfigured) return Number.NaN
   const base = model.model_ratio * 2 * ratio
 
   switch (type) {
@@ -220,12 +221,15 @@ export function formatFixedPrice(
   usdExchangeRate = 1,
   groupRatio: Record<string, number>
 ): string {
-  if (model.quota_type !== QUOTA_TYPE_VALUES.REQUEST) {
+  if (
+    model.quota_type !== QUOTA_TYPE_VALUES.REQUEST ||
+    model.model_price == null
+  ) {
     return '-'
   }
 
   const ratio = getConfiguredGroupRatio(groupRatio, group)
-  let priceInUSD = (model.model_price || 0) * ratio
+  let priceInUSD = model.model_price * ratio
 
   priceInUSD = applyRechargeRate(
     priceInUSD,
@@ -252,13 +256,16 @@ export function formatRequestPrice(
   selectedGroup?: string,
   showCurrencySymbol = true
 ): string {
-  if (model.quota_type !== QUOTA_TYPE_VALUES.REQUEST) {
+  if (
+    model.quota_type !== QUOTA_TYPE_VALUES.REQUEST ||
+    model.model_price == null
+  ) {
     return '-'
   }
 
   const displayGroupRatio = getDisplayGroupRatio(model, selectedGroup)
 
-  let priceInUSD = (model.model_price || 0) * displayGroupRatio
+  let priceInUSD = model.model_price * displayGroupRatio
 
   priceInUSD = applyRechargeRate(
     priceInUSD,

@@ -24,6 +24,11 @@ import type { TFunction } from 'i18next'
  */
 type BaseNavItem = {
   title: string
+  sidebarKey?: string
+  hint?: string
+  hidden?: boolean
+  disabled?: boolean
+  hash?: string
   badge?: string
   icon?: React.ElementType
   activeUrls?: (LinkProps['to'] | (string & {}))[]
@@ -66,7 +71,14 @@ export type NavChatPresets = BaseNavItem & {
 /**
  * Navigation item union type
  */
-export type NavItem = NavCollapsible | NavLink | NavChatPresets
+export type NavUnavailable = BaseNavItem & {
+  disabled: true
+  url?: never
+  items?: never
+  type?: never
+}
+
+export type NavItem = NavCollapsible | NavLink | NavChatPresets | NavUnavailable
 
 /**
  * Navigation group type - a group of navigation items in sidebar
@@ -93,6 +105,8 @@ export type SidebarData = {
 export type TopNavLink = {
   title: string
   href: string
+  search?: Record<string, string>
+  hash?: string
   isActive?: boolean
   disabled?: boolean
   requiresAuth?: boolean

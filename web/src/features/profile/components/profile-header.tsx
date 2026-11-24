@@ -16,16 +16,18 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Activity, BarChart3, WalletCards } from 'lucide-react'
+import type { TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
 
 import { StatusBadge } from '@/components/status-badge'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { Card, CardContent } from '@/components/ui/card'
-import { IconBadge, type IconBadgeTone } from '@/components/ui/icon-badge'
+import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
+import { toIntlLocale } from '@/i18n/languages'
 import { getUserAvatarFallback, getUserAvatarStyle } from '@/lib/avatar'
-import { formatCompactNumber, formatQuota } from '@/lib/format'
+import { formatCompactNumber, formatNumber, formatQuota } from '@/lib/format'
 import { getRoleLabel } from '@/lib/roles'
 
 import { getDisplayName } from '../lib'
@@ -40,36 +42,86 @@ interface ProfileHeaderProps {
   loading: boolean
 }
 
+function getConcurrencyStat(
+  profile: UserProfile,
+  t: TFunction,
+  locale?: string
+): { label: string; value: string; description: string } {
+  const label = t('Concurrency Limit')
+  const summary = profile.concurrency_limit
+
+  if (summary) {
+    if (!summary.enabled || summary.source === 'disabled') {
+      return {
+        label,
+        value: t('Unlimited'),
+        description: t('Concurrency limit disabled'),
+      }
+    }
+
+    if (summary.source === 'user') {
+      return {
+        label,
+        value: formatNumber(summary.effective_limit, locale),
+        description: t('Custom user limit'),
+      }
+    }
+
+    const value =
+      summary.effective_limit > 0
+        ? formatNumber(summary.effective_limit, locale)
+        : t('Unlimited')
+
+    if (summary.source === 'group') {
+      return {
+        label,
+        value,
+        description: t('Group policy ({{group}})', { group: profile.group }),
+      }
+    }
+
+    return {
+      label,
+      value,
+      description: t('Default concurrency policy'),
+    }
+  }
+
+  const maxConcurrency = profile.max_concurrency ?? 0
+  if (maxConcurrency > 0) {
+    return {
+      label,
+      value: formatNumber(maxConcurrency, locale),
+      description: t('Custom user limit'),
+    }
+  }
+
+  return {
+    label,
+    value: t('Unlimited'),
+    description: t('Simultaneous requests'),
+  }
+}
+
 export function ProfileHeader({ profile, loading }: ProfileHeaderProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const { copyToClipboard } = useCopyToClipboard()
+  const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
 
   if (loading) {
     return (
-      <Card data-card-hover='false' className='gap-0 overflow-hidden py-0'>
-        <CardContent className='p-4 sm:p-5'>
-          <div className='flex flex-col items-center gap-4 text-center sm:flex-row sm:text-left'>
-            <Skeleton className='h-16 w-16 rounded-2xl' />
-            <div className='space-y-3'>
-              <div className='flex flex-col items-center gap-2 sm:flex-row sm:justify-start'>
-                <Skeleton className='h-8 w-48' />
-                <Skeleton className='h-5 w-16' />
-              </div>
-              <div className='flex flex-col items-center gap-1 sm:flex-row sm:justify-start sm:gap-4'>
-                <Skeleton className='h-4 w-24' />
-                <Skeleton className='h-4 w-40' />
-                <Skeleton className='h-4 w-20' />
-              </div>
+      <Card data-card-hover='false' className='identity-hero' aria-busy='true'>
+        <div className='identity-hero-body'>
+          <div className='identity-hero-person'>
+            <Skeleton className='size-[54px] shrink-0 rounded-full' />
+            <div className='space-y-2'>
+              <Skeleton className='h-5 w-32' />
+              <Skeleton className='h-4 w-24' />
             </div>
           </div>
-        </CardContent>
-        <div className='border-t'>
-          <div className='divide-border/60 grid grid-cols-1 divide-y sm:grid-cols-3 sm:divide-x sm:divide-y-0'>
-            {['balance', 'usage', 'requests'].map((key) => (
-              <div key={key} className='px-4 py-3.5 sm:px-5 sm:py-4'>
-                <Skeleton className='h-3.5 w-20' />
-                <Skeleton className='mt-2 h-7 w-28' />
-                <Skeleton className='mt-1.5 h-3.5 w-24' />
-              </div>
+          <div className='identity-metrics'>
+            {['balance', 'usage', 'requests', 'concurrency'].map((stat) => (
+              <Skeleton key={stat} className='h-8 w-16' />
             ))}
           </div>
         </div>
@@ -84,106 +136,75 @@ export function ProfileHeader({ profile, loading }: ProfileHeaderProps) {
   const avatarFallback = getUserAvatarFallback(avatarName)
   const avatarFallbackStyle = getUserAvatarStyle(avatarName)
   const roleLabel = getRoleLabel(profile.role)
-  const stats: {
-    label: string
-    value: string
-    description: string
-    icon: typeof WalletCards
-    tone: IconBadgeTone
-  }[] = [
+  const stats = [
     {
       label: t('Current Balance'),
       value: formatQuota(profile.quota),
       description: t('Remaining quota'),
-      icon: WalletCards,
-      tone: 'success',
     },
     {
       label: t('Total Usage'),
       value: formatQuota(profile.used_quota),
       description: t('Total consumed quota'),
-      icon: BarChart3,
-      tone: 'info',
     },
     {
       label: t('API Requests'),
       value: formatCompactNumber(profile.request_count),
       description: t('Total requests made'),
-      icon: Activity,
-      tone: 'chart-4',
     },
+    getConcurrencyStat(profile, t, locale),
   ]
 
   return (
-    <Card data-card-hover='false' className='gap-0 overflow-hidden py-0'>
-      <CardContent className='p-3 sm:p-5'>
-        <div className='flex items-center gap-3 text-left sm:gap-4'>
-          <Avatar className='ring-background h-12 w-12 rounded-xl text-sm ring-2 sm:h-16 sm:w-16 sm:rounded-2xl sm:text-lg sm:ring-4'>
+    <Card data-card-hover='false' className='identity-hero'>
+      <div className='identity-hero-body'>
+        <div className='identity-hero-person'>
+          <Avatar className='size-[54px] shrink-0 rounded-full text-xl'>
             <AvatarFallback
-              className='rounded-xl font-semibold text-white sm:rounded-2xl'
+              className='rounded-full font-medium text-white'
               style={avatarFallbackStyle}
             >
               {avatarFallback}
             </AvatarFallback>
           </Avatar>
 
-          <div className='min-w-0 flex-1 space-y-1.5 sm:space-y-3'>
-            <div className='flex min-w-0 items-center gap-2'>
-              <h1 className='truncate text-xl font-semibold tracking-tight sm:text-2xl'>
-                {displayName}
-              </h1>
+          <div className='min-w-0'>
+            <div className='flex flex-wrap items-center gap-2'>
+              <h2 className='identity-name'>{displayName}</h2>
               <StatusBadge
                 label={roleLabel}
                 variant='neutral'
                 copyable={false}
               />
-              <StatusBadge
-                label={`${t('User ID')} ${profile.id}`}
-                variant='info'
-                copyText={String(profile.id)}
-              />
+              <Button
+                type='button'
+                variant='outline'
+                size='xs'
+                aria-label={`${t('Copy')}: ${t('User ID')} ${profile.id}`}
+                onClick={() => void copyToClipboard(String(profile.id))}
+              >
+                {`${t('User ID')} ${profile.id}`}
+              </Button>
             </div>
 
-            <div className='text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs sm:gap-x-4 sm:text-sm'>
-              <span className='truncate'>@{profile.username}</span>
-              {profile.email && (
-                <>
-                  <span>•</span>
-                  <span className='truncate'>{profile.email}</span>
-                </>
-              )}
-              {profile.group && (
-                <>
-                  <span>•</span>
-                  <span className='truncate'>{profile.group}</span>
-                </>
-              )}
+            <div className='identity-meta'>
+              <span>@{profile.username}</span>
+              {profile.email && <span>{profile.email}</span>}
+              {profile.group && <span>{profile.group}</span>}
             </div>
           </div>
         </div>
-      </CardContent>
-      <div className='border-t'>
-        <div className='divide-border/60 grid grid-cols-3 divide-x'>
-          {stats.map((item) => (
-            <div key={item.label} className='min-w-0 px-3 py-3 sm:px-5 sm:py-4'>
-              <div className='flex items-center gap-2'>
-                <IconBadge tone={item.tone} size='stat'>
-                  <item.icon />
-                </IconBadge>
-                <div className='text-muted-foreground truncate text-xs font-medium tracking-wider uppercase'>
-                  {item.label}
-                </div>
-              </div>
-
-              <div className='text-foreground mt-1.5 truncate font-mono text-lg font-bold tracking-tight tabular-nums sm:mt-2 sm:text-2xl'>
-                {item.value}
-              </div>
-              <div className='text-muted-foreground/60 mt-1 hidden text-xs md:block'>
-                {item.description}
-              </div>
+        <dl className='identity-metrics'>
+          {stats.map(({ label, value, description }) => (
+            <div key={label}>
+              <dt>{label}</dt>
+              <dd>
+                <strong>{value}</strong>
+                <small>{description}</small>
+              </dd>
             </div>
           ))}
-        </div>
+        </dl>
       </div>
     </Card>
   )

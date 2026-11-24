@@ -1,11 +1,16 @@
+# syntax=docker/dockerfile:1
+
 # Backend-only build for frontend development
 # Skips frontend build and uses a placeholder for //go:embed web/dist
 
 FROM golang:1.26.10-alpine AS builder
 
-ENV GO111MODULE=on CGO_ENABLED=0
+ENV GO111MODULE=on CGO_ENABLED=0 GOWORK=off \
+    GOMODCACHE=/go/pkg/mod GOCACHE=/root/.cache/go-build
 ARG TARGETOS
 ARG TARGETARCH
+ARG GO_BUILD_PARALLEL=4
+ARG GO_BUILD_MEMLIMIT=2GiB
 ENV GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64}
 ENV GOEXPERIMENT=greenteagc
 
@@ -16,14 +21,18 @@ ADD go.mod go.sum ./
 # go.mod files must be present for go mod download to resolve the main module graph.
 ADD relaykit/go.mod ./relaykit/go.mod
 ADD tokenkit/go.mod ./tokenkit/go.mod
-RUN go mod download
+RUN --mount=type=cache,id=new-api-gomod,target=/go/pkg/mod \
+    go mod download
 
 COPY . .
 
 RUN mkdir -p web/dist && \
     echo '<!doctype html><html><head><title>dev</title></head><body>use frontend dev server</body></html>' > web/dist/index.html
 
-RUN go build -ldflags "-s -w -X 'github.com/QuantumNous/new-api/common.Version=$(cat VERSION)'" -o new-api
+RUN --mount=type=cache,id=new-api-gomod,target=/go/pkg/mod \
+    --mount=type=cache,id=new-api-gobuild,target=/root/.cache/go-build \
+    GOMEMLIMIT="${GO_BUILD_MEMLIMIT}" \
+    go build -p "${GO_BUILD_PARALLEL}" -ldflags "-s -w -X 'github.com/QuantumNous/new-api/common.Version=$(cat VERSION)'" -o new-api
 
 FROM debian:bookworm-slim
 

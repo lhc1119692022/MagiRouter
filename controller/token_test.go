@@ -641,6 +641,26 @@ func TestTokenAllowUserQuotaQueryOnCreateAndUpdate(t *testing.T) {
 	}
 }
 
+func TestAddTokenReturnsOnlyTheNewOwnedTokenID(t *testing.T) {
+	db := setupTokenControllerTestDB(t)
+	existing := seedToken(t, db, 7, "studio", "fixture-existing")
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPost, "/api/token/", map[string]any{
+		"id": existing.Id, "user_id": 8, "name": "studio", "unlimited_quota": true,
+	}, 7)
+	AddToken(ctx)
+	response := decodeAPIResponse(t, recorder)
+	require.True(t, response.Success)
+	var created map[string]int
+	require.NoError(t, common.Unmarshal(response.Data, &created))
+	require.Len(t, created, 1)
+	id := created["id"]
+	require.Positive(t, id)
+	require.NotEqual(t, existing.Id, id)
+	var owner int
+	require.NoError(t, db.Model(&model.Token{}).Select("user_id").Where("id = ?", id).Scan(&owner).Error)
+	assert.Equal(t, 7, owner)
+}
+
 func TestGetTokenUsageFollowsTheUserQuotaSwitchAndIPWhitelist(t *testing.T) {
 	for _, tc := range []struct {
 		name          string

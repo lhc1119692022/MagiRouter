@@ -22,16 +22,175 @@ import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { afterEach, expect, test, vi } from 'vitest'
 
+import type { Model } from '@/features/models/types'
 import { api } from '@/lib/api'
+import {
+  getModelCategories,
+  getModelTaskCapabilities,
+} from '@/lib/model-task-capabilities'
 
 import { fetchModels } from '../../api'
 import { ChannelsProvider } from '../channels-provider'
+import { ConfigureModelsDialog } from '../dialogs/configure-models-dialog'
 import { FetchModelsDialog } from '../dialogs/fetch-models-dialog'
 import { UpstreamModelSelection } from '../upstream-model-selection'
 
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
+})
+
+test('edits global labels for one named channel model without applying the channel draft', async () => {
+  const apply = vi.fn()
+  const records: Partial<Model>[] = []
+  const create = vi
+    .spyOn(api, 'post')
+    .mockImplementation(async (_url, fields) => {
+      records.push({ ...(fields as Partial<Model>), id: 42 })
+      return { data: { success: true, data: records[0] } }
+    })
+  vi.spyOn(api, 'get').mockImplementation(async () => ({
+    data: { success: true, data: { items: records, total: records.length } },
+  }))
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  const user = userEvent.setup()
+  render(
+    <QueryClientProvider client={client}>
+      <ConfigureModelsDialog
+        open
+        models={['draft-a', 'draft-b']}
+        onOpenChange={() => undefined}
+        onApply={apply}
+      />
+    </QueryClientProvider>
+  )
+  await user.click(screen.getByRole('checkbox', { name: 'draft-b' }))
+  await user.click(
+    screen.getByRole('button', { name: 'Edit capability labels for draft-a' })
+  )
+  await user.click(
+    await screen.findByRole('checkbox', { name: 'Video Generation' })
+  )
+  expect(create).not.toHaveBeenCalled()
+  await user.click(screen.getByRole('button', { name: 'Save labels' }))
+  expect(create).toHaveBeenCalledWith(
+    '/api/models/',
+    expect.objectContaining({
+      model_name: 'draft-a',
+      name_rule: 0,
+      tags: '@mr:catalog:v1=video',
+    }),
+    expect.anything()
+  )
+  expect(
+    await screen.findByRole('checkbox', { name: 'draft-b' })
+  ).not.toBeChecked()
+  expect(apply).not.toHaveBeenCalled()
+  await user.click(
+    screen.getByRole('button', { name: 'Edit capability labels for draft-a' })
+  )
+  expect(
+    await screen.findByRole('checkbox', { name: 'Video Generation' })
+  ).toBeChecked()
+  await user.click(
+    screen.getByRole('checkbox', { name: 'Speech transcription' })
+  )
+  await user.click(screen.getByRole('button', { name: 'Cancel' }))
+  expect(getModelCategories({ tags: records[0].tags })).toEqual(['video'])
+  expect(create).toHaveBeenCalledTimes(1)
+  expect(apply).not.toHaveBeenCalled()
+})
+
+test('inherits hidden rule metadata without changing that rule or granting the selected model new execution directions', async () => {
+  const rule = {
+    model_name: 'custom-',
+    id: 3,
+    name_rule: 1,
+    tags: 'Studio,@mr:tasks:v1=i2i',
+    status: 0,
+    vendor_id: 12,
+    sync_official: 0,
+    endpoints: '{"image-edits":{}}',
+    icon: 'Logo',
+    description: 'Private',
+  }
+  vi.spyOn(api, 'get').mockImplementation(async (url) => {
+    const items = url === '/api/models/' ? [rule] : []
+    return { data: { success: true, data: { items, total: items.length } } }
+  })
+  const update = vi
+    .spyOn(api, 'put')
+    .mockRejectedValue(new Error('Rule must remain unchanged'))
+  const create = vi
+    .spyOn(api, 'post')
+    .mockResolvedValue({ data: { success: true } })
+  const user = userEvent.setup()
+  const client = new QueryClient()
+  render(
+    <QueryClientProvider client={client}>
+      <ConfigureModelsDialog
+        open
+        models={['custom-one']}
+        onApply={() => undefined}
+        onOpenChange={() => undefined}
+      />
+    </QueryClientProvider>
+  )
+  await user.click(
+    screen.getByRole('button', {
+      name: 'Edit capability labels for custom-one',
+    })
+  )
+  expect(
+    await screen.findByRole('checkbox', { name: 'Image Generation' })
+  ).toBeChecked()
+  await user.click(screen.getByRole('checkbox', { name: 'Video Generation' }))
+  await user.click(screen.getByRole('button', { name: 'Save labels' }))
+  await screen.findByRole('button', {
+    name: 'Edit capability labels for custom-one',
+  })
+  expect(update).not.toHaveBeenCalled()
+  const fields = create.mock.calls[0][1] as Partial<Model>
+  const { id: ruleId, ...inheritedFields } = rule
+  expect(fields.id).not.toBe(ruleId)
+  expect(fields).toMatchObject({
+    ...inheritedFields,
+    model_name: 'custom-one',
+    name_rule: 0,
+    tags: expect.stringContaining('Studio,@mr:tasks:v1=i2i'),
+  })
+  expect(getModelCategories(fields)).toEqual(['image', 'video'])
+  expect(getModelTaskCapabilities(fields)).toEqual(['image-to-image'])
+})
+
+test('does not offer to create or write metadata when the lookup fails', async () => {
+  vi.spyOn(api, 'get').mockResolvedValue({
+    data: { success: false, message: 'Fixture lookup failed' },
+  })
+  const create = vi
+    .spyOn(api, 'post')
+    .mockRejectedValue(new Error('No write expected'))
+  const user = userEvent.setup()
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <ConfigureModelsDialog
+        open
+        models={['hidden-data']}
+        onApply={() => undefined}
+        onOpenChange={() => undefined}
+      />
+    </QueryClientProvider>
+  )
+  await user.click(
+    screen.getByRole('button', {
+      name: 'Edit capability labels for hidden-data',
+    })
+  )
+  expect(await screen.findByText('Fixture lookup failed')).toBeVisible()
+  expect(screen.getByRole('button', { name: 'Save labels' })).toBeDisabled()
+  expect(create).not.toHaveBeenCalled()
 })
 
 test.each([

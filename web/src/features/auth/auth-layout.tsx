@@ -71,11 +71,48 @@ export function AuthLayout({ children }: AuthLayoutProps) {
         preserveAspectRatio='xMidYMid slice'
         aria-hidden='true'
       >
-        <circle cx='720' cy='440' r='280' fill='none' stroke='currentColor' strokeWidth='1' />
-        <circle cx='720' cy='440' r='420' fill='none' stroke='currentColor' strokeWidth='1' />
-        <circle cx='720' cy='440' r='580' fill='none' stroke='currentColor' strokeWidth='1' />
-        <line x1='0' y1='440' x2='1440' y2='440' stroke='currentColor' strokeWidth='0.75' strokeDasharray='4 8' />
-        <line x1='720' y1='0' x2='720' y2='900' stroke='currentColor' strokeWidth='0.75' strokeDasharray='4 8' />
+        <circle
+          cx='720'
+          cy='440'
+          r='280'
+          fill='none'
+          stroke='currentColor'
+          strokeWidth='1'
+        />
+        <circle
+          cx='720'
+          cy='440'
+          r='420'
+          fill='none'
+          stroke='currentColor'
+          strokeWidth='1'
+        />
+        <circle
+          cx='720'
+          cy='440'
+          r='580'
+          fill='none'
+          stroke='currentColor'
+          strokeWidth='1'
+        />
+        <line
+          x1='0'
+          y1='440'
+          x2='1440'
+          y2='440'
+          stroke='currentColor'
+          strokeWidth='0.75'
+          strokeDasharray='4 8'
+        />
+        <line
+          x1='720'
+          y1='0'
+          x2='720'
+          y2='900'
+          stroke='currentColor'
+          strokeWidth='0.75'
+          strokeDasharray='4 8'
+        />
       </svg>
 
       <header className='auth-topbar'>
@@ -104,7 +141,9 @@ export function AuthLayout({ children }: AuthLayoutProps) {
           <button
             type='button'
             className='theme-toggle-btn'
-            aria-label={resolvedTheme === 'dark' ? '切换浅色主题' : '切换暗色主题'}
+            aria-label={
+              resolvedTheme === 'dark' ? '切换浅色主题' : '切换暗色主题'
+            }
             aria-pressed={resolvedTheme === 'dark'}
             title={resolvedTheme === 'dark' ? '切换浅色主题' : '切换暗色主题'}
             onClick={handleToggleTheme}

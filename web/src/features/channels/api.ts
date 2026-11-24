@@ -20,7 +20,6 @@ import type {
   RequestPluginConfigSchema,
   RequestPluginSample,
 } from '@/features/task-plugins/types'
-import { getGroups as getUserGroups } from '@/features/users/api'
 import { api, type ApiRequestConfig } from '@/lib/api'
 import type { LocalizedTextValue } from '@/lib/localized-text'
 import { requireServerSuccess } from '@/lib/server-error-message'
@@ -838,9 +837,18 @@ export async function getOllamaVersion(
 // ============================================================================
 
 /**
- * Get all available groups (re-exported from users API for convenience)
+ * Get available billing/channel groups
  */
-export const getGroups = getUserGroups
+export async function getGroups(): Promise<{
+  success: boolean
+  message?: string
+  data?: string[]
+}> {
+  const res = await api.get('/api/group/', {
+    params: { scope: 'billing' },
+  })
+  return res.data
+}
 
 // ============================================================================
 // Prefill Groups (Model Groups)

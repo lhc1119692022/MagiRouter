@@ -45,7 +45,10 @@ export function readCachedSnapshot(): UpstreamSnapshot | null {
     const raw = localStorage.getItem(CACHE_KEY)
     if (!raw) return null
     const parsed = JSON.parse(raw) as UpstreamSnapshot
-    if (!Array.isArray(parsed.commits) || typeof parsed.fetchedAt !== 'number') {
+    if (
+      !Array.isArray(parsed.commits) ||
+      typeof parsed.fetchedAt !== 'number'
+    ) {
       return null
     }
     return Date.now() - parsed.fetchedAt > CACHE_TTL ? null : parsed
@@ -85,7 +88,9 @@ function toUpstreamCommit(raw: RawCommit): UpstreamCommit | null {
         ? raw.commit.author.name
         : '',
     authoredAt:
-      typeof raw.commit?.author?.date === 'string' ? raw.commit.author.date : '',
+      typeof raw.commit?.author?.date === 'string'
+        ? raw.commit.author.date
+        : '',
   }
 }
 

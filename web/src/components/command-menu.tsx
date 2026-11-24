@@ -64,13 +64,16 @@ export function CommandMenu() {
             {navGroups.map((group) => (
               <CommandGroup key={group.id || group.title} heading={group.title}>
                 {group.items.map((navItem) => {
+                  if (navItem.disabled || navItem.hidden) return null
                   if (navItem.url) {
                     return (
                       <CommandItem
                         key={`${navItem.title}-${navItem.url}`}
                         value={navItem.title}
                         onSelect={() => {
-                          runCommand(() => navigate({ to: navItem.url }))
+                          runCommand(() =>
+                            navigate({ to: navItem.url, hash: navItem.hash })
+                          )
                         }}
                       >
                         <div className='flex size-4 items-center justify-center'>

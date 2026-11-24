@@ -4,7 +4,9 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/console_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"github.com/gin-gonic/gin"
@@ -39,6 +41,14 @@ func GetPricing(c *gin.Context) {
 	userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
 	usableGroup := service.GetUserUsableGroups(userGroup)
 	pricing := filterPricingByUsableGroups(model.GetPricing(), usableGroup)
+	preferences, _ := common.GetContextKeyType[dto.UserSetting](c, constant.ContextKeyUserSetting)
+	references := console_setting.GetOfficialModelPrices()
+	for index := range pricing {
+		if preferences.AcceptUnsetRatioModel {
+			pricing[index].PriceUnconfigured = false
+		}
+		pricing[index].OfficialPrice = references[pricing[index].ModelName]
+	}
 	groupRatio := ratio_setting.GetGroupRatioCopy()
 	for group := range groupRatio {
 		if _, ok := usableGroup[group]; !ok {

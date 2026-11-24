@@ -77,6 +77,10 @@ const authClient = axios.create({
 })
 
 const refreshRaceDelays = [80, 200, 500] as const
+// Web Locks 只在支持且调度正常的浏览器里保证可用。某些环境（无头浏览器、
+// 节能模式、被挂起的标签页）会一直不给锁，若无限等待，所有依赖会话结论的
+// 页面都会停在“检查中”并渲染成白屏，因此这里必须有上限并退化为无锁刷新。
+const lockAcquireTimeoutMs = 4000
 let refreshPromise: Promise<RefreshOutcome> | null = null
 let authEpoch = 0
 
@@ -314,18 +318,63 @@ function runRefresh(refreshEpoch: number): Promise<RefreshOutcome> {
   })()
 }
 
+/**
+ * Run a task under the cross-tab auth refresh lock, but never wait for it
+ * forever.
+ *
+ * Web Locks is an optimisation: it avoids two tabs rotating the same refresh
+ * cookie at once. It must not become a hard dependency — some environments
+ * (headless browsers, throttled background tabs) never hand the lock out, and
+ * an unbounded wait there means every page that awaits an auth verdict renders
+ * as a blank screen. After `timeoutMs` the lock request is aborted and the task
+ * runs unserialised.
+ */
+export async function withRefreshLock<T>(
+  task: () => Promise<T>,
+  timeoutMs: number = lockAcquireTimeoutMs
+): Promise<T> {
+  const locks = typeof navigator === 'undefined' ? undefined : navigator.locks
+  if (!locks) return task()
+
+  const controller = new AbortController()
+  let taskStarted = false
+  const startTask = (): Promise<T> => {
+    taskStarted = true
+    return task()
+  }
+
+  const abortTimer = globalThis.setTimeout(() => {
+    if (!taskStarted) controller.abort()
+  }, timeoutMs)
+
+  try {
+    const locked = locks.request(
+      'new-api:auth-refresh',
+      { mode: 'exclusive', signal: controller.signal },
+      startTask
+    )
+    // 兜底：不响应 abort 的实现也要能在超时后继续，而不是让调用方挂死。
+    const timedOut = new Promise<T>((resolve) => {
+      globalThis.setTimeout(() => {
+        if (!taskStarted) resolve(startTask())
+      }, timeoutMs)
+    })
+    try {
+      return await Promise.race([locked, timedOut])
+    } catch (error: unknown) {
+      if (!taskStarted) return startTask()
+      throw error
+    }
+  } finally {
+    globalThis.clearTimeout(abortTimer)
+  }
+}
+
 async function performRefreshWithBrowserLock(
   refreshEpoch: number
 ): Promise<RefreshOutcome> {
   try {
-    if (typeof navigator === 'undefined' || !navigator.locks) {
-      return runRefresh(refreshEpoch)
-    }
-    return navigator.locks.request(
-      'new-api:auth-refresh',
-      { mode: 'exclusive' },
-      () => runRefresh(refreshEpoch)
-    )
+    return await withRefreshLock(() => runRefresh(refreshEpoch))
   } catch (error: unknown) {
     useAuthStore.getState().auth.setBootstrapState('idle')
     return { kind: 'transient_error', error }

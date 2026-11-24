@@ -31,22 +31,45 @@ export function getLatencyColorClass(latency: number): string {
   return 'text-red-600 dark:text-red-400'
 }
 
-/**
- * Test URL latency
- */
-export async function testUrlLatency(url: string): Promise<PingStatus> {
+export function isPublishableApiUrl(value: string): boolean {
   try {
+    if (/[?#\\]/.test(value)) return false
+    const address = new URL(value)
+    return (
+      ['http:', 'https:'].includes(address.protocol) &&
+      !address.username &&
+      !address.password
+    )
+  } catch {
+    return false
+  }
+}
+
+export async function testUrlLatency(
+  url: string,
+  signal?: AbortSignal
+): Promise<PingStatus> {
+  try {
+    if (!isPublishableApiUrl(url)) {
+      return { latency: null, testing: false, error: true }
+    }
+    const timeout = AbortSignal.timeout(8000)
     const startTime = performance.now()
-    await fetch(url, {
+    const response = await fetch(url, {
       method: 'HEAD',
-      mode: 'no-cors',
-      cache: 'no-cache',
+      mode: 'cors',
+      cache: 'no-store',
+      credentials: 'omit',
+      referrerPolicy: 'no-referrer',
+      redirect: 'error',
+      signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
     })
+    if (!response.ok) return { latency: null, testing: false, error: true }
     const endTime = performance.now()
     const latency = Math.round(endTime - startTime)
 
     return { latency, testing: false, error: false }
-  } catch (_error) {
+  } catch {
     return { latency: null, testing: false, error: true }
   }
 }

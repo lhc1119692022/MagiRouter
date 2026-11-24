@@ -66,12 +66,18 @@ afterEach(() => {
   useAuthStore.getState().auth.reset()
 })
 
-function sidebarFor(admin?: object, user?: object, canConfigure = true) {
+function sidebarFor(
+  admin?: object,
+  user?: object,
+  canConfigure = true,
+  header?: object
+) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
   client.setQueryData(['status'], {
     SidebarModulesAdmin: admin ? JSON.stringify(admin) : '',
+    HeaderNavModules: header ? JSON.stringify(header) : '',
   })
   useAuthStore.getState().auth.setUser({
     id: 1,
@@ -94,8 +100,80 @@ function sidebarFor(admin?: object, user?: object, canConfigure = true) {
   return result
 }
 
+describe('creative workspace footer', () => {
+  it.each([
+    [undefined, undefined, false, true],
+    [{ chat: { playground: true } }, undefined, true, true],
+    [{ chat: { enabled: false, playground: true } }, undefined, false, false],
+    [
+      { chat: { playground: false } },
+      { chat: { playground: true } },
+      false,
+      true,
+    ],
+    [undefined, { chat: { enabled: false } }, false, false],
+    [undefined, { chat: { playground: false } }, false, true],
+    [{ chat: { chat: false } }, undefined, false, false],
+  ] as const)(
+    'honors site and personal visibility independently of chat presets (%j, %j)',
+    (site, personal, card, chat) => {
+      const { result } = sidebarFor(site, personal)
+      const items = result.current.flatMap((group) => group.items)
+      expect(
+        result.current
+          .find((group) => group.id === 'workspace-footer')
+          ?.items.some((item) => item.url === '/playground') ?? false
+      ).toBe(card)
+      expect(items.some((item) => item.type === 'chat-presets')).toBe(chat)
+    }
+  )
+})
+
 describe('security sidebar visibility', () => {
-  it('old configurations show Security & Access immediately after Profile and keep API Keys', () => {
+  it('keeps the old dashboard preference when boards is absent and honors its explicit override', () => {
+    const old = sidebarFor({ console: { enabled: true, detail: false } })
+    expect(
+      old.result.current.flatMap((group) => group.items.map((item) => item.url))
+    ).not.toContain('/dashboard/models')
+    old.unmount()
+    const enabled = sidebarFor({
+      console: { enabled: true, detail: false, boards: true },
+    })
+    expect(
+      enabled.result.current.flatMap((group) =>
+        group.items.map((item) => item.url)
+      )
+    ).toContain('/dashboard/models')
+  })
+
+  it('honors old explicit string and numeric switches from both configuration levels', () => {
+    const { result } = sidebarFor(
+      { console: { enabled: 'true', boards: 1, token: 'true' } },
+      { console: { detail: '0', token: 0, model_square: 'false' } }
+    )
+    const urls = result.current.flatMap((group) =>
+      group.items.map((item) => item.url)
+    )
+    expect(urls).not.toContain('/dashboard/models')
+    expect(urls).not.toContain('/pricing')
+    expect(urls).not.toContain('/keys')
+  })
+
+  it('never displays a catalog link when its public route module is disabled', () => {
+    const { result } = sidebarFor(
+      { console: { enabled: true, model_square: true } },
+      undefined,
+      true,
+      { pricing: { enabled: false } }
+    )
+    expect(
+      result.current.flatMap((group) =>
+        group.items.map((item) => item.sidebarKey)
+      )
+    ).not.toContain('models')
+  })
+
+  it('old configurations show Security immediately after Account and keep API Keys', () => {
     const { result } = sidebarFor(
       { personal: { enabled: true, personal: true, topup: true } },
       { personal: { enabled: true, personal: true } }
@@ -104,7 +182,7 @@ describe('security sidebar visibility', () => {
       result.current
         .find((group) => group.id === 'personal')
         ?.items.map((item) => item.title)
-    ).toEqual(['Wallet', 'Profile', 'Security & Access'])
+    ).toEqual(['Account', 'Security', 'Support', 'Developer documentation'])
     expect(
       result.current
         .flatMap((group) => group.items)
@@ -116,17 +194,14 @@ describe('security sidebar visibility', () => {
     [{ personal: { enabled: false } }, { personal: { security: true } }],
     [undefined, { personal: { enabled: true, security: false } }],
     [undefined, { personal: { enabled: false } }],
-  ])(
-    'admin or user disablement hides Security & Access (%j, %j)',
-    (admin, user) => {
-      const { result } = sidebarFor(admin, user)
-      expect(
-        result.current
-          .flatMap((group) => group.items)
-          .some((item) => item.title === 'Security & Access')
-      ).toBe(false)
-    }
-  )
+  ])('admin or user disablement hides Security (%j, %j)', (admin, user) => {
+    const { result } = sidebarFor(admin, user)
+    expect(
+      result.current
+        .flatMap((group) => group.items)
+        .some((item) => item.sidebarKey === 'security')
+    ).toBe(false)
+  })
   it('users without sidebar configuration permission retain the admin view', () => {
     const { result } = sidebarFor(
       undefined,
@@ -136,12 +211,40 @@ describe('security sidebar visibility', () => {
     expect(
       result.current
         .flatMap((group) => group.items)
-        .some((item) => item.title === 'Security & Access')
+        .some((item) => item.sidebarKey === 'security')
     ).toBe(true)
   })
 })
 
 describe('audit log sidebar entry', () => {
+  it.each([
+    [
+      { console: { task: '0', midjourney: true } },
+      undefined,
+      '/usage-logs/drawing',
+    ],
+    [
+      { console: { task: true, midjourney: true } },
+      { console: { task: false } },
+      '/usage-logs/drawing',
+    ],
+    [
+      { console: { task: true, midjourney: true } },
+      undefined,
+      '/usage-logs/task',
+    ],
+    [{ console: { task: false, midjourney: false } }, undefined, undefined],
+  ] as const)(
+    'opens the first allowed task-log tab instead of a hidden tab (%j, %j)',
+    (admin, user, destination) => {
+      const { result } = sidebarFor(admin, user)
+      const task = result.current
+        .flatMap((group) => group.items)
+        .find((item) => item.sidebarKey === 'task-logs')
+      expect(task?.url).toBe(destination)
+    }
+  )
+
   it('admin settings default Audit Logs to visible and preserve its independent toggle when saved', () => {
     const config = parseSidebarModulesAdmin(
       '{"console":{"enabled":true,"log":true}}'
@@ -154,7 +257,7 @@ describe('audit log sidebar entry', () => {
       .flatMap((group) => group.items)
       .map((item) => item.title)
     expect(titles).not.toContain('Audit Logs')
-    expect(titles).toContain('Usage Logs')
+    expect(titles).toContain('LLM Logs')
   })
 
   it('legacy configurations show a separate Audit Logs link immediately after Usage Logs', () => {
@@ -164,7 +267,8 @@ describe('audit log sidebar entry', () => {
     )
     const items =
       result.current.find((group) => group.id === 'general')?.items ?? []
-    const usageIndex = items.findIndex((item) => item.title === 'Usage Logs')
+    const usageIndex = items.findIndex((item) => item.sidebarKey === 'llm-logs')
+    expect(usageIndex).toBeGreaterThanOrEqual(0)
     expect(items[usageIndex + 1]).toMatchObject({
       title: 'Audit Logs',
       url: '/usage-logs/audit',
@@ -197,7 +301,7 @@ describe('audit log sidebar entry', () => {
     const titles = result.current
       .flatMap((group) => group.items)
       .map((item) => item.title)
-    expect(titles).not.toContain('Usage Logs')
+    expect(titles).not.toContain('LLM Logs')
     expect(titles).toContain('Audit Logs')
   })
 })

@@ -178,7 +178,10 @@ export function ModelPriceCell(props: {
       )
     }
     const tokenBased = isTokenBasedModel(model)
-    if (!Number.isFinite(tokenBased ? model.model_ratio : model.model_price)) {
+    if (
+      model.price_unconfigured ||
+      !Number.isFinite(tokenBased ? model.model_ratio : model.model_price)
+    ) {
       return (
         <span className='text-muted-foreground text-sm'>
           {t('Unset price')}

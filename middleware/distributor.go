@@ -88,11 +88,18 @@ func Distribute() func(c *gin.Context) {
 						return
 					}
 					if playgroundRequest.Group != "" {
+						if ratio_setting.IsUserManagementGroup(playgroundRequest.Group) {
+							abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorGroupAccessDenied))
+							return
+						}
 						if !service.GroupInUserUsableGroups(usingGroup, playgroundRequest.Group) && playgroundRequest.Group != usingGroup {
 							abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorGroupAccessDenied))
 							return
 						}
 						common.SetContextKey(c, constant.ContextKeyUsingGroup, playgroundRequest.Group)
+					} else if ratio_setting.IsUserManagementGroup(usingGroup) {
+						abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgAuthTokenBillingGroupRequired))
+						return
 					}
 				}
 			}

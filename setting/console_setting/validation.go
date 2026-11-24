@@ -132,8 +132,8 @@ func validateApiInfo(apiInfoStr string) error {
 			return common.NewMessage("API info #{{index}} is missing the color field", map[string]any{"index": i + 1})
 		}
 
-		if err := validateURL(urlStr, i+1, apiInfoMessages); err != nil {
-			return err
+		if !isPublishableAPIURL(urlStr) {
+			return common.NewMessage(apiInfoMessages.invalidURL, map[string]any{"index": i + 1})
 		}
 
 		if exceedsMaxCharacters(urlStr, 500) {
@@ -160,8 +160,34 @@ func validateApiInfo(apiInfoStr string) error {
 	return nil
 }
 
+func isPublishableAPIURL(raw string) bool {
+	if !urlRegex.MatchString(raw) || strings.ContainsAny(raw, "?#\\") {
+		return false
+	}
+	address, err := url.Parse(raw)
+	return err == nil && address.User == nil && address.Hostname() != ""
+}
+
 func GetApiInfo() []map[string]any {
-	return getJSONList(GetConsoleSetting().ApiInfo)
+	items := getJSONList(GetConsoleSetting().ApiInfo)
+	public := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		address, _ := item["url"].(string)
+		if !isPublishableAPIURL(address) {
+			continue
+		}
+		entry := map[string]any{"url": address}
+		for _, key := range []string{"route", "description", "color"} {
+			if text, ok := item[key].(string); ok {
+				entry[key] = text
+			}
+		}
+		if id, ok := item["id"].(float64); ok {
+			entry["id"] = id
+		}
+		public = append(public, entry)
+	}
+	return public
 }
 
 func validateAnnouncements(announcementsStr string) error {

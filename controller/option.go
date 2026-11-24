@@ -136,8 +136,9 @@ func GetOptions(c *gin.Context) {
 }
 
 type OptionUpdateRequest struct {
-	Key   string `json:"key"`
-	Value any    `json:"value"`
+	Key           string  `json:"key"`
+	Value         any     `json:"value"`
+	PreviousValue *string `json:"previous_value,omitempty"`
 }
 
 func UpdatePasskeyDomains(c *gin.Context) {
@@ -186,9 +187,41 @@ func writePasskeyDomainSettingsError(c *gin.Context, err error) {
 
 func UpdateOption(c *gin.Context) {
 	var option OptionUpdateRequest
-	err := common.DecodeJson(c.Request.Body, &option)
+	err := common.DecodeJsonBody(c.Request.Body, &option)
 	if err != nil {
 		common.ApiErrorStatus(c, http.StatusBadRequest, common.NewMessage("Invalid parameters"))
+		return
+	}
+	if option.Key == console_setting.OfficialModelPricesOption {
+		raw, ok := option.Value.(string)
+		if !ok {
+			common.ApiErrorStatus(c, http.StatusBadRequest, common.NewMessage("Invalid official reference prices."))
+			return
+		}
+		if _, err := console_setting.ParseOfficialModelPrices(raw); err != nil {
+			common.ApiErrorStatus(c, http.StatusBadRequest, err)
+			return
+		}
+		if err := model.UpdateOptionsBulk(map[string]string{option.Key: raw}); err != nil {
+			common.ApiErrorStatus(c, http.StatusInternalServerError, common.NewMessage("Failed to save configuration"))
+			return
+		}
+		recordManageAudit(c, "option.update", map[string]any{"key": option.Key})
+		common.ApiSuccess(c, nil)
+		return
+	}
+	if option.Key == console_setting.CreationPresetsOption {
+		value, ok := option.Value.(string)
+		if !ok {
+			writeCreationPresetError(c, console_setting.ErrInvalidCreationPreset)
+			return
+		}
+		if err := model.ReplaceCreationPresets(c.Request.Context(), option.PreviousValue, value); err != nil {
+			writeCreationPresetError(c, err)
+			return
+		}
+		recordManageAudit(c, "option.update", map[string]any{"key": option.Key})
+		common.ApiSuccess(c, nil)
 		return
 	}
 	switch option.Value.(type) {
@@ -280,6 +313,12 @@ func UpdateOption(c *gin.Context) {
 			common.ApiError(c, err)
 			return
 		}
+	case "group_ratio_setting.user_management_groups":
+		err = ratio_setting.CheckUserManagementGroups(option.Value.(string))
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
 	case "gemini.safety_settings":
 		err = model_setting.ValidateGeminiSafetySettings(option.Value.(string))
 		if err != nil {
@@ -325,6 +364,52 @@ func UpdateOption(c *gin.Context) {
 	case "ModelRequestRateLimitGroup":
 		err = setting.CheckModelRequestRateLimitGroup(option.Value.(string))
 		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+	case "UserConcurrencyLimitDefault":
+		parsed, parseErr := strconv.Atoi(strings.TrimSpace(option.Value.(string)))
+		if parseErr != nil {
+			common.ApiErrorT(c, "Invalid parameters")
+			return
+		}
+		if err = setting.ValidateUserConcurrencyLimitValue(parsed); err != nil {
+			common.ApiError(c, err)
+			return
+		}
+	case "UserConcurrencyLimitGroup":
+		err = setting.CheckUserConcurrencyLimitGroup(option.Value.(string))
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+	case "UserConcurrencyLimitWaitTimeoutSeconds":
+		parsed, parseErr := strconv.Atoi(strings.TrimSpace(option.Value.(string)))
+		if parseErr != nil {
+			common.ApiErrorT(c, "Invalid parameters")
+			return
+		}
+		if err = setting.ValidateUserConcurrencyWaitTimeout(parsed); err != nil {
+			common.ApiError(c, err)
+			return
+		}
+	case "UserConcurrencyLimitMaxWaitExtra":
+		parsed, parseErr := strconv.Atoi(strings.TrimSpace(option.Value.(string)))
+		if parseErr != nil {
+			common.ApiErrorT(c, "Invalid parameters")
+			return
+		}
+		if err = setting.ValidateUserConcurrencyMaxWaitExtra(parsed); err != nil {
+			common.ApiError(c, err)
+			return
+		}
+	case "UserConcurrencyLimitSlotTTLSeconds":
+		parsed, parseErr := strconv.Atoi(strings.TrimSpace(option.Value.(string)))
+		if parseErr != nil {
+			common.ApiErrorT(c, "Invalid parameters")
+			return
+		}
+		if err = setting.ValidateUserConcurrencySlotTTL(parsed); err != nil {
 			common.ApiError(c, err)
 			return
 		}

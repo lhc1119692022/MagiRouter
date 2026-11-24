@@ -26,7 +26,10 @@ import { useAuthStore } from '@/stores/auth-store'
 const modelDetailsSearchSchema = z.object({
   search: z.string().optional(),
   sort: z.string().optional(),
-  vendor: z.string().optional(),
+  vendor: z
+    .union([z.string(), z.array(z.string())])
+    .optional()
+    .catch(undefined),
   group: z.string().optional(),
   quotaType: z.string().optional(),
   endpointType: z.string().optional(),

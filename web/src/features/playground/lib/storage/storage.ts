@@ -329,7 +329,7 @@ export function loadParameterEnabled(): Partial<ParameterEnabled> {
     const saved = readStoredValue(STORAGE_KEYS.PARAMETER_ENABLED)
     if (!saved) return {}
 
-    return parameterEnabledSchema.parse(unwrapStoredValue(saved))
+    return parameterEnabledSchema.partial().parse(unwrapStoredValue(saved))
   } catch (error) {
     // eslint-disable-next-line no-console
     console.error('Failed to load parameter enabled:', error)
@@ -344,7 +344,7 @@ export function saveParameterEnabled(
   parameterEnabled: Partial<ParameterEnabled>
 ): void {
   try {
-    const parsed = parameterEnabledSchema.parse(parameterEnabled)
+    const parsed = parameterEnabledSchema.partial().parse(parameterEnabled)
     writeStoredValue(STORAGE_KEYS.PARAMETER_ENABLED, parsed)
   } catch (error) {
     // eslint-disable-next-line no-console

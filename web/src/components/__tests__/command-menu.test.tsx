@@ -28,6 +28,7 @@ import userEvent from '@testing-library/user-event'
 import { afterAll, afterEach, beforeAll, expect, test } from 'vitest'
 
 import { SearchProvider } from '@/context/search-provider'
+import { MODEL_PRICING_ISSUES_QUERY_KEY } from '@/features/system-settings/models/pricing-issues'
 import { ROLE } from '@/lib/roles'
 import { STATUS_QUERY_KEY } from '@/lib/status-query'
 import { useAuthStore } from '@/stores/auth-store'
@@ -35,7 +36,12 @@ import { useAuthStore } from '@/stores/auth-store'
 import { CommandMenu } from '../command-menu'
 import { Search } from '../search'
 
-const adminEntries = ['Channels', 'Models', 'Users', 'Redemption Codes']
+const adminEntries = [
+  'Channel management',
+  'Model management',
+  'Users & billing',
+  'Redemption Codes',
+]
 const superAdminEntries = [
   'System Info',
   'Plugins',
@@ -76,11 +82,12 @@ afterEach(() => {
 async function searchEntriesFor(role: number, sidebarModulesAdmin = '') {
   useAuthStore.getState().auth.setUser({ id: 1, username: 'alice', role })
   const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
+    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
   })
   client.setQueryData(STATUS_QUERY_KEY, {
     SidebarModulesAdmin: sidebarModulesAdmin,
   })
+  client.setQueryData(MODEL_PRICING_ISSUES_QUERY_KEY, [])
   const router = createRouter({
     routeTree: createRootRoute({
       component: () => (
@@ -108,7 +115,12 @@ test('regular users only find their own console pages in search', async () => {
   const entries = await searchEntriesFor(ROLE.USER)
 
   expect(entries).toEqual(
-    expect.arrayContaining(['API Keys', 'Usage Logs', 'Wallet', 'Profile'])
+    expect.arrayContaining([
+      'API Keys',
+      'LLM Logs',
+      'Top up & billing',
+      'Account',
+    ])
   )
   for (const entry of [...adminEntries, ...superAdminEntries]) {
     expect(entries).not.toContain(entry)
@@ -139,6 +151,6 @@ test('pages hidden in the sidebar settings stay out of search', async () => {
     JSON.stringify({ personal: { enabled: true, topup: false } })
   )
 
-  expect(entries).not.toContain('Wallet')
-  expect(entries).toContain('Profile')
+  expect(entries).not.toContain('Top up & billing')
+  expect(entries).toContain('Account')
 })

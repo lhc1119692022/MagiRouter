@@ -152,6 +152,10 @@ jobs:
           mkdir release-assets
           gh release download "$RELEASE_TAG" \
             --repo "$GITHUB_REPOSITORY" \
+            --pattern "new-api-${RELEASE_TAG}" --pattern "new-api-arm64-${RELEASE_TAG}" \
+            --pattern "new-api-macos-${RELEASE_TAG}" --pattern "new-api-${RELEASE_TAG}.exe" \
+            --pattern 'New-API-App*.exe' --pattern 'THIRD-PARTY-LICENSES.md' \
+            --pattern 'checksums-linux.txt' --pattern 'checksums-macos.txt' --pattern 'checksums-windows.txt' \
             --dir release-assets
 
           if ! find release-assets -maxdepth 1 -type f -print -quit | grep -q .; then

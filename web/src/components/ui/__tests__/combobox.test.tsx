@@ -49,6 +49,22 @@ function Fixture() {
 }
 
 describe('searchable single selection', () => {
+  it('opens from the native trigger by keyboard without simulating button semantics twice', async () => {
+    render(<Fixture />)
+    const user = userEvent.setup()
+    const trigger = screen.getByRole('button', { name: 'Provider' })
+    expect(trigger.tagName).toBe('BUTTON')
+    expect(trigger).not.toHaveAttribute('role', 'button')
+    trigger.focus()
+    await user.keyboard('{Enter}')
+    expect(await screen.findByRole('listbox')).toBeVisible()
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Provider' })).toHaveValue(
+      'OpenAI'
+    )
+  })
+
   it.each(['dialog', 'sheet'] as const)(
     'keeps the options closed when a %s autofocuses the input, then opens on click',
     async (container) => {

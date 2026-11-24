@@ -78,14 +78,21 @@ export function GeneralError({
     : t('Please try again later.')
 
   return (
-    <div className={cn('bg-background text-foreground h-svh w-full px-4', className)}>
+    <div
+      className={cn(
+        'bg-background text-foreground h-svh w-full px-4',
+        className
+      )}
+    >
       <div className='m-auto flex h-full w-full max-w-md flex-col items-center justify-center gap-2 text-center'>
         {!minimal && status !== undefined && (
           <h1 className='text-magi-heading font-mono text-[6.5rem] leading-none font-semibold tracking-tighter'>
             {status}
           </h1>
         )}
-        <span className='text-foreground mt-2 text-lg font-medium'>{title}</span>
+        <span className='text-foreground mt-2 text-lg font-medium'>
+          {title}
+        </span>
         <p className='text-muted-foreground text-center text-sm leading-relaxed'>
           {t('We apologize for the inconvenience.')} <br /> {description}
         </p>

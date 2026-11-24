@@ -63,6 +63,47 @@ const preview: MetadataSyncPreview = {
 }
 
 describe('metadata sync preview', () => {
+  it.each([
+    '@mr:tasks:v1=none',
+    '@mr:catalog:v1=text+image',
+    '@mr:catalog:v1=none',
+  ])(
+    'protects local declaration %s when an older backend reports a raw tags difference',
+    async (declaration) => {
+      const candidate = {
+        ...preview.candidates[1],
+        fields: [
+          {
+            field: 'tags',
+            local: `keep,${declaration}`,
+            upstream: 'replacement',
+          },
+        ],
+      }
+      vi.spyOn(api, 'get').mockResolvedValue({
+        data: { success: true, data: { ...preview, candidates: [candidate] } },
+      })
+      const client = new QueryClient({
+        defaultOptions: { queries: { retry: false } },
+      })
+      render(
+        <QueryClientProvider client={client}>
+          <SyncWizardDialog open onOpenChange={() => {}} />
+        </QueryClientProvider>
+      )
+      await userEvent
+        .setup()
+        .click(screen.getByRole('button', { name: 'Load metadata preview' }))
+      expect(await screen.findByText(candidate.model_name)).toBeVisible()
+      expect(
+        screen.queryByRole('checkbox', {
+          name: `Select ${candidate.model_name}`,
+        })
+      ).toBeNull()
+      expect(screen.queryByText(/@mr:/)).toBeNull()
+      client.clear()
+    }
+  )
   it('shows additions and field effects and writes only after explicit confirmation', async () => {
     vi.spyOn(api, 'get').mockResolvedValue({
       data: { success: true, data: preview },

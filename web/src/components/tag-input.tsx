@@ -25,6 +25,9 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
 interface TagInputProps {
+  id?: string
+  'aria-invalid'?: boolean
+  'aria-describedby'?: string
   value: string[]
   onChange: (tags: string[]) => void
   placeholder?: string
@@ -33,6 +36,9 @@ interface TagInputProps {
 }
 
 export function TagInput({
+  id,
+  'aria-invalid': invalid,
+  'aria-describedby': description,
   value = [],
   onChange,
   placeholder,
@@ -61,7 +67,8 @@ export function TagInput({
       e.preventDefault()
       addTag(inputValue)
     } else if (e.key === 'Backspace' && !inputValue && value.length > 0) {
-      removeTag(value[value.length - 1])
+      const last = value.at(-1)
+      if (last !== undefined) removeTag(last)
     }
   }
 
@@ -87,7 +94,7 @@ export function TagInput({
               type='button'
               variant='ghost'
               size='icon-sm'
-              aria-label='Remove tag'
+              aria-label={t('Remove tag: {{tag}}', { tag })}
               onClick={(e) => {
                 e.stopPropagation()
                 removeTag(tag)
@@ -100,6 +107,9 @@ export function TagInput({
         </Badge>
       ))}
       <input
+        id={id}
+        aria-invalid={invalid}
+        aria-describedby={description}
         ref={inputRef}
         type='text'
         value={inputValue}

@@ -34,8 +34,15 @@ func GetUserUsableGroups(userGroup string) map[string]string {
 		}
 		// 如果userGroup不在UserUsableGroups中，返回UserUsableGroups + userGroup。
 		// 描述是英文源文本，由 web 控制台翻译；管理员配置的描述原样显示。
-		if _, ok := groupsCopy[userGroup]; !ok {
-			groupsCopy[userGroup] = "User group"
+		if !ratio_setting.IsUserManagementGroup(userGroup) {
+			if _, ok := groupsCopy[userGroup]; !ok {
+				groupsCopy[userGroup] = "User group"
+			}
+		}
+	}
+	for groupName := range groupsCopy {
+		if ratio_setting.IsUserManagementGroup(groupName) {
+			delete(groupsCopy, groupName)
 		}
 	}
 	return groupsCopy
@@ -47,7 +54,7 @@ func GroupInUserUsableGroups(userGroup, groupName string) bool {
 }
 
 func IsUserSelectableGroup(userGroup, groupName string) bool {
-	if groupName == "" || groupName == "auto" {
+	if groupName == "" || groupName == "auto" || ratio_setting.IsUserManagementGroup(groupName) {
 		return false
 	}
 	return GroupInUserUsableGroups(userGroup, groupName) && ratio_setting.ContainsGroupRatio(groupName)

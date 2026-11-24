@@ -21,8 +21,11 @@ import z from 'zod'
 
 import { ApiKeys } from '@/features/keys'
 import { API_KEY_STATUS_OPTIONS } from '@/features/keys/constants'
+import { playgroundSearchSchema } from '@/features/playground/lib/workspace-search'
 
 const apiKeySearchSchema = z.object({
+  action: z.literal('create').optional().catch(undefined),
+  playground: playgroundSearchSchema.optional().catch(undefined),
   page: z.number().optional().catch(1),
   pageSize: z.number().optional().catch(undefined),
   status: z

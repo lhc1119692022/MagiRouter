@@ -7,6 +7,8 @@ DEV_API_SERVICE = new-api
 DEV_POSTGRES_DB = new-api
 DEV_POSTGRES_USER = root
 DEV_SQLITE_PATH ?= one-api.db
+GO_TEST_PARALLEL ?= 4
+GO_BUILD_MEMLIMIT ?= 2GiB
 
 .PHONY: all build-web build-all-web start-api dev dev-api dev-api-rebuild dev-web reset-setup test
 
@@ -44,11 +46,11 @@ test:
 	@echo "Testing root Go module..."
 	@root_module=$$(GOWORK=off go list -m); \
 		root_packages=$$(GOWORK=off go list -e ./... | grep -vxF "$$root_module"); \
-		GOWORK=off go test $$root_packages
+		GOWORK=off GOMEMLIMIT=$(GO_BUILD_MEMLIMIT) go test -p $(GO_TEST_PARALLEL) $$root_packages
 	@echo "Testing relaykit Go module..."
-	@cd relaykit && GOWORK=off go test ./...
+	@cd relaykit && GOWORK=off GOMEMLIMIT=$(GO_BUILD_MEMLIMIT) go test -p $(GO_TEST_PARALLEL) ./...
 	@echo "Testing tokenkit Go module..."
-	@cd tokenkit && GOWORK=off go test ./...
+	@cd tokenkit && GOWORK=off GOMEMLIMIT=$(GO_BUILD_MEMLIMIT) go test -p $(GO_TEST_PARALLEL) ./...
 
 reset-setup:
 	@echo "Resetting local setup wizard state..."

@@ -58,6 +58,7 @@ type ModelCategoryProps = {
   redirectOnly: Set<string>
   onChange: (models: string[]) => void
   onRedirectModel?: (model: string) => void
+  onEditModelLabels?: (model: string) => void
   aliases?: Record<string, string>
 }
 
@@ -156,6 +157,20 @@ function ModelCategory(props: ModelCategoryProps) {
                   </TooltipContent>
                 </Tooltip>
               )}
+              {props.onEditModelLabels && (
+                <Button
+                  type='button'
+                  size='xs'
+                  variant='outline'
+                  className='ml-auto shrink-0'
+                  aria-label={t('Edit capability labels for {{model}}', {
+                    model,
+                  })}
+                  onClick={() => props.onEditModelLabels?.(model)}
+                >
+                  {t('Capability labels')}
+                </Button>
+              )}
               {props.onRedirectModel && (
                 <Button
                   type='button'
@@ -188,6 +203,7 @@ type UpstreamModelSelectionProps = {
   redirectSourceModels?: string[]
   showChanges?: boolean
   summaryText?: string
+  onEditModelLabels?: (model: string) => void
   /** Renders a per-model action that starts a redirect for that model. */
   onRedirectModel?: (model: string) => void
   /** Upstream model name to the request name it is published under. */
@@ -406,6 +422,7 @@ export function UpstreamModelSelection(props: UpstreamModelSelectionProps) {
               redirectOnly={categorized.redirectOnly}
               onChange={props.onChange}
               onRedirectModel={props.onRedirectModel}
+              onEditModelLabels={props.onEditModelLabels}
               aliases={props.aliases}
             />
           ))}

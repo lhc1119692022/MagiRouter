@@ -16,6 +16,7 @@ export default defineConfig(({ envMode }) => {
     'http://localhost:3000'
 
   const isProd = envMode === 'production'
+  const isLowMemory = !isProd && process.env.RSBUILD_LOW_MEMORY === '1'
   const devProxy = Object.fromEntries(
     (['/api', '/v1', '/mj', '/pg'] as const).map((key) => [
       key,
@@ -64,7 +65,9 @@ export default defineConfig(({ envMode }) => {
     },
     html: {
       template: './index.html',
-     // favicon: './public/favicon.ico', // Disabled: use versioned link in index.html
+      // Served under a MagiRouter-only filename so browsers never reuse a
+      // favicon cached from the upstream `/favicon.ico` URL.
+      favicon: './public/favicon-mr.ico',
     },
     server: {
       host: '0.0.0.0',
@@ -78,6 +81,7 @@ export default defineConfig(({ envMode }) => {
       distPath: {
         root: 'dist',
       },
+      ...(isLowMemory ? { sourceMap: false } : {}),
       // Rely on Rsbuild default legalComments ("linked" → per-chunk *.LICENSE.txt) in all modes.
       // Do not set "none" in production: that strips minifier-preserved third-party notices and
       // extracted license files, which some distributions require for open-source compliance.
@@ -89,12 +93,16 @@ export default defineConfig(({ envMode }) => {
     },
     tools: {
       rspack: {
+        watchOptions: {
+          ignored:
+            /[\\/](?:node_modules|dist|\.git|\.vitest-cache|local-state)[\\/]/,
+        },
         plugins: [
           tanstackRouter({
             target: 'react',
             // Dev: avoid per-route async chunks (reduces white flash on navigation + faster HMR feedback).
-            // Prod: keep route-based code splitting.
-            autoCodeSplitting: isProd,
+            // Prod or low-memory dev: keep route-based code splitting so lazyCompilation only builds visited routes.
+            autoCodeSplitting: isProd || isLowMemory,
           }),
         ],
       },

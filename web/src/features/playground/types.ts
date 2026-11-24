@@ -19,6 +19,18 @@ For commercial licensing, please contact support@quantumnous.com
 // Message types
 export type MessageRole = 'user' | 'assistant' | 'system'
 
+export const CHAT_REASONING_EFFORTS = [
+  'none',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+] as const
+export type ChatReasoningEffort = (typeof CHAT_REASONING_EFFORTS)[number]
+export const CHAT_HISTORY_TURNS = [0, 1, 4, 12] as const
+
 export type MessageStatus = 'loading' | 'streaming' | 'complete' | 'error'
 
 export type PlaygroundMessageLayoutMode = 'alternating' | 'left'
@@ -67,6 +79,10 @@ export interface ContentPart {
 
 export interface ChatCompletionRequest {
   model: string
+  reasoning_effort?: ChatReasoningEffort
+  web_search_options?: {
+    search_context_size?: 'low' | 'medium' | 'high'
+  }
   group?: string
   messages: ChatCompletionMessage[]
   stream: boolean
@@ -120,12 +136,16 @@ export interface ChatCompletionResponse {
 // Configuration types
 export interface PlaygroundConfig {
   model: string
+  reasoning_effort: ChatReasoningEffort | ''
+  web_search: boolean
+  historyTurns: (typeof CHAT_HISTORY_TURNS)[number]
+  parameterEnabled: ParameterEnabled
   group: string
-  temperature: number
-  top_p: number
-  max_tokens: number
-  frequency_penalty: number
-  presence_penalty: number
+  temperature: number | null
+  top_p: number | null
+  max_tokens: number | null
+  frequency_penalty: number | null
+  presence_penalty: number | null
   seed: number | null
   stream: boolean
 }
@@ -143,6 +163,17 @@ export interface ParameterEnabled {
 export interface ModelOption {
   label: string
   value: string
+  chatControls?: ChatControls
+  modelLimitNames?: string[]
+}
+
+export interface ChatControls {
+  image_input?: boolean
+  web_search?: boolean
+  fields?: (keyof ParameterEnabled)[]
+  efforts?: ChatReasoningEffort[]
+  default_effort?: ChatReasoningEffort
+  sampling?: 'always' | 'none_only'
 }
 
 export interface GroupOption {

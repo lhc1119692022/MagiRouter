@@ -16,6 +16,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+/* oxlint-disable react/no-array-index-key -- these lists render positional data
+   (demo transcript lines, tokenised fragments, static feature rows). The index
+   is the identity; no stable key exists to key on. */
 import { useTranslation } from 'react-i18next'
 
 import { Separator } from '@/components/ui/separator'

@@ -27,16 +27,44 @@ export type HeaderNavModule = 'rankings' | 'pricing'
 export type HeaderNavModules = {
   home: boolean
   console: boolean
+  creation: boolean
   pricing: ModuleAccess
   rankings: ModuleAccess
   docs: boolean
   about: boolean
-  [key: string]: boolean | ModuleAccess
+  canvasUrl?: string
+  workbenchUrl?: string
+  [key: string]: boolean | ModuleAccess | string | undefined
+}
+
+export function creationDestination(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined
+  const value = raw.trim()
+  if (
+    !value ||
+    /[\\\s]/.test(value) ||
+    value.startsWith('//') ||
+    [...value].some((character) => character.charCodeAt(0) < 32)
+  ) {
+    return undefined
+  }
+  if (value.startsWith('/')) return value
+  if (!/^https:\/\//i.test(value)) return undefined
+  try {
+    const url = new URL(value)
+    if (url.protocol === 'https:' && !url.username && !url.password) {
+      return url.href
+    }
+  } catch {
+    return undefined
+  }
+  return undefined
 }
 
 const DEFAULT_HEADER_NAV_MODULES: HeaderNavModules = {
   home: true,
   console: true,
+  creation: true,
   pricing: { enabled: true, requireAuth: false },
   rankings: { enabled: true, requireAuth: false },
   docs: true,
@@ -112,6 +140,10 @@ export function parseHeaderNavModules(raw: unknown): HeaderNavModules {
   if (!parsed) return result
 
   Object.entries(parsed).forEach(([key, value]) => {
+    if (key === 'canvasUrl' || key === 'workbenchUrl') {
+      result[key] = creationDestination(value)
+      return
+    }
     if (key === 'pricing') {
       result.pricing = parseAccess(value, result.pricing)
       return
@@ -134,7 +166,7 @@ export function parseHeaderNavModules(raw: unknown): HeaderNavModules {
       )
     }
   })
-
+  if (!Object.hasOwn(parsed, 'creation')) result.creation = result.console
   return result
 }
 
@@ -205,23 +237,35 @@ export function isSidebarModuleEnabled(
   options?: { ignoreSectionFlag?: boolean }
 ): boolean {
   const status = readCachedStatus()
-  if (!status) return true
+  return sidebarModuleEnabledFromConfig(
+    status?.SidebarModulesAdmin,
+    section,
+    module,
+    options
+  )
+}
 
-  const raw = status.SidebarModulesAdmin
+export function sidebarModuleEnabledFromConfig(
+  raw: unknown,
+  section: string,
+  module: string,
+  options?: { ignoreSectionFlag?: boolean }
+): boolean {
   if (!raw || String(raw).trim() === '') return true
 
   try {
-    const parsed = JSON.parse(String(raw)) as Record<
-      string,
-      Record<string, boolean>
-    >
+    const parsed = (
+      typeof raw === 'object' ? raw : JSON.parse(String(raw))
+    ) as Record<string, Record<string, boolean>>
     const sectionConfig = parsed[section]
     if (!sectionConfig) return true
-    if (!options?.ignoreSectionFlag && sectionConfig.enabled === false) {
+    if (
+      !options?.ignoreSectionFlag &&
+      !parseHeaderNavBoolean(sectionConfig.enabled, true)
+    ) {
       return false
     }
-    if (sectionConfig[module] === false) return false
-    return true
+    return parseHeaderNavBoolean(sectionConfig[module], true)
   } catch {
     return true
   }

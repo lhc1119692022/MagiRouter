@@ -86,24 +86,21 @@ const groups = [
 ]
 
 function renderModelDetails() {
-  client.setQueryData(['perf-metrics', 'test-model'], {
-    success: true,
-    data: {
-      model_name: 'test-model',
-      summary,
-      series: [
-        {
-          ts: windowStart,
-          avg_ttft_ms: 100,
-          avg_latency_ms: 1009,
-          success_rate: 99.01,
-          avg_tps: 5,
-        },
-      ],
-      window_start: windowStart,
-      window_end: windowEnd,
-      groups,
-    },
+  client.setQueryData(['perf-metrics', 'test-model', undefined, undefined], {
+    model_name: 'test-model',
+    summary,
+    series: [
+      {
+        ts: windowStart,
+        avg_ttft_ms: 100,
+        avg_latency_ms: 1009,
+        success_rate: 99.01,
+        avg_tps: 5,
+      },
+    ],
+    window_start: windowStart,
+    window_end: windowEnd,
+    groups,
   })
   return render(
     <QueryClientProvider client={client}>
@@ -151,11 +148,11 @@ describe('server performance summaries', () => {
     }
   )
 
-  it('shows the server summary and series incident count for model details instead of averaging groups', () => {
+  it('shows the weighted model result without claiming a failed request establishes an outage', () => {
     renderModelDetails()
     expect(screen.getByText('99.01%')).toBeVisible()
     expect(screen.queryByText('50.00%')).not.toBeInTheDocument()
-    expect(screen.getByText('1 incidents in the last 24 hours')).toBeVisible()
+    expect(screen.queryByText(/incident|outage/i)).toBeNull()
   })
 
   it('feeds the uptime chart from the backend series rather than group averages', async () => {
@@ -164,8 +161,7 @@ describe('server performance summaries', () => {
     const specs = chart.mock.calls.map(([props]) => props.spec)
     const uptime = specs.find((value) => value.data[0].id === 'uptime')
     const uptimeValues = uptime?.data[0].values.map((value) => value.uptime)
-    expect(uptimeValues).toContain(99.01)
-    expect(uptimeValues).not.toContain(50)
+    expect(uptimeValues).toEqual([99.01])
   })
 
   it('shows each group success rate in its own sparkline label', () => {
@@ -180,16 +176,12 @@ describe('server performance summaries', () => {
         overallSuccessRate={99.01}
         series={[
           {
-            date: '2026-09-14T11:00:00Z',
-            uptime_pct: 100,
-            incidents: 0,
-            outage_minutes: 0,
+            ts: windowStart,
+            success_rate: 100,
           },
           {
-            date: '2026-09-14T12:00:00Z',
-            uptime_pct: 0,
-            incidents: 1,
-            outage_minutes: 0,
+            ts: windowStart + 3600,
+            success_rate: 0,
           },
         ]}
       />

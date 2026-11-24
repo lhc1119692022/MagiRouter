@@ -1,0 +1,98 @@
+.dash-editorial .dash-panel-head {
+  flex-wrap: wrap;
+}
+.dash-editorial .dash-panel-title {
+  line-height: 1.4;
+}
+.dash-editorial .dash-notices-list .dash-notice-row {
+  display: block;
+  height: auto;
+  border-width: var(--hairline) 0 0;
+  border-color: var(--divider-color);
+  border-radius: 0;
+  white-space: normal;
+  background: transparent;
+}
+.dash-editorial .dash-notices-list .dash-notice-row:first-child {
+  border-top: 0;
+}
+.dash-editorial .dash-editorial-kind {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding-inline: 8px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 500;
+  background: var(--bg-elevated);
+  color: var(--ink-body);
+  box-shadow: inset 0 0 0 var(--hairline) var(--ring-color);
+}
+.dash-editorial .dash-notice-title {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.dash-editorial-message {
+  color: var(--ink-muted);
+  padding-block: 16px;
+  font-size: 13px;
+  text-align: center;
+}
+.dash-editorial .dash-faq-list {
+  gap: 6px;
+}
+.dash-editorial .dash-faq-item {
+  overflow: hidden;
+  border-radius: 11px;
+  border: 0;
+  background: var(--bg-subtle);
+  box-shadow: inset 0 0 0 var(--hairline) var(--ring-color);
+}
+html[data-theme='dark'] .dash-editorial .dash-faq-item {
+  background: #1c1917;
+}
+.dash-editorial .dash-faq-trigger {
+  width: 100%;
+  align-items: center;
+  text-align: start;
+  padding: 10px 12px;
+  gap: 10px;
+  border: 0;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: normal;
+  color: var(--ink-strong);
+  overflow-wrap: anywhere;
+}
+.dash-editorial .dash-faq-trigger:focus-visible {
+  outline: 2px solid var(--ink-muted);
+  outline-offset: -2px;
+}
+.dash-faq-trigger [data-slot='accordion-trigger-icon'] {
+  display: none;
+}
+.dash-faq-mark {
+  min-width: 12px;
+  text-align: center;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--ink-muted);
+}
+.dash-faq-mark::after {
+  content: '+';
+}
+.dash-faq-trigger[aria-expanded='true'] .dash-faq-mark::after {
+  content: '−';
+}
+.dash-editorial .dash-faq-body {
+  padding: 0 12px 11px;
+}
+.dash-editorial .dash-faq-answer {
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--ink-muted);
+}
+.dash-editorial .dash-faq-answer p {
+  color: inherit;
+  line-height: inherit;
+}

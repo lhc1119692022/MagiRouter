@@ -1,7 +1,9 @@
 package middleware
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -192,6 +194,65 @@ func CriticalRateLimit() func(c *gin.Context) {
 		return rateLimitFactory(common.CriticalRateLimitNum, common.CriticalRateLimitDuration, "CT")
 	}
 	return defNext
+}
+
+// capturingWriter tees the response body so authentication middlewares can tell
+// a rejected attempt (HTTP 200 with `"success": false`) from a real success.
+type capturingWriter struct {
+	gin.ResponseWriter
+	body bytes.Buffer
+}
+
+func (w *capturingWriter) Write(data []byte) (int, error) {
+	w.body.Write(data)
+	return w.ResponseWriter.Write(data)
+}
+
+func (w *capturingWriter) WriteString(text string) (int, error) {
+	w.body.WriteString(text)
+	return w.ResponseWriter.WriteString(text)
+}
+
+func loginAttemptFailed(status int, body []byte) bool {
+	var payload struct {
+		Success *bool `json:"success"`
+	}
+	if err := json.Unmarshal(body, &payload); err == nil && payload.Success != nil {
+		return !*payload.Success
+	}
+	return status >= http.StatusBadRequest
+}
+
+// LoginRateLimit counts only failed authentication attempts against the
+// critical bucket. Successful sign-ins are free, so a shared NAT, a returning
+// admin, or a run of typo attempts cannot lock everyone out of the login page.
+// Redis keeps the shared fixed-window pre-check because its Lua script cannot
+// defer the increment until the outcome is known.
+func LoginRateLimit() func(c *gin.Context) {
+	if !common.CriticalRateLimitEnable {
+		return defNext
+	}
+	if common.RedisEnabled {
+		return rateLimitFactory(common.CriticalRateLimitNum, common.CriticalRateLimitDuration, "CT")
+	}
+	inMemoryRateLimiter.Init(common.RateLimitKeyExpirationDuration)
+	return func(c *gin.Context) {
+		reservation := inMemoryRateLimiter.Reserve(
+			"CT"+c.ClientIP(),
+			common.CriticalRateLimitNum,
+			common.CriticalRateLimitDuration,
+		)
+		if reservation == nil {
+			writeRateLimited(c, common.CriticalRateLimitDuration)
+			return
+		}
+		defer reservation.Complete(false)
+
+		capture := &capturingWriter{ResponseWriter: c.Writer}
+		c.Writer = capture
+		c.Next()
+		reservation.Complete(loginAttemptFailed(c.Writer.Status(), capture.body.Bytes()))
+	}
 }
 
 func UserCriticalRateLimit(scope string) func(c *gin.Context) {

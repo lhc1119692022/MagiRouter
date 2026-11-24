@@ -25,6 +25,8 @@ import {
 } from './section-registry.tsx'
 
 const defaultContentSettings: ContentSettings = {
+  'console_setting.official_model_prices': '',
+  'console_setting.creation_presets': '',
   'console_setting.api_info': '[]',
   'console_setting.announcements': '[]',
   'console_setting.faq': '[]',
@@ -32,7 +34,8 @@ const defaultContentSettings: ContentSettings = {
   'console_setting.api_info_enabled': true,
   'console_setting.announcements_enabled': true,
   'console_setting.faq_enabled': true,
-  'console_setting.uptime_kuma_enabled': false,
+  'console_setting.uptime_kuma_enabled': true,
+  SidebarModulesAdmin: '',
   DataExportEnabled: false,
   DataExportDefaultTime: 'hour',
   DataExportInterval: 5,

@@ -22,6 +22,7 @@ import { useTranslation } from 'react-i18next'
 import { Dialog } from '@/components/dialog'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { ChannelModelLabelsDialog } from '@/features/models/components/dialogs/channel-model-labels-dialog'
 import { PluginIcon } from '@/features/task-plugins/components/plugin-icon'
 
 import type { TaskPluginOption } from '../../api'
@@ -43,6 +44,7 @@ export function ConfigureModelsDialog(props: ConfigureModelsDialogProps) {
   // Mounted for each opening. Keep unchecked candidates available until close.
   const [initialModels] = useState(props.models)
   const [selected, setSelected] = useState(initialModels)
+  const [editingModel, setEditingModel] = useState<string | null>(null)
   const [source, setSource] = useState(
     props.initialPluginKey ? `plugin:${props.initialPluginKey}` : 'all'
   )
@@ -76,6 +78,7 @@ export function ConfigureModelsDialog(props: ConfigureModelsDialogProps) {
       existingModels={initialModels}
       onChange={setSelected}
       onRedirectModel={handleRedirect}
+      onEditModelLabels={setEditingModel}
       showChanges={false}
       summaryText={
         plugins.length > 0
@@ -89,6 +92,15 @@ export function ConfigureModelsDialog(props: ConfigureModelsDialogProps) {
     />
   )
 
+  if (editingModel !== null) {
+    return (
+      <ChannelModelLabelsDialog
+        key={editingModel}
+        modelName={editingModel}
+        onClose={() => setEditingModel(null)}
+      />
+    )
+  }
   return (
     <Dialog
       open={props.open}

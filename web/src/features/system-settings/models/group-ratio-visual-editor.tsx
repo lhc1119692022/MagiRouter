@@ -98,6 +98,7 @@ type GroupRatioVisualEditorProps = {
   groupRatio: string
   topupGroupRatio: string
   userUsableGroups: string
+  userManagementGroups: string
   groupGroupRatio: string
   autoGroups: string
   maxTokenAutoGroupsField: ReactNode
@@ -111,12 +112,14 @@ type GroupPricingRow = {
   ratio: string
   topupRatio: string
   selectable: boolean
+  userManagementOnly: boolean
   description: string
 }
 
 type RegistryEntry = {
   name: string
-  ratio: number
+  ratio?: number
+  userManagementOnly: boolean
 }
 
 const sectionCardClassName = 'min-w-0 shadow-none'
@@ -159,38 +162,59 @@ function parseNestedRatioMap(
 function buildGroupPricingRows(
   groupRatio: string,
   userUsableGroups: string,
-  topupGroupRatio: string
+  topupGroupRatio: string,
+  userManagementGroups: string
 ): GroupPricingRow[] {
   const ratioMap = parseRatioMap(groupRatio)
   const usableMap = parseUsableMap(userUsableGroups)
   const topupMap = parseRatioMap(topupGroupRatio)
+  const userManagementMap = parseUsableMap(userManagementGroups)
   const names = new Set([
     ...Object.keys(ratioMap),
     ...Object.keys(usableMap),
     ...Object.keys(topupMap),
+    ...Object.keys(userManagementMap),
   ])
 
-  return [...names].map((name) => ({
-    _id: createGroupPricingId(),
-    name,
-    ratio: String(normalizeRatio(ratioMap[name])),
-    topupRatio: Object.hasOwn(topupMap, name) ? String(topupMap[name]) : '',
-    selectable: Object.hasOwn(usableMap, name),
-    description: String(usableMap[name] ?? ''),
-  }))
+  return [...names].map((name) => {
+    const userManagementOnly = Object.hasOwn(userManagementMap, name)
+    const description = userManagementOnly
+      ? String(userManagementMap[name] ?? usableMap[name] ?? '')
+      : String(usableMap[name] ?? '')
+
+    return {
+      _id: createGroupPricingId(),
+      name,
+      ratio: String(normalizeRatio(ratioMap[name])),
+      topupRatio: Object.hasOwn(topupMap, name) ? String(topupMap[name]) : '',
+      selectable: Object.hasOwn(usableMap, name),
+      userManagementOnly,
+      description,
+    }
+  })
 }
 
 function serializeGroupPricingRows(rows: GroupPricingRow[]) {
   const groupRatio: Record<string, number> = {}
   const userUsableGroups: Record<string, string> = {}
   const topupGroupRatio: Record<string, number> = {}
+  const userManagementGroups: Record<string, string> = {}
 
   for (const row of rows) {
     const name = row.name.trim()
     if (!name) continue
-    groupRatio[name] = normalizeRatio(row.ratio)
-    if (row.selectable) {
-      userUsableGroups[name] = row.description
+    if (row.userManagementOnly) {
+      userManagementGroups[name] = row.description
+      delete groupRatio[name]
+      delete userUsableGroups[name]
+    } else {
+      delete userManagementGroups[name]
+      groupRatio[name] = normalizeRatio(row.ratio)
+      if (row.selectable) {
+        userUsableGroups[name] = row.description
+      } else {
+        delete userUsableGroups[name]
+      }
     }
     const topup = row.topupRatio.trim()
     if (topup !== '' && Number.isFinite(Number(topup))) {
@@ -202,6 +226,7 @@ function serializeGroupPricingRows(rows: GroupPricingRow[]) {
     GroupRatio: JSON.stringify(groupRatio, null, 2),
     UserUsableGroups: JSON.stringify(userUsableGroups, null, 2),
     TopupGroupRatio: JSON.stringify(topupGroupRatio, null, 2),
+    UserManagementGroups: JSON.stringify(userManagementGroups, null, 2),
   }
 }
 
@@ -211,18 +236,21 @@ function groupPricingSignature(rows: GroupPricingRow[]): string {
     groupRatio: parseRatioMap(serialized.GroupRatio),
     userUsableGroups: parseUsableMap(serialized.UserUsableGroups),
     topupGroupRatio: parseRatioMap(serialized.TopupGroupRatio),
+    userManagementGroups: parseUsableMap(serialized.UserManagementGroups),
   })
 }
 
 function sourceGroupPricingSignature(
   groupRatio: string,
   userUsableGroups: string,
-  topupGroupRatio: string
+  topupGroupRatio: string,
+  userManagementGroups: string
 ): string {
   return JSON.stringify({
     groupRatio: parseRatioMap(groupRatio),
     userUsableGroups: parseUsableMap(userUsableGroups),
     topupGroupRatio: parseRatioMap(topupGroupRatio),
+    userManagementGroups: parseUsableMap(userManagementGroups),
   })
 }
 
@@ -266,50 +294,70 @@ function GroupNameSelect(props: GroupNameSelectProps) {
   )
 }
 
-export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
-  section,
-  onSectionChange,
-  defaultUseAutoGroupField,
-  groupRatio,
-  topupGroupRatio,
-  userUsableGroups,
-  groupGroupRatio,
-  autoGroups,
-  maxTokenAutoGroupsField,
-  groupSpecialUsableGroup,
-  onChange,
-}: GroupRatioVisualEditorProps) {
+export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor(
+  props: GroupRatioVisualEditorProps
+) {
   const { t, i18n } = useTranslation()
   const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
   const [detailGroup, setDetailGroup] = useState<string | null>(null)
+  const onChange = props.onChange
 
   const registry = useMemo<RegistryEntry[]>(() => {
-    const ratioMap = parseRatioMap(groupRatio)
-    const usableMap = parseUsableMap(userUsableGroups)
-    const topupMap = parseRatioMap(topupGroupRatio)
+    const ratioMap = parseRatioMap(props.groupRatio)
+    const usableMap = parseUsableMap(props.userUsableGroups)
+    const topupMap = parseRatioMap(props.topupGroupRatio)
+    const userManagementMap = parseUsableMap(props.userManagementGroups)
     const names = new Set([
       ...Object.keys(ratioMap),
       ...Object.keys(usableMap),
       ...Object.keys(topupMap),
+      ...Object.keys(userManagementMap),
     ])
-    return [...names].map((name) => ({
-      name,
-      ratio: normalizeRatio(ratioMap[name]),
-    }))
-  }, [groupRatio, userUsableGroups, topupGroupRatio])
+    return [...names].map((name) => {
+      const userManagementOnly = Object.hasOwn(userManagementMap, name)
+      return {
+        name,
+        ratio: userManagementOnly ? undefined : normalizeRatio(ratioMap[name]),
+        userManagementOnly,
+      }
+    })
+  }, [
+    props.groupRatio,
+    props.userUsableGroups,
+    props.topupGroupRatio,
+    props.userManagementGroups,
+  ])
 
-  const registryNames = useMemo(
+  const allGroupNames = useMemo(
     () => registry.map((entry) => entry.name),
+    [registry]
+  )
+
+  const billingGroupNames = useMemo(
+    () =>
+      registry
+        .filter((entry) => !entry.userManagementOnly)
+        .map((entry) => entry.name),
+    [registry]
+  )
+
+  const userManagementGroupSet = useMemo(
+    () =>
+      new Set(
+        registry
+          .filter((entry) => entry.userManagementOnly)
+          .map((entry) => entry.name)
+      ),
     [registry]
   )
 
   // Auto groups
   const autoGroupsList = useMemo(() => {
-    return safeJsonParse<string[]>(autoGroups, {
+    return safeJsonParse<string[]>(props.autoGroups, {
       fallback: [],
       context: 'auto groups',
     })
-  }, [autoGroups])
+  }, [props.autoGroups])
 
   const handleAutoGroupAdd = useCallback(
     (name: string) => {
@@ -339,14 +387,31 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
   )
 
   const autoGroupCandidates = useMemo(
-    () => registryNames.filter((name) => !autoGroupsList.includes(name)),
-    [registryNames, autoGroupsList]
+    () => billingGroupNames.filter((name) => !autoGroupsList.includes(name)),
+    [billingGroupNames, autoGroupsList]
   )
+
+  const renderAutoGroupWarning = (group: string) => {
+    if (userManagementGroupSet.has(group)) {
+      return (
+        <StatusBadge variant='danger' copyable={false}>
+          <AlertTriangle className='mr-1 h-3 w-3' />
+          {t('User management only')}
+        </StatusBadge>
+      )
+    }
+    if (!allGroupNames.includes(group)) {
+      return <UnknownGroupBadge />
+    }
+    return null
+  }
 
   return (
     <Tabs
-      value={section}
-      onValueChange={(value) => onSectionChange(value as GroupSettingsSection)}
+      value={props.section}
+      onValueChange={(value) =>
+        props.onSectionChange(value as GroupSettingsSection)
+      }
       className='min-w-0 gap-5'
     >
       <div className='min-w-0 overflow-x-auto pb-1'>
@@ -367,9 +432,10 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
       </div>
       <TabsContent value='pricing' keepMounted>
         <GroupPricingTable
-          groupRatio={groupRatio}
-          userUsableGroups={userUsableGroups}
-          topupGroupRatio={topupGroupRatio}
+          groupRatio={props.groupRatio}
+          userUsableGroups={props.userUsableGroups}
+          topupGroupRatio={props.topupGroupRatio}
+          userManagementGroups={props.userManagementGroups}
           onChange={onChange}
           onShowDetail={setDetailGroup}
         />
@@ -377,14 +443,19 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
       <TabsContent value='overrides' keepMounted>
         <GroupOverrideRules
           registry={registry}
-          groupGroupRatio={groupGroupRatio}
+          allGroupNames={allGroupNames}
+          billingGroupNames={billingGroupNames}
+          userManagementGroupSet={userManagementGroupSet}
+          groupGroupRatio={props.groupGroupRatio}
           onChange={onChange}
         />
       </TabsContent>
       <TabsContent value='visibility' keepMounted>
         <GroupSpecialUsableRulesEditor
-          value={groupSpecialUsableGroup}
-          groupOptions={registryNames}
+          value={props.groupSpecialUsableGroup}
+          userGroupOptions={allGroupNames}
+          billingGroupOptions={billingGroupNames}
+          userManagementGroups={userManagementGroupSet}
           onChange={(value) => onChange('GroupSpecialUsableGroup', value)}
         />
       </TabsContent>
@@ -440,16 +511,16 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
                         </span>
                       }
                     >
-                      {!registryNames.includes(group) && <UnknownGroupBadge />}
+                      {renderAutoGroupWarning(group)}
                     </AutoGroupOrderItem>
                   ))}
                 </Reorder.Group>
               )}
             </div>
             <div className='bg-muted/20 flex min-w-0 flex-col gap-4 self-start rounded-lg border p-4'>
-              {defaultUseAutoGroupField}
+              {props.defaultUseAutoGroupField}
               <Separator />
-              {maxTokenAutoGroupsField}
+              {props.maxTokenAutoGroupsField}
             </div>
           </CardContent>
         </Card>
@@ -461,11 +532,12 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
           if (!open) setDetailGroup(null)
         }}
         registry={registry}
-        topupGroupRatio={topupGroupRatio}
-        userUsableGroups={userUsableGroups}
-        groupGroupRatio={groupGroupRatio}
+        topupGroupRatio={props.topupGroupRatio}
+        userUsableGroups={props.userUsableGroups}
+        userManagementGroups={props.userManagementGroups}
+        groupGroupRatio={props.groupGroupRatio}
         autoGroups={autoGroupsList}
-        groupSpecialUsableGroup={groupSpecialUsableGroup}
+        groupSpecialUsableGroup={props.groupSpecialUsableGroup}
       />
     </Tabs>
   )
@@ -475,40 +547,48 @@ type GroupPricingTableProps = {
   groupRatio: string
   userUsableGroups: string
   topupGroupRatio: string
+  userManagementGroups: string
   onChange: (field: string, value: string) => void
   onShowDetail: (name: string) => void
 }
 
-function GroupPricingTable({
-  groupRatio,
-  userUsableGroups,
-  topupGroupRatio,
-  onChange,
-  onShowDetail,
-}: GroupPricingTableProps) {
+function GroupPricingTable(props: GroupPricingTableProps) {
   const { t } = useTranslation()
+  const onChange = props.onChange
   const [search, setSearch] = useState('')
   const [rows, setRows] = useState<GroupPricingRow[]>(() =>
-    buildGroupPricingRows(groupRatio, userUsableGroups, topupGroupRatio)
+    buildGroupPricingRows(
+      props.groupRatio,
+      props.userUsableGroups,
+      props.topupGroupRatio,
+      props.userManagementGroups
+    )
   )
 
   useEffect(() => {
     const incomingSignature = sourceGroupPricingSignature(
-      groupRatio,
-      userUsableGroups,
-      topupGroupRatio
+      props.groupRatio,
+      props.userUsableGroups,
+      props.topupGroupRatio,
+      props.userManagementGroups
     )
     setRows((currentRows) => {
       if (groupPricingSignature(currentRows) === incomingSignature) {
         return currentRows
       }
       return buildGroupPricingRows(
-        groupRatio,
-        userUsableGroups,
-        topupGroupRatio
+        props.groupRatio,
+        props.userUsableGroups,
+        props.topupGroupRatio,
+        props.userManagementGroups
       )
     })
-  }, [groupRatio, userUsableGroups, topupGroupRatio])
+  }, [
+    props.groupRatio,
+    props.userUsableGroups,
+    props.topupGroupRatio,
+    props.userManagementGroups,
+  ])
 
   const emitRows = useCallback(
     (nextRows: GroupPricingRow[]) => {
@@ -517,6 +597,7 @@ function GroupPricingTable({
       onChange('GroupRatio', serialized.GroupRatio)
       onChange('UserUsableGroups', serialized.UserUsableGroups)
       onChange('TopupGroupRatio', serialized.TopupGroupRatio)
+      onChange('UserManagementGroups', serialized.UserManagementGroups)
     },
     [onChange]
   )
@@ -550,6 +631,7 @@ function GroupPricingTable({
         ratio: '1',
         topupRatio: '',
         selectable: true,
+        userManagementOnly: false,
         description: '',
       },
       ...rows,
@@ -626,7 +708,7 @@ function GroupPricingTable({
             )}
           </InputGroup>
           <StaticDataTable
-            tableClassName='min-w-[760px]'
+            tableClassName='min-w-[880px]'
             tableProps={{ 'aria-label': t('Pricing groups') }}
             data={visibleRows}
             getRowKey={(row) => row._id}
@@ -669,21 +751,46 @@ function GroupPricingTable({
                 ),
               },
               {
+                id: 'user-management-only',
+                header: t('User management only'),
+                className: 'w-36 text-center',
+                cell: (row) => (
+                  <div className='flex justify-center'>
+                    <Checkbox
+                      checked={row.userManagementOnly}
+                      onCheckedChange={(checked) =>
+                        updateRow(
+                          row._id,
+                          'userManagementOnly',
+                          checked === true
+                        )
+                      }
+                      aria-label={t('User management only')}
+                    />
+                  </div>
+                ),
+              },
+              {
                 id: 'ratio',
                 header: t('Ratio'),
                 className: 'w-28',
-                cell: (row) => (
-                  <Input
-                    type='number'
-                    min={0}
-                    step={0.0001}
-                    value={row.ratio}
-                    aria-label={t('Ratio')}
-                    onChange={(event) =>
-                      updateRow(row._id, 'ratio', event.target.value)
-                    }
-                  />
-                ),
+                cell: (row) =>
+                  row.userManagementOnly ? (
+                    <span className='text-muted-foreground px-3 text-sm'>
+                      -
+                    </span>
+                  ) : (
+                    <Input
+                      type='number'
+                      min={0}
+                      step={0.0001}
+                      value={row.ratio}
+                      aria-label={t('Ratio')}
+                      onChange={(event) =>
+                        updateRow(row._id, 'ratio', event.target.value)
+                      }
+                    />
+                  ),
               },
               {
                 id: 'topup-ratio',
@@ -709,13 +816,17 @@ function GroupPricingTable({
                 className: 'w-28 text-center',
                 cell: (row) => (
                   <div className='flex justify-center'>
-                    <Checkbox
-                      checked={row.selectable}
-                      onCheckedChange={(checked) =>
-                        updateRow(row._id, 'selectable', checked === true)
-                      }
-                      aria-label={t('User selectable')}
-                    />
+                    {row.userManagementOnly ? (
+                      <span className='text-muted-foreground text-sm'>-</span>
+                    ) : (
+                      <Checkbox
+                        checked={row.selectable}
+                        onCheckedChange={(checked) =>
+                          updateRow(row._id, 'selectable', checked === true)
+                        }
+                        aria-label={t('User selectable')}
+                      />
+                    )}
                   </div>
                 ),
               },
@@ -724,7 +835,7 @@ function GroupPricingTable({
                 header: t('Description'),
                 className: 'min-w-56',
                 cell: (row) =>
-                  row.selectable ? (
+                  row.userManagementOnly || row.selectable ? (
                     <Input
                       value={row.description}
                       aria-label={t('Group description')}
@@ -749,7 +860,7 @@ function GroupPricingTable({
                     <Button
                       variant='ghost'
                       size='sm'
-                      onClick={() => onShowDetail(row.name.trim())}
+                      onClick={() => props.onShowDetail(row.name.trim())}
                       disabled={!row.name.trim()}
                       aria-label={t('Details')}
                     >
@@ -789,16 +900,16 @@ type GroupOverride = {
 
 type GroupOverrideRulesProps = {
   registry: RegistryEntry[]
+  allGroupNames: string[]
+  billingGroupNames: string[]
+  userManagementGroupSet: Set<string>
   groupGroupRatio: string
   onChange: (field: string, value: string) => void
 }
 
-function GroupOverrideRules({
-  registry,
-  groupGroupRatio,
-  onChange,
-}: GroupOverrideRulesProps) {
+function GroupOverrideRules(props: GroupOverrideRulesProps) {
   const { t } = useTranslation()
+  const onChange = props.onChange
   const [userGroupDialogOpen, setUserGroupDialogOpen] = useState(false)
   const [userGroupInput, setUserGroupInput] = useState<string | null>(null)
   const [overrideDialogOpen, setOverrideDialogOpen] = useState(false)
@@ -808,19 +919,18 @@ function GroupOverrideRules({
   const [overrideEditData, setOverrideEditData] =
     useState<GroupOverride | null>(null)
 
-  const registryNames = useMemo(
-    () => registry.map((entry) => entry.name),
-    [registry]
-  )
-
   const baseRatioByName = useMemo(() => {
     const map = new Map<string, number>()
-    for (const entry of registry) map.set(entry.name, entry.ratio)
+    for (const entry of props.registry) {
+      if (!entry.userManagementOnly && entry.ratio !== undefined) {
+        map.set(entry.name, entry.ratio)
+      }
+    }
     return map
-  }, [registry])
+  }, [props.registry])
 
   const groupGroupRatioList = useMemo(() => {
-    const map = parseNestedRatioMap(groupGroupRatio)
+    const map = parseNestedRatioMap(props.groupGroupRatio)
     return Object.entries(map).map(([userGroup, overrides]) => ({
       userGroup,
       overrides: Object.entries(overrides).map(([targetGroup, ratio]) => ({
@@ -828,7 +938,7 @@ function GroupOverrideRules({
         ratio,
       })),
     }))
-  }, [groupGroupRatio])
+  }, [props.groupGroupRatio])
 
   const emitMap = useCallback(
     (map: Record<string, Record<string, number>>) => {
@@ -839,22 +949,22 @@ function GroupOverrideRules({
 
   const handleUserGroupSave = useCallback(() => {
     if (!userGroupInput) return
-    const map = parseNestedRatioMap(groupGroupRatio)
+    const map = parseNestedRatioMap(props.groupGroupRatio)
     if (!map[userGroupInput]) {
       map[userGroupInput] = {}
     }
     emitMap(map)
     setUserGroupDialogOpen(false)
     setUserGroupInput(null)
-  }, [userGroupInput, groupGroupRatio, emitMap])
+  }, [userGroupInput, props.groupGroupRatio, emitMap])
 
   const handleUserGroupDelete = useCallback(
     (userGroup: string) => {
-      const map = parseNestedRatioMap(groupGroupRatio)
+      const map = parseNestedRatioMap(props.groupGroupRatio)
       delete map[userGroup]
       emitMap(map)
     },
-    [groupGroupRatio, emitMap]
+    [props.groupGroupRatio, emitMap]
   )
 
   const handleOverrideAdd = useCallback((userGroup: string) => {
@@ -875,7 +985,7 @@ function GroupOverrideRules({
   const handleOverrideSave = useCallback(
     (targetGroup: string, ratio: number, oldTargetGroup?: string) => {
       if (!overrideUserGroup) return
-      const map = parseNestedRatioMap(groupGroupRatio)
+      const map = parseNestedRatioMap(props.groupGroupRatio)
       if (!map[overrideUserGroup]) {
         map[overrideUserGroup] = {}
       }
@@ -886,12 +996,12 @@ function GroupOverrideRules({
       emitMap(map)
       setOverrideDialogOpen(false)
     },
-    [overrideUserGroup, groupGroupRatio, emitMap]
+    [overrideUserGroup, props.groupGroupRatio, emitMap]
   )
 
   const handleOverrideDelete = useCallback(
     (userGroup: string, targetGroup: string) => {
-      const map = parseNestedRatioMap(groupGroupRatio)
+      const map = parseNestedRatioMap(props.groupGroupRatio)
       if (map[userGroup]) {
         delete map[userGroup][targetGroup]
         if (Object.keys(map[userGroup]).length === 0) {
@@ -900,7 +1010,7 @@ function GroupOverrideRules({
       }
       emitMap(map)
     },
-    [groupGroupRatio, emitMap]
+    [props.groupGroupRatio, emitMap]
   )
 
   return (
@@ -958,7 +1068,9 @@ function GroupOverrideRules({
                         <span className='min-w-0 truncate font-semibold'>
                           {userGroupData.userGroup}
                         </span>
-                        {!registryNames.includes(userGroupData.userGroup) && (
+                        {!props.allGroupNames.includes(
+                          userGroupData.userGroup
+                        ) && (
                           <AlertTriangle
                             className='text-destructive h-4 w-4'
                             aria-label={t('Not in pricing table')}
@@ -1007,24 +1119,42 @@ function GroupOverrideRules({
                                 id: 'target-group',
                                 header: t('Billing group'),
                                 cellClassName: 'font-medium',
-                                cell: (override) => (
-                                  <span className='inline-flex max-w-48 items-center gap-1.5'>
-                                    <span
-                                      className='truncate'
-                                      title={override.targetGroup}
-                                    >
-                                      {override.targetGroup}
-                                    </span>
-                                    {!registryNames.includes(
+                                cell: (override) => {
+                                  const isUserManagementTarget =
+                                    props.userManagementGroupSet.has(
                                       override.targetGroup
-                                    ) && (
-                                      <AlertTriangle
-                                        className='text-destructive h-3.5 w-3.5'
-                                        aria-label={t('Not in pricing table')}
-                                      />
-                                    )}
-                                  </span>
-                                ),
+                                    )
+                                  const isUnknownTarget =
+                                    !isUserManagementTarget &&
+                                    !props.allGroupNames.includes(
+                                      override.targetGroup
+                                    )
+                                  return (
+                                    <span className='inline-flex flex-wrap items-center gap-1.5'>
+                                      <span
+                                        className='max-w-48 truncate'
+                                        title={override.targetGroup}
+                                      >
+                                        {override.targetGroup}
+                                      </span>
+                                      {isUserManagementTarget && (
+                                        <StatusBadge
+                                          variant='warning'
+                                          copyable={false}
+                                        >
+                                          <AlertTriangle className='mr-1 h-3 w-3' />
+                                          {t('User management only')}
+                                        </StatusBadge>
+                                      )}
+                                      {isUnknownTarget && (
+                                        <AlertTriangle
+                                          className='text-destructive h-3.5 w-3.5'
+                                          aria-label={t('Not in pricing table')}
+                                        />
+                                      )}
+                                    </span>
+                                  )
+                                },
                               },
                               {
                                 id: 'ratio',
@@ -1115,7 +1245,7 @@ function GroupOverrideRules({
             <Label>{t('User group name')}</Label>
             <GroupNameSelect
               className='w-full'
-              options={registryNames}
+              options={props.allGroupNames}
               value={userGroupInput}
               placeholder={t('Select a group')}
               onValueChange={setUserGroupInput}
@@ -1130,7 +1260,7 @@ function GroupOverrideRules({
         onSave={handleOverrideSave}
         editData={overrideEditData}
         userGroup={overrideUserGroup}
-        groupOptions={registryNames}
+        groupOptions={props.billingGroupNames}
         baseRatioByName={baseRatioByName}
       />
     </Card>
@@ -1260,6 +1390,7 @@ type GroupDetailSheetProps = {
   registry: RegistryEntry[]
   topupGroupRatio: string
   userUsableGroups: string
+  userManagementGroups: string
   groupGroupRatio: string
   autoGroups: string[]
   groupSpecialUsableGroup: string
@@ -1294,11 +1425,17 @@ function GroupDetailSheet(props: GroupDetailSheetProps) {
     const entry = props.registry.find((item) => item.name === name)
     const topupMap = parseRatioMap(props.topupGroupRatio)
     const usableMap = parseUsableMap(props.userUsableGroups)
+    const userManagementMap = parseUsableMap(props.userManagementGroups)
     const overrideMap = parseNestedRatioMap(props.groupGroupRatio)
     const specialMap = safeJsonParse<Record<string, Record<string, string>>>(
       props.groupSpecialUsableGroup,
       { fallback: {}, silent: true }
     )
+    const userManagementOnly =
+      entry?.userManagementOnly ?? Object.hasOwn(userManagementMap, name)
+    const description = userManagementOnly
+      ? String(userManagementMap[name] ?? usableMap[name] ?? '')
+      : String(usableMap[name] ?? '')
 
     // Overrides that apply when other user groups bill as this group
     const incomingOverrides: { userGroup: string; ratio: number }[] = []
@@ -1330,11 +1467,43 @@ function GroupDetailSheet(props: GroupDetailSheetProps) {
 
     const autoIndex = props.autoGroups.indexOf(name)
 
+    const effectiveBillingMap = new Map<string, string>(
+      Object.entries(usableMap)
+    )
+    const groupSpecialRules = specialMap[name]
+    if (typeof groupSpecialRules === 'object' && groupSpecialRules !== null) {
+      for (const [rawKey, desc] of Object.entries(groupSpecialRules)) {
+        const parsed = parseSpecialGroupKey(rawKey)
+        if (!parsed.groupName) continue
+        if (!parsed.visible) {
+          effectiveBillingMap.delete(parsed.groupName)
+        } else {
+          effectiveBillingMap.set(
+            parsed.groupName,
+            typeof desc === 'string' ? desc : ''
+          )
+        }
+      }
+    }
+    for (const groupKey of effectiveBillingMap.keys()) {
+      if (Object.hasOwn(userManagementMap, groupKey)) {
+        effectiveBillingMap.delete(groupKey)
+      }
+    }
+    const effectiveBillingGroups = [...effectiveBillingMap.entries()].map(
+      ([group, desc]) => ({
+        group,
+        description: desc,
+      })
+    )
+
     return {
       ratio: entry?.ratio,
       topupRatio: Object.hasOwn(topupMap, name) ? String(topupMap[name]) : null,
       selectable: Object.hasOwn(usableMap, name),
-      description: String(usableMap[name] ?? ''),
+      userManagementOnly,
+      description,
+      effectiveBillingGroups,
       incomingOverrides,
       outgoingOverrides,
       visibilityRules,
@@ -1345,6 +1514,7 @@ function GroupDetailSheet(props: GroupDetailSheetProps) {
     props.registry,
     props.topupGroupRatio,
     props.userUsableGroups,
+    props.userManagementGroups,
     props.groupGroupRatio,
     props.autoGroups,
     props.groupSpecialUsableGroup,
@@ -1370,72 +1540,129 @@ function GroupDetailSheet(props: GroupDetailSheetProps) {
           <div className={sideDrawerFormClassName('gap-5')}>
             <section className='space-y-2'>
               <h3 className='text-sm font-semibold'>{t('Overview')}</h3>
+              {detail.userManagementOnly && (
+                <p className='bg-muted/40 text-muted-foreground rounded-md border px-3 py-2 text-sm leading-6'>
+                  {t(
+                    'This group is used for user management only and is excluded from channel assignment, API key billing, auto groups, and Model Square pricing.'
+                  )}
+                </p>
+              )}
               <dl className='space-y-1.5 text-sm'>
                 <div className='flex justify-between'>
-                  <dt className='text-muted-foreground'>{t('Ratio')}</dt>
-                  <dd className='font-medium'>{detail.ratio ?? '-'}</dd>
+                  <dt className='text-muted-foreground'>{t('Role')}</dt>
+                  <dd>
+                    <StatusBadge
+                      variant={detail.userManagementOnly ? 'info' : 'neutral'}
+                      copyable={false}
+                    >
+                      {detail.userManagementOnly
+                        ? t('User management only')
+                        : t('Billing group')}
+                    </StatusBadge>
+                  </dd>
                 </div>
+                {!detail.userManagementOnly && (
+                  <div className='flex justify-between'>
+                    <dt className='text-muted-foreground'>{t('Ratio')}</dt>
+                    <dd className='font-medium'>{detail.ratio ?? '-'}</dd>
+                  </div>
+                )}
                 <div className='flex justify-between'>
                   <dt className='text-muted-foreground'>{t('Top-up ratio')}</dt>
                   <dd className='font-medium'>
                     {detail.topupRatio ?? t('Not set')}
                   </dd>
                 </div>
-                <div className='flex justify-between'>
-                  <dt className='text-muted-foreground'>
-                    {t('User selectable')}
-                  </dt>
-                  <dd className='font-medium'>
-                    {detail.selectable ? t('Yes') : t('No')}
-                  </dd>
-                </div>
-                {detail.selectable && detail.description && (
-                  <div className='flex justify-between gap-4'>
+                {!detail.userManagementOnly && (
+                  <div className='flex justify-between'>
                     <dt className='text-muted-foreground'>
-                      {t('Description')}
+                      {t('User selectable')}
                     </dt>
-                    <dd className='text-right font-medium'>
-                      {detail.description}
+                    <dd className='font-medium'>
+                      {detail.selectable ? t('Yes') : t('No')}
                     </dd>
                   </div>
                 )}
-                <div className='flex justify-between'>
-                  <dt className='text-muted-foreground'>
-                    {t('Auto group order')}
-                  </dt>
-                  <dd className='font-medium'>
-                    {detail.autoIndex >= 0
-                      ? t('Position {{position}}', {
-                          position: detail.autoIndex + 1,
-                        })
-                      : t('Not included')}
-                  </dd>
-                </div>
+                {(detail.userManagementOnly || detail.selectable) &&
+                  detail.description && (
+                    <div className='flex justify-between gap-4'>
+                      <dt className='text-muted-foreground'>
+                        {t('Description')}
+                      </dt>
+                      <dd className='text-right font-medium'>
+                        {detail.description}
+                      </dd>
+                    </div>
+                  )}
+                {!detail.userManagementOnly && (
+                  <div className='flex justify-between gap-4'>
+                    <dt className='text-muted-foreground'>
+                      {t('Auto group order')}
+                    </dt>
+                    <dd className='font-medium'>
+                      {detail.autoIndex >= 0
+                        ? t('Position {{position}}', {
+                            position: detail.autoIndex + 1,
+                          })
+                        : t('Not included')}
+                    </dd>
+                  </div>
+                )}
               </dl>
             </section>
 
-            <section className='space-y-2'>
-              <h3 className='text-sm font-semibold'>
-                {t('Ratio overrides when billed as this group')}
-              </h3>
-              {detail.incomingOverrides.length === 0 ? (
-                <p className='text-muted-foreground text-sm'>{t('None')}</p>
-              ) : (
-                <ul className='space-y-1 text-sm'>
-                  {detail.incomingOverrides.map((item) => (
-                    <li
-                      key={item.userGroup}
-                      className='flex justify-between rounded-md border px-3 py-1.5'
-                    >
-                      <span>
-                        {t('Users in {{group}}', { group: item.userGroup })}
-                      </span>
-                      <span className='font-medium'>{item.ratio}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
+            {detail.userManagementOnly && (
+              <section className='space-y-2'>
+                <h3 className='text-sm font-semibold'>
+                  {t('Effective billing groups')}
+                </h3>
+                {detail.effectiveBillingGroups.length === 0 ? (
+                  <p className='text-muted-foreground text-sm'>{t('None')}</p>
+                ) : (
+                  <ul className='space-y-1 text-sm'>
+                    {detail.effectiveBillingGroups.map((item) => (
+                      <li
+                        key={item.group}
+                        className='flex items-center justify-between gap-4 rounded-md border px-3 py-1.5'
+                      >
+                        <span className='font-medium'>{item.group}</span>
+                        {item.description && (
+                          <span className='text-muted-foreground truncate text-right'>
+                            {item.description}
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            )}
+
+            {(!detail.userManagementOnly ||
+              detail.incomingOverrides.length > 0) && (
+              <section className='space-y-2'>
+                <h3 className='text-sm font-semibold'>
+                  {t('Ratio overrides when billed as this group')}
+                </h3>
+                {detail.incomingOverrides.length === 0 ? (
+                  <p className='text-muted-foreground text-sm'>{t('None')}</p>
+                ) : (
+                  <ul className='space-y-1 text-sm'>
+                    {detail.incomingOverrides.map((item) => (
+                      <li
+                        key={item.userGroup}
+                        className='flex justify-between rounded-md border px-3 py-1.5'
+                      >
+                        <span>
+                          {t('Users in {{group}}', { group: item.userGroup })}
+                        </span>
+                        <span className='font-medium'>{item.ratio}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            )}
 
             <section className='space-y-2'>
               <h3 className='text-sm font-semibold'>
@@ -1462,39 +1689,42 @@ function GroupDetailSheet(props: GroupDetailSheetProps) {
               )}
             </section>
 
-            <section className='space-y-2'>
-              <h3 className='text-sm font-semibold'>
-                {t('Special visibility rules')}
-              </h3>
-              {detail.visibilityRules.length === 0 ? (
-                <p className='text-muted-foreground text-sm'>{t('None')}</p>
-              ) : (
-                <ul className='space-y-1 text-sm'>
-                  {detail.visibilityRules.map((rule) => (
-                    <li
-                      key={`${rule.userGroup}-${rule.visible}`}
-                      className='flex items-center justify-between rounded-md border px-3 py-1.5'
-                    >
-                      <span>
-                        {rule.visible
-                          ? t('Extra visible to {{group}}', {
-                              group: rule.userGroup,
-                            })
-                          : t('Hidden from {{group}}', {
-                              group: rule.userGroup,
-                            })}
-                      </span>
-                      <StatusBadge
-                        variant={rule.visible ? 'info' : 'danger'}
-                        copyable={false}
+            {(!detail.userManagementOnly ||
+              detail.visibilityRules.length > 0) && (
+              <section className='space-y-2'>
+                <h3 className='text-sm font-semibold'>
+                  {t('Special visibility rules')}
+                </h3>
+                {detail.visibilityRules.length === 0 ? (
+                  <p className='text-muted-foreground text-sm'>{t('None')}</p>
+                ) : (
+                  <ul className='space-y-1 text-sm'>
+                    {detail.visibilityRules.map((rule) => (
+                      <li
+                        key={`${rule.userGroup}-${rule.visible}`}
+                        className='flex items-center justify-between rounded-md border px-3 py-1.5'
                       >
-                        {rule.visible ? t('Visible') : t('Hidden')}
-                      </StatusBadge>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
+                        <span>
+                          {rule.visible
+                            ? t('Extra visible to {{group}}', {
+                                group: rule.userGroup,
+                              })
+                            : t('Hidden from {{group}}', {
+                                group: rule.userGroup,
+                              })}
+                        </span>
+                        <StatusBadge
+                          variant={rule.visible ? 'info' : 'danger'}
+                          copyable={false}
+                        >
+                          {rule.visible ? t('Visible') : t('Hidden')}
+                        </StatusBadge>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            )}
           </div>
         )}
       </SheetContent>

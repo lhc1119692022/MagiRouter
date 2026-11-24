@@ -32,4 +32,4 @@ export const accountPasswordSchema = z.string().refine((password) => {
     length >= ACCOUNT_PASSWORD_MIN_LENGTH &&
     length <= ACCOUNT_PASSWORD_MAX_LENGTH
   )
-}, 'Password must contain between 8 and 128 characters.')
+}, 'Password must be at least 8 characters')

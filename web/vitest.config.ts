@@ -16,12 +16,21 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { defineConfig } from 'vitest/config'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const parsedMaxWorkers = Number.parseInt(
+  process.env.VITEST_MAX_WORKERS ?? '',
+  10
+)
+const maxWorkers =
+  Number.isFinite(parsedMaxWorkers) && parsedMaxWorkers > 0
+    ? parsedMaxWorkers
+    : Math.min(4, Math.max(1, os.availableParallelism()))
 
 export default defineConfig({
   resolve: {
@@ -31,6 +40,8 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
+    maxWorkers,
+    fsModuleCache: process.env.VITEST_FS_CACHE === '1',
     server: {
       deps: { inline: [/@lobehub\//, /antd-style/] },
     },

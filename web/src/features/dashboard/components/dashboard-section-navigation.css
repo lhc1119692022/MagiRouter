@@ -1,0 +1,6 @@
+.dashboard-view-tabs .console-subtab-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+}

@@ -16,14 +16,18 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { readOverviewPanels } from '@/features/dashboard/lib/overview-publication'
+
 import type { ContentSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
 import { AnnouncementsSection } from './announcements-section'
 import { ApiInfoSection } from './api-info-section'
 import { ChatSettingsSection } from './chat-settings-section'
+import { CreationPresetsSection } from './creation-presets-section'
 import { DashboardSection } from './dashboard-section'
 import { DrawingSettingsSection } from './drawing-settings-section'
 import { FAQSection } from './faq-section'
+import { OfficialModelPricesSection } from './official-model-prices-section'
 import { UptimeKumaSection } from './uptime-kuma-section'
 
 /**
@@ -45,6 +49,7 @@ const CONTENT_SECTIONS = [
       <DashboardSection
         defaultValues={{
           DataExportEnabled: settings.DataExportEnabled,
+          ...readOverviewPanels(settings.SidebarModulesAdmin),
           DataExportInterval: settings.DataExportInterval,
           DataExportDefaultTime: validateDataExportDefaultTime(
             settings.DataExportDefaultTime
@@ -90,6 +95,24 @@ const CONTENT_SECTIONS = [
       <UptimeKumaSection
         enabled={settings['console_setting.uptime_kuma_enabled']}
         data={settings['console_setting.uptime_kuma_groups']}
+      />
+    ),
+  },
+  {
+    id: 'creation-presets',
+    titleKey: 'Playground presets',
+    build: (settings: ContentSettings) => (
+      <CreationPresetsSection
+        value={settings['console_setting.creation_presets']}
+      />
+    ),
+  },
+  {
+    id: 'official-model-prices',
+    titleKey: 'Official reference prices',
+    build: (settings: ContentSettings) => (
+      <OfficialModelPricesSection
+        value={settings['console_setting.official_model_prices']}
       />
     ),
   },

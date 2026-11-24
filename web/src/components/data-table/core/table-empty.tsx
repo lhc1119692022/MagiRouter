@@ -16,7 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Database } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import {
@@ -71,12 +70,10 @@ export function TableEmpty({
     description ?? t('No records found. Try adjusting your filters.')
   return (
     <TableRow>
-      <TableCell colSpan={colSpan} className='h-[400px] p-0'>
-        <Empty>
-          <EmptyHeader>
-            <EmptyMedia variant='icon'>
-              {icon || <Database className='size-6' />}
-            </EmptyMedia>
+      <TableCell colSpan={colSpan} data-empty-state className='p-0'>
+        <Empty className='gap-3 px-5 py-11 whitespace-normal'>
+          <EmptyHeader className='gap-1'>
+            {icon && <EmptyMedia variant='icon'>{icon}</EmptyMedia>}
             <EmptyTitle>{resolvedTitle}</EmptyTitle>
             <EmptyDescription>{resolvedDescription}</EmptyDescription>
           </EmptyHeader>

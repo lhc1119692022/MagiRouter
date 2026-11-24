@@ -1,8 +1,6 @@
 import { useMemo } from 'react'
 
-import { EXCLUDED_GROUPS } from '@/features/pricing/constants'
 import { usePricingData } from '@/features/pricing/hooks'
-import { getConfiguredGroupRatio } from '@/features/pricing/lib/model-helpers'
 import { useStatus } from '@/hooks/use-status'
 
 import { BrandFooter } from './components/brand-footer'
@@ -10,9 +8,9 @@ import { Hero } from './components/hero'
 import { IntegrationSection } from './components/integration-section'
 import { ModelsSection } from './components/models-section'
 import { RoutesSection } from './components/routes-section'
+import { findCatalogQuote } from './lib/catalog-quote'
 import { resolveBaseUrl, type SampleModels } from './lib/snippets'
 
-const FALLBACK_SAMPLE_MODEL = 'gpt-6.2-sol'
 const NON_TEXT_MODEL_PATTERN =
   /image|flux|dall|midjourney|seedream|banana|video|seedance|kling|veo|sora|minimax|audio|tts|whisper|speech|transcrib|embed|rerank|moderation/i
 
@@ -40,10 +38,10 @@ export function MagiRouterHome(props: MagiRouterHomeProps) {
 
   const models = useMemo(
     () =>
-      [...pricing.models].sort((a, b) =>
+      (pricing.error ? [] : [...pricing.models]).sort((a, b) =>
         b.model_name.localeCompare(a.model_name, 'en', { numeric: true })
       ),
-    [pricing.models]
+    [pricing.error, pricing.models]
   )
 
   const sampleModels = useMemo<SampleModels>(() => {
@@ -56,69 +54,51 @@ export function MagiRouterHome(props: MagiRouterHomeProps) {
           /^(gpt|o[1-9])/i.test(model.model_name)
       )?.model_name ??
       models.find((model) => isTextSampleCandidate(model))?.model_name ??
-      FALLBACK_SAMPLE_MODEL
+      'YOUR_OPENAI_MODEL'
 
     const anthropic =
       models.find((model) => /^claude/i.test(model.model_name))?.model_name ??
-      'claude-opus-5.5'
+      'YOUR_ANTHROPIC_MODEL'
 
     const gemini =
       models.find(
         (model) =>
           /^gemini/i.test(model.model_name) &&
           !NON_TEXT_MODEL_PATTERN.test(model.model_name)
-      )?.model_name ?? 'gemini-4-hydrogen'
+      )?.model_name ?? 'YOUR_GEMINI_MODEL'
 
     return { openai, anthropic, gemini }
   }, [models])
 
-  const cheapestGroup = useMemo(() => {
-    const groups = Object.keys(pricing.usableGroup).filter(
-      (group) => !EXCLUDED_GROUPS.includes(group)
-    )
-    const sorted = groups
-      .map((group) => ({
-        group,
-        ratio: getConfiguredGroupRatio(pricing.groupRatio, group),
-      }))
-      .filter((entry) => Number.isFinite(entry.ratio) && entry.ratio > 0)
-      .sort((left, right) => left.ratio - right.ratio)
-    if (sorted.length > 0) {
-      return {
-        name: sorted[0].group,
-        label: `${sorted[0].group} ×${sorted[0].ratio}`,
-      }
-    }
-    return { name: 'GPT Pro', label: 'GPT Pro ×0.25' }
-  }, [pricing.groupRatio, pricing.usableGroup])
+  const quote = useMemo(
+    () => findCatalogQuote(models, pricing.usableGroup, pricing.groupRatio),
+    [models, pricing.usableGroup, pricing.groupRatio]
+  )
 
   return (
     <main data-page='home'>
       <Hero
         isAuthenticated={props.isAuthenticated}
         baseUrl={baseUrl}
-        sampleModel={sampleModels.openai || FALLBACK_SAMPLE_MODEL}
         models={models}
-        cheapestGroupLabel={cheapestGroup.label}
+        quote={quote}
       />
       <ModelsSection
         models={models}
         isLoading={pricing.isLoading}
         priceRate={pricing.priceRate}
         usdExchangeRate={pricing.usdExchangeRate}
-        isAuthenticated={props.isAuthenticated}
       />
       <RoutesSection
-        usableGroup={pricing.usableGroup}
-        groupRatio={pricing.groupRatio}
-        models={models}
-        priceRate={pricing.priceRate}
+        quote={quote}
+        loading={pricing.isLoading}
+        failed={Boolean(pricing.error)}
       />
       <IntegrationSection
         baseUrl={baseUrl}
         isAuthenticated={props.isAuthenticated}
         sampleModels={sampleModels}
-        defaultGroup={cheapestGroup.name}
+        defaultGroup={quote?.group ?? ''}
       />
       <BrandFooter />
     </main>

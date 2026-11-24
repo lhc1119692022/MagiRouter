@@ -38,6 +38,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { handleServerError } from '@/lib/handle-server-error'
+import { isModelCatalogDeclaration } from '@/lib/model-task-capabilities'
 import { createServerError } from '@/lib/server-error-message'
 
 import { previewUpstreamDiff, syncUpstream } from '../../api'
@@ -110,7 +111,25 @@ export function SyncWizardDialog(props: {
       return response.data
     },
     onSuccess: (data) => {
-      setPreview(data)
+      setPreview({
+        ...data,
+        candidates: data.candidates.map((item) => {
+          if (item.kind !== 'update') return item
+          const fields = item.fields.filter(
+            (field) =>
+              field.field !== 'tags' ||
+              typeof field.local !== 'string' ||
+              !field.local
+                .split(',')
+                .some((tag) => isModelCatalogDeclaration(tag.trim()))
+          )
+          return {
+            ...item,
+            fields,
+            kind: fields.length ? 'update' : 'unchanged',
+          }
+        }),
+      })
     },
     onError: (error) => handleServerError(error),
   })

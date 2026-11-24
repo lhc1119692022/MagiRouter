@@ -65,6 +65,8 @@ import { Switch } from '@/components/ui/switch'
 import { getPaymentErrorTranslation } from '@/features/wallet/lib/payment'
 import { getCurrencyDisplay, getCurrencyLabel } from '@/lib/currency'
 import { handleServerError } from '@/lib/handle-server-error'
+import { ROLE } from '@/lib/roles'
+import { useAuthStore } from '@/stores/auth-store'
 
 import {
   createPlan,
@@ -97,6 +99,9 @@ export function SubscriptionsMutateDrawer({
 }: Props) {
   const { t } = useTranslation()
   const isEdit = !!currentRow?.plan?.id
+  const canManagePancake = useAuthStore(
+    (state) => state.auth.user?.role === ROLE.SUPER_ADMIN
+  )
   const { triggerRefresh } = useSubscriptions()
   const { meta: currencyMeta } = getCurrencyDisplay()
   const tokensOnly = currencyMeta.kind === 'tokens'
@@ -131,6 +136,7 @@ export function SubscriptionsMutateDrawer({
         })
         .catch(() => {})
       // Best-effort — empty list still lets the operator use "+ Create".
+      if (!canManagePancake) return
       listWaffoPancakeSubscriptionProductOptions()
         .then((res) => {
           if (
@@ -148,7 +154,7 @@ export function SubscriptionsMutateDrawer({
         })
         .catch(() => setPancakeProducts([]))
     }
-  }, [open, currentRow, form])
+  }, [open, currentRow, form, canManagePancake])
 
   const durationUnit = form.watch('duration_unit')
   const resetPeriod = form.watch('quota_reset_period')
@@ -194,6 +200,7 @@ export function SubscriptionsMutateDrawer({
   // controller) using persisted creds + the form's title/price, then
   // pins the returned PROD_ ID into the form field.
   const handleCreatePancakeProduct = async () => {
+    if (!canManagePancake) return
     const title = form.getValues('title').trim()
     const priceAmount = Number(form.getValues('price_amount') || 0)
     if (!title) {
@@ -791,27 +798,35 @@ export function SubscriptionsMutateDrawer({
                     <FormItem>
                       <FormLabel>Waffo Pancake Product ID</FormLabel>
                       <div className='flex gap-2'>
-                        <Combobox
-                          options={items}
-                          value={field.value || ''}
-                          onValueChange={(v) => field.onChange(v)}
-                          disabled={items.length === 0}
-                          className='w-full flex-1'
-                          placeholder={t('Select a product')}
-                        />
-                        <Button
-                          type='button'
-                          variant='outline'
-                          onClick={handleCreatePancakeProduct}
-                          disabled={
-                            creatingPancakeProduct || !pancakeCreateReady
-                          }
-                          className='shrink-0'
-                        >
-                          {creatingPancakeProduct
-                            ? t('Creating...')
-                            : `+ ${t('Create')}`}
-                        </Button>
+                        {canManagePancake ? (
+                          <Combobox
+                            options={items}
+                            value={field.value || ''}
+                            onValueChange={(v) => field.onChange(v)}
+                            disabled={items.length === 0}
+                            className='w-full flex-1'
+                            placeholder={t('Select a product')}
+                          />
+                        ) : (
+                          <FormControl>
+                            <Input {...field} value={field.value ?? ''} />
+                          </FormControl>
+                        )}
+                        {canManagePancake && (
+                          <Button
+                            type='button'
+                            variant='outline'
+                            onClick={handleCreatePancakeProduct}
+                            disabled={
+                              creatingPancakeProduct || !pancakeCreateReady
+                            }
+                            className='shrink-0'
+                          >
+                            {creatingPancakeProduct
+                              ? t('Creating...')
+                              : `+ ${t('Create')}`}
+                          </Button>
+                        )}
                       </div>
                       <FormDescription>
                         {t(

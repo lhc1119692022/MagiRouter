@@ -3,8 +3,10 @@ package controller
 import (
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -19,6 +21,7 @@ import (
 	"github.com/QuantumNous/new-api/service/authz"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"github.com/QuantumNous/new-api/constant"
 
@@ -343,6 +346,7 @@ func GetAllUsers(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	populateUserConcurrencySummaries(users)
 
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(users)
@@ -373,11 +377,22 @@ func SearchUsers(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	populateUserConcurrencySummaries(users)
 
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(users)
 	common.ApiSuccess(c, pageInfo)
 	return
+}
+
+func populateUserConcurrencySummaries(users []*model.User) {
+	for _, user := range users {
+		if user == nil {
+			continue
+		}
+		summary := setting.GetUserConcurrencySummary(user.MaxConcurrency, user.Group)
+		user.ConcurrencyLimit = &summary
+	}
 }
 
 func canManageTargetRole(myRole int, targetRole int) bool {
@@ -401,6 +416,8 @@ func GetUser(c *gin.Context) {
 		return
 	}
 	user.AdminPermissions = authz.Capabilities(user.Id, user.Role)
+	summary := setting.GetUserConcurrencySummary(user.MaxConcurrency, user.Group)
+	user.ConcurrencyLimit = &summary
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
@@ -512,6 +529,8 @@ func buildSelfUserData(user *model.User) map[string]any {
 		"quota":             user.Quota,
 		"used_quota":        user.UsedQuota,
 		"request_count":     user.RequestCount,
+		"max_concurrency":   user.MaxConcurrency,
+		"concurrency_limit": setting.GetUserConcurrencySummary(user.MaxConcurrency, user.Group),
 		"aff_code":          user.AffCode,
 		"aff_count":         user.AffCount,
 		"aff_quota":         user.AffQuota,
@@ -615,38 +634,146 @@ func generateDefaultSidebarConfig(userRole int) string {
 	return string(configBytes)
 }
 
-func GetUserModels(c *gin.Context) {
-	id, err := strconv.Atoi(c.Param("id"))
+func playgroundBillingKeyGroups(token *model.Token, userGroup, requestedGroup string) (string, []string, bool) {
+	group := token.Group
+	if group == "" {
+		group = userGroup
+	} else if !service.GroupInUserUsableGroups(userGroup, group) || (group != "auto" && !ratio_setting.ContainsGroupRatio(group)) {
+		return "", nil, false
+	}
+	if ratio_setting.IsUserManagementGroup(group) {
+		return "", nil, false
+	}
+	if group == "" || (requestedGroup != "" && requestedGroup != group) {
+		return "", nil, false
+	}
+	if group != "auto" {
+		return group, []string{group}, true
+	}
+	groups, err := token.GetAutoGroups()
 	if err != nil {
-		id = c.GetInt("id")
+		return "", nil, false
+	}
+	if len(groups) > 0 {
+		return group, service.FilterUserTokenAutoGroups(userGroup, groups), true
+	}
+	return group, service.GetUserAutoGroup(userGroup), true
+}
+
+func GetUserModels(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	query, err := url.ParseQuery(c.Request.URL.RawQuery)
+	if err != nil {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	callerID := c.GetInt("id")
+	target := c.Param("id")
+	id, targetErr := strconv.Atoi(target)
+	if targetErr != nil {
+		id = callerID
+	}
+	var token *model.Token
+	if keyIDs, keyed := query["billing_key_id"]; keyed {
+		if len(keyIDs) != 1 || len(query["group"]) > 1 || callerID <= 0 || id != callerID || (target != "" && targetErr != nil) {
+			common.ApiErrorT(c, "Invalid parameters")
+			return
+		}
+		keyID, err := strconv.Atoi(keyIDs[0])
+		if err != nil || keyID <= 0 {
+			common.ApiErrorT(c, "Invalid parameters")
+			return
+		}
+		token, err = model.GetOwnedTokenModelScope(callerID, keyID)
+		if errors.Is(err, model.ErrTokenInvalid) {
+			common.ApiErrorT(c, "Invalid parameters")
+			return
+		}
+		if err != nil {
+			common.ApiErrorT(c, "Database error, please contact the administrator")
+			return
+		}
+		if allowedIPs := token.GetIpLimits(); len(allowedIPs) > 0 {
+			clientIP := net.ParseIP(c.ClientIP())
+			if clientIP == nil || !common.IsIpInCIDRList(clientIP, allowedIPs) {
+				common.ApiErrorT(c, "Invalid parameters")
+				return
+			}
+		}
 	}
 	user, err := model.GetUserCache(id)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	groups := service.GetUserUsableGroups(user.Group)
-	group := c.Query("group")
+	group := query.Get("group")
 	var groupsToQuery []string
-	switch {
-	case group == "":
-		for g := range groups {
-			groupsToQuery = append(groupsToQuery, g)
+	if token != nil {
+		var allowed bool
+		group, groupsToQuery, allowed = playgroundBillingKeyGroups(token, user.Group, group)
+		if user.Status != common.UserStatusEnabled || !allowed {
+			common.ApiErrorT(c, "Invalid parameters")
+			return
 		}
-	case group == "auto":
-		if _, ok := groups[group]; ok {
-			groupsToQuery = service.GetUserAutoGroup(user.Group)
-		}
-	default:
-		if _, ok := groups[group]; ok {
-			groupsToQuery = []string{group}
+	} else {
+		groups := service.GetUserUsableGroups(user.Group)
+		switch group {
+		case "":
+			for availableGroup := range groups {
+				groupsToQuery = append(groupsToQuery, availableGroup)
+			}
+		case "auto":
+			if _, ok := groups[group]; ok {
+				groupsToQuery = service.GetUserAutoGroup(user.Group)
+			}
+		default:
+			if _, ok := groups[group]; ok {
+				groupsToQuery = []string{group}
+			}
 		}
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": "",
-		"data":    service.GetGroupsEnabledModels(groupsToQuery),
-	})
+	modelNames := service.GetGroupsEnabledModels(groupsToQuery)
+	if token != nil && token.ModelLimitsEnabled {
+		limits := token.GetModelLimitsMap()
+		modelNames = slices.DeleteFunc(modelNames, func(name string) bool {
+			return !middleware.TokenModelLimitAllows(limits, name)
+		})
+	}
+	limitNames := make(map[string][]string)
+	for _, name := range modelNames {
+		for _, alias := range [2]string{ratio_setting.FormatMatchingModelName(name), ratio_setting.RoutingMatchModelName(name)} {
+			if alias != "" && alias != name && !slices.Contains(limitNames[name], alias) {
+				limitNames[name] = append(limitNames[name], alias)
+			}
+		}
+	}
+	response := gin.H{
+		"success":           true,
+		"message":           "",
+		"group":             group,
+		"data":              modelNames,
+		"model_limit_names": limitNames,
+	}
+	if token != nil {
+		response["billing_key_id"] = token.Id
+	}
+	if query.Get("include_chat_controls") == "true" {
+		visibleControls := make(map[string]model.PlaygroundChatControls)
+		if len(modelNames) > 0 {
+			controls, err := model.GetPlaygroundChatControls(groupsToQuery)
+			if err != nil {
+				common.ApiErrorT(c, "Database error, please contact the administrator")
+				return
+			}
+			for _, name := range modelNames {
+				if profile, ok := controls[name]; ok {
+					visibleControls[name] = profile
+				}
+			}
+		}
+		response["chat_controls"] = visibleControls
+	}
+	c.JSON(http.StatusOK, response)
 }
 
 func UpdateUser(c *gin.Context) {
@@ -663,6 +790,10 @@ func UpdateUser(c *gin.Context) {
 	}
 	if err := common.Validate.StructExcept(&updatedUser, "Password"); err != nil {
 		common.ApiErrorT(c, "Invalid input {{error}}", map[string]any{"error": err.Error()})
+		return
+	}
+	if err := setting.ValidateUserConcurrencyLimitValue(updatedUser.MaxConcurrency); err != nil {
+		common.ApiError(c, err)
 		return
 	}
 	originUser, err := model.GetUserById(updatedUser.Id, false)
@@ -1101,6 +1232,10 @@ func ManageUser(c *gin.Context) {
 	}
 	if req.Action == "add_quota" {
 		manageUserQuota(c, req)
+		return
+	}
+	if req.Action == "set_concurrency" {
+		manageUserConcurrency(c, req)
 		return
 	}
 	user := model.User{

@@ -599,7 +599,7 @@ export function ChannelMutateDrawer({
 
   // Fetch available groups
   const { data: groupsData, isLoading: isLoadingGroups } = useQuery({
-    queryKey: ['groups'],
+    queryKey: ['groups', 'billing'],
     queryFn: async () => requireServerSuccess(await getGroups()),
     enabled: open && !showProviderPicker,
   })
@@ -1181,6 +1181,18 @@ export function ChannelMutateDrawer({
       initialStatusCodeMappingRef.current = ''
     }
   }, [isEditing, channelId, channelData, form, open, resetModelMappingSync])
+
+  // Clear untouched default group on new channels when 'default' is not a billing group
+  useEffect(() => {
+    if (!open || isEditing || showProviderPicker) return
+    const availableGroups = groupsData?.data
+    if (!availableGroups || availableGroups.includes('default')) return
+    if (form.getFieldState('group').isDirty) return
+    const selectedGroups = form.getValues('group')
+    if (selectedGroups.length === 1 && selectedGroups[0] === 'default') {
+      form.setValue('group', [], { shouldDirty: false })
+    }
+  }, [open, isEditing, showProviderPicker, groupsData, form])
 
   // Handle type change - set default values for specific types
   useEffect(() => {

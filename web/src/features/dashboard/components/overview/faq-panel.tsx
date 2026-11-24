@@ -16,7 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { HelpCircle } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
+import { useId } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import {
@@ -25,61 +26,86 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from '@/components/ui/accordion'
-import { IconBadge } from '@/components/ui/icon-badge'
-import { Markdown } from '@/components/ui/markdown'
-import { ScrollArea } from '@/components/ui/scroll-area'
+import { Markdown, MarkdownLabel } from '@/components/ui/markdown'
 import { useFAQ } from '@/features/dashboard/hooks/use-status-data'
-import type { FAQItem } from '@/features/dashboard/types'
+import { useStatus } from '@/hooks/use-status'
+import { getDocumentationLink } from '@/lib/documentation-link'
+import { parseHeaderNavModules } from '@/lib/nav-modules'
 
-import { PanelWrapper } from '../ui/panel-wrapper'
+import '@/styles/dashboard-editorial.css'
 
 export function FAQPanel() {
   const { t } = useTranslation()
-  const { items: list, loading } = useFAQ()
-
+  const heading = useId()
+  const { items, loading, failed, enabled } = useFAQ()
+  const { status } = useStatus()
+  if (!enabled && !loading && !failed) return null
+  const list = items.filter(
+    (item) =>
+      typeof item?.question === 'string' && typeof item.answer === 'string'
+  )
+  const docsEnabled = parseHeaderNavModules(status?.HeaderNavModules).docs
+  const docs = getDocumentationLink(status?.docs_link)
+  let message = t('No FAQ entries available')
+  if (loading) message = t('Loading...')
+  if (failed) message = t('Could not load this source')
   return (
-    <PanelWrapper
-      title={
-        <span className='flex items-center gap-2'>
-          <IconBadge tone='chart-4' size='sm'>
-            <HelpCircle />
-          </IconBadge>
-          {t('FAQ')}
-        </span>
-      }
-      description={t('Answers for common access and billing questions')}
-      loading={loading}
-      empty={!list.length}
-      emptyMessage={t('No FAQ entries available')}
-      height='h-80'
-      contentClassName='p-0'
-    >
-      <ScrollArea className='h-80'>
-        <Accordion className='w-full px-4 sm:px-5'>
-          {list.map((item: FAQItem, idx: number) => {
+    <section className='dash-panel dash-editorial' aria-labelledby={heading}>
+      <div className='dash-panel-head'>
+        <h2 id={heading} className='dash-panel-title'>
+          {t('Frequently asked questions (FAQ)')}
+        </h2>
+        {docsEnabled &&
+          (docs.external ? (
+            <a
+              href={docs.href}
+              target='_blank'
+              rel='noopener noreferrer'
+              className='dash-panel-link'
+            >
+              {t('Read documentation')} <span aria-hidden='true'>→</span>
+            </a>
+          ) : (
+            <Link
+              to='/docs'
+              search={docs.search}
+              hash={docs.hash}
+              className='dash-panel-link'
+            >
+              {t('Read documentation')} <span aria-hidden='true'>→</span>
+            </Link>
+          ))}
+      </div>
+      {!list.length && (
+        <p
+          className='dash-editorial-message'
+          role={failed ? 'alert' : 'status'}
+        >
+          {message}
+        </p>
+      )}
+      {list.length > 0 && (
+        <Accordion
+          className='dash-faq-list'
+          defaultValue={[`item-${list[0]?.id ?? 'faq-0'}`]}
+        >
+          {list.map((item, idx) => {
             const key = item.id ?? `faq-${idx}`
             const value = `item-${key}`
             return (
-              <AccordionItem
-                key={key}
-                value={value}
-                className='border-border/60'
-              >
-                <AccordionTrigger className='text-start hover:no-underline'>
-                  <Markdown className='text-sm leading-relaxed font-semibold'>
-                    {item.question}
-                  </Markdown>
+              <AccordionItem key={key} value={value} className='dash-faq-item'>
+                <AccordionTrigger className='dash-faq-trigger'>
+                  <MarkdownLabel>{item.question}</MarkdownLabel>
+                  <span className='dash-faq-mark' aria-hidden='true' />
                 </AccordionTrigger>
-                <AccordionContent>
-                  <Markdown className='text-muted-foreground/60 text-sm'>
-                    {item.answer}
-                  </Markdown>
+                <AccordionContent className='dash-faq-body'>
+                  <Markdown className='dash-faq-answer'>{item.answer}</Markdown>
                 </AccordionContent>
               </AccordionItem>
             )
           })}
         </Accordion>
-      </ScrollArea>
-    </PanelWrapper>
+      )}
+    </section>
   )
 }

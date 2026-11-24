@@ -48,6 +48,65 @@ func performRateLimitRequest(router http.Handler, path string, remoteAddr string
 	return recorder
 }
 
+func TestLoginAttemptFailedReadsSuccessFlag(t *testing.T) {
+	assert.True(t, loginAttemptFailed(http.StatusOK, []byte(`{"success":false,"message":"bad"}`)))
+	assert.False(t, loginAttemptFailed(http.StatusOK, []byte(`{"success":true}`)))
+	assert.True(t, loginAttemptFailed(http.StatusUnauthorized, nil))
+	assert.False(t, loginAttemptFailed(http.StatusOK, []byte(`not-json`)))
+}
+
+// Successful sign-ins must not spend the shared login budget; only rejected
+// attempts are charged, so a NAT or a reviewing admin is not locked out.
+func TestLoginRateLimitChargesOnlyFailures(t *testing.T) {
+	previousEnable := common.CriticalRateLimitEnable
+	previousNum := common.CriticalRateLimitNum
+	previousDuration := common.CriticalRateLimitDuration
+	previousRedisEnabled := common.RedisEnabled
+	t.Cleanup(func() {
+		common.CriticalRateLimitEnable = previousEnable
+		common.CriticalRateLimitNum = previousNum
+		common.CriticalRateLimitDuration = previousDuration
+		common.RedisEnabled = previousRedisEnabled
+		inMemoryRateLimiter = common.InMemoryRateLimiter{}
+	})
+
+	common.RedisEnabled = false
+	common.CriticalRateLimitEnable = true
+	common.CriticalRateLimitNum = 2
+	common.CriticalRateLimitDuration = 60
+	inMemoryRateLimiter = common.InMemoryRateLimiter{}
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	require.NoError(t, router.SetTrustedProxies(nil))
+
+	reject := false
+	router.POST("/login", LoginRateLimit(), func(c *gin.Context) {
+		if reject {
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": "bad"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"success": true})
+	})
+
+	attempt := func() int {
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodPost, "/login", nil)
+		request.RemoteAddr = "203.0.113.9:4321"
+		router.ServeHTTP(recorder, request)
+		return recorder.Code
+	}
+
+	for range 5 {
+		assert.Equal(t, http.StatusOK, attempt())
+	}
+
+	reject = true
+	assert.Equal(t, http.StatusOK, attempt())
+	assert.Equal(t, http.StatusOK, attempt())
+	assert.Equal(t, http.StatusTooManyRequests, attempt())
+}
+
 func TestRedisIPRateLimiterThresholdTTLAndNamespace(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	redisServer, _ := useRateLimitMiniRedis(t)

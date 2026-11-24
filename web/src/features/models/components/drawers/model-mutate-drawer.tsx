@@ -82,6 +82,7 @@ import {
 } from '../../lib/model-form'
 import type { Model } from '../../types'
 import { ModelConnections } from '../model-connections'
+import { ModelTaskCapabilityField } from '../model-task-capability-field'
 
 export function ModelMutateDrawer(props: {
   open: boolean
@@ -338,6 +339,23 @@ export function ModelMutateDrawer(props: {
                             </FormDescription>
                             <FormMessage />
                           </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name='capability_categories'
+                        render={({ field }) => (
+                          <ModelTaskCapabilityField
+                            value={field.value}
+                            onChange={(categories) =>
+                              form.setValue(
+                                'capability_categories',
+                                categories,
+                                { shouldDirty: true }
+                              )
+                            }
+                          />
                         )}
                       />
 

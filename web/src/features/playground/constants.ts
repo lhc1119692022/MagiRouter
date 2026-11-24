@@ -44,25 +44,33 @@ export const API_ENDPOINTS = {
 export const DEFAULT_GROUP = 'default' as const
 
 // Default configuration
-export const DEFAULT_CONFIG: PlaygroundConfig = {
-  model: 'gpt-4o',
-  group: DEFAULT_GROUP,
+export const DEFAULT_PARAMETER_ENABLED: ParameterEnabled = {
+  temperature: false,
+  top_p: false,
+  max_tokens: false,
+  frequency_penalty: false,
+  presence_penalty: false,
+  seed: false,
+}
+
+export const DEFAULT_NUMERIC_PARAMETERS = {
+  parameterEnabled: DEFAULT_PARAMETER_ENABLED,
   temperature: 0.7,
   top_p: 1,
   max_tokens: 4096,
   frequency_penalty: 0,
   presence_penalty: 0,
-  seed: null,
-  stream: true,
+  seed: 0,
 }
 
-export const DEFAULT_PARAMETER_ENABLED: ParameterEnabled = {
-  temperature: true,
-  top_p: true,
-  max_tokens: false,
-  frequency_penalty: true,
-  presence_penalty: true,
-  seed: false,
+export const DEFAULT_CONFIG: PlaygroundConfig = {
+  ...DEFAULT_NUMERIC_PARAMETERS,
+  model: '',
+  reasoning_effort: '',
+  web_search: false,
+  historyTurns: 0,
+  group: DEFAULT_GROUP,
+  stream: true,
 }
 
 // Storage keys

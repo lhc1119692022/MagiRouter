@@ -26,10 +26,7 @@ import type { z } from 'zod'
 
 import { Dialog } from '@/components/dialog'
 import { PasswordInput } from '@/components/password-input'
-import {
-  PasswordConfirmationStatus,
-  PasswordStrength,
-} from '@/components/password-strength'
+import { PasswordConfirmationStatus } from '@/components/password-strength'
 import { Turnstile } from '@/components/turnstile'
 import { Button } from '@/components/ui/button'
 import {
@@ -154,16 +151,14 @@ export function SignUpForm({
       return
     }
 
-    // Validate email verification if required
-    if (emailVerificationRequired) {
-      if (!data.email) {
-        toast.error(t('Please enter your email'))
-        return
-      }
-      if (!verificationCode) {
-        toast.error(t('Please enter the verification code'))
-        return
-      }
+    const email = data.email.trim()
+    if (!email) {
+      toast.error(t('Please enter your email'))
+      return
+    }
+    if (emailVerificationRequired && !verificationCode) {
+      toast.error(t('Please enter the verification code'))
+      return
     }
 
     if (!validateTurnstile()) return
@@ -173,7 +168,7 @@ export function SignUpForm({
       const res = await register({
         username: data.username,
         password: data.password,
-        email: data.email || undefined,
+        email,
         verification_code: verificationCode || undefined,
         aff_code: getAffiliateCode(),
         turnstile: turnstileToken,
@@ -284,15 +279,11 @@ export function SignUpForm({
               <FormLabel>{t('Password')}</FormLabel>
               <FormControl describedBy='sign-up-password-strength'>
                 <PasswordInput
-                  placeholder={t('Enter password (8–128 characters)')}
+                  placeholder={t('Enter password (8+ characters)')}
                   autoComplete='new-password'
                   {...field}
                 />
               </FormControl>
-              <PasswordStrength
-                id='sign-up-password-strength'
-                value={passwordValue}
-              />
               <FormMessage />
             </FormItem>
           )}
@@ -323,30 +314,28 @@ export function SignUpForm({
           )}
         />
 
+        {/* Email Field */}
+        <FormField
+          control={form.control}
+          name='email'
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>{t('Email')}</FormLabel>
+              <FormControl>
+                <Input
+                  placeholder={t('name@example.com')}
+                  type='email'
+                  {...field}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
         {/* Email Verification Section */}
         {emailVerificationRequired && (
           <>
-            {/* Email Field */}
-            <FormField
-              control={form.control}
-              name='email'
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>
-                    {t('Email (required for verification)')}
-                  </FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder={t('name@example.com')}
-                      type='email'
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
             {/* Verification Code Field */}
             <div className='flex items-end gap-2'>
               <div className='flex-1'>

@@ -17,7 +17,18 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import {
+  getConfiguredTaskCapabilities,
+  getModelCategories,
+  getModelTaskCapabilities,
+  getOrdinaryModelTags,
+  MODEL_CAPABILITY_CATEGORIES,
+  type ModelCapabilityCategory,
+  type ModelTaskCapability,
+} from '@/lib/model-task-capabilities'
+
+import {
   SORT_OPTIONS,
+  EXCLUDED_GROUPS,
   FILTER_ALL,
   QUOTA_TYPES,
   QUOTA_TYPE_VALUES,
@@ -56,7 +67,10 @@ export function filterBySearch(
     (m) =>
       m.model_name?.toLowerCase().includes(lowerQuery) ||
       m.description?.toLowerCase().includes(lowerQuery) ||
-      m.tags?.toLowerCase().includes(lowerQuery) ||
+      getOrdinaryModelTags(m.tags)
+        .join(',')
+        .toLowerCase()
+        .includes(lowerQuery) ||
       m.vendor_name?.toLowerCase().includes(lowerQuery)
   )
 }
@@ -66,10 +80,13 @@ export function filterBySearch(
  */
 export function filterByVendor(
   models: PricingModel[],
-  vendor: string
+  vendor: string | readonly string[]
 ): PricingModel[] {
-  if (vendor === FILTER_ALL) return models
-  return models.filter((m) => m.vendor_name === vendor)
+  const selected = new Set(typeof vendor === 'string' ? [vendor] : vendor)
+  if (!selected.size || selected.has(FILTER_ALL)) return models
+  return models.filter(
+    (model) => !!model.vendor_name && selected.has(model.vendor_name)
+  )
 }
 
 /**
@@ -234,7 +251,7 @@ export function filterAndSortModels(
   models: PricingModel[],
   filters: {
     search: string
-    vendor: string
+    vendor: string | readonly string[]
     group: string
     quotaType: string
     endpointType: string
@@ -258,8 +275,8 @@ export function filterAndSortModels(
  */
 export function parseTags(tagsString?: string): string[] {
   if (!tagsString) return []
-  return tagsString
-    .split(/[,;|\s]+/)
+  return getOrdinaryModelTags(tagsString)
+    .flatMap((tag) => tag.split(/[;|\s]+/))
     .map((t) => t.trim())
     .filter(Boolean)
 }
@@ -297,4 +314,118 @@ export function filterByTag(
     const modelTags = parseTags(m.tags).map((t) => t.toLowerCase())
     return modelTags.includes(tagLower)
   })
+}
+
+export type TaskCapabilityFilter =
+  | 'all'
+  | 'creative'
+  | ModelCapabilityCategory
+  | ModelTaskCapability
+
+export function expandTaskFilters(
+  filters: readonly TaskCapabilityFilter[]
+): ModelCapabilityCategory[] {
+  const active = new Set<ModelCapabilityCategory>()
+  for (const filter of filters) {
+    switch (filter) {
+      case 'all':
+        break
+      case 'creative':
+        active.add('image').add('video').add('audio')
+        break
+      case 'image-to-image':
+      case 'text-to-image':
+        active.add('image')
+        break
+      case 'image-to-video':
+      case 'text-to-video':
+        active.add('video')
+        break
+      case 'text-to-speech':
+      case 'audio-generation':
+        active.add('audio')
+        break
+      case 'speech-to-text':
+        active.add('transcription')
+        break
+      case 'text-generation':
+        active.add('text')
+        break
+      default:
+        active.add(filter)
+    }
+  }
+  return MODEL_CAPABILITY_CATEGORIES.filter((category) => active.has(category))
+}
+
+export function matchesTaskFilter(
+  model: PricingModel,
+  task: TaskCapabilityFilter
+): boolean {
+  if (task === 'all') return true
+  const categories = getModelCategories(model)
+  return expandTaskFilters([task]).some((category) =>
+    categories.includes(category)
+  )
+}
+
+export function getCatalogFacets(
+  models: readonly PricingModel[],
+  usableGroups: Record<string, unknown>
+) {
+  const categories = new Set<ModelCapabilityCategory>()
+  const groups = new Set<string>()
+  const quotaTypes = new Set<QuotaTypeOption>()
+  for (const model of models) {
+    for (const category of getModelCategories(model)) categories.add(category)
+    for (const group of model.enable_groups ?? []) groups.add(group)
+    const quota = getModelQuotaType(model)
+    if (quota) quotaTypes.add(quota)
+  }
+  return {
+    categories: MODEL_CAPABILITY_CATEGORIES.filter((category) =>
+      categories.has(category)
+    ),
+    groups: Object.keys(usableGroups).filter(
+      (group) => !EXCLUDED_GROUPS.includes(group) && groups.has(group)
+    ),
+    quotaTypes: [
+      QUOTA_TYPES.TOKEN,
+      QUOTA_TYPES.REQUEST,
+      QUOTA_TYPES.TASK,
+    ].filter((quota) => quotaTypes.has(quota)),
+  }
+}
+
+export type ModelPlaygroundMode = 'chat' | 'image' | 'video' | 'audio'
+
+export function getModelPlaygroundModes(
+  model: PricingModel
+): ModelPlaygroundMode[] {
+  const declared = getConfiguredTaskCapabilities(model.tags)
+  const tasks = declared ?? getModelTaskCapabilities(model)
+  const modes = new Set<ModelPlaygroundMode>()
+  for (const task of tasks) {
+    if (task === 'text-generation') modes.add('chat')
+    if (task === 'text-to-image' || task === 'image-to-image') {
+      modes.add('image')
+    }
+    if (task === 'text-to-video' || task === 'image-to-video') {
+      modes.add('video')
+    }
+    if (task === 'text-to-speech') modes.add('audio')
+  }
+  if (
+    declared === undefined &&
+    !model.input_modalities?.length &&
+    !model.supported_endpoint_types?.length
+  ) {
+    for (const output of model.output_modalities ?? []) {
+      if (output === 'text') modes.add('chat')
+      if (output === 'image' || output === 'video' || output === 'audio') {
+        modes.add(output)
+      }
+    }
+  }
+  return [...modes]
 }

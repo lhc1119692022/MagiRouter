@@ -28,6 +28,7 @@ import {
   ShieldAlert,
   Link2,
   CreditCard,
+  Gauge,
 } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -50,6 +51,7 @@ import type { AdminUserManageAction } from '@/features/auth/secure-verification'
 import { UserSubscriptionsDialog } from '@/features/subscriptions/components/dialogs/user-subscriptions-dialog'
 import { handleServerError } from '@/lib/handle-server-error'
 import { AuthOperationError } from '@/lib/secure-verification'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { manageUser, resetUserPasskey, resetUserTwoFA } from '../api'
 import {
@@ -88,10 +90,18 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
   const [resetTwoFAOpen, setResetTwoFAOpen] = useState(false)
   const [bindingDialogOpen, setBindingDialogOpen] = useState(false)
   const [subscriptionsDialogOpen, setSubscriptionsDialogOpen] = useState(false)
+  const currentUserRole = useAuthStore((s) => s.auth.user?.role ?? 0)
+  const canManageConcurrency =
+    currentUserRole === USER_ROLE.ROOT || currentUserRole > user.role
 
   const handleEdit = () => {
     setCurrentRow(user)
     setOpen('update')
+  }
+
+  const handleAdjustConcurrency = () => {
+    setCurrentRow(user)
+    setOpen('concurrency')
   }
 
   const handleDelete = () => {
@@ -272,6 +282,16 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
           {t('Manage Subscriptions')}
           <DropdownMenuShortcut>
             <CreditCard size={16} />
+          </DropdownMenuShortcut>
+        </DropdownMenuItem>
+
+        <DropdownMenuItem
+          onClick={handleAdjustConcurrency}
+          disabled={!canManageConcurrency}
+        >
+          {t('Adjust Concurrency')}
+          <DropdownMenuShortcut>
+            <Gauge size={16} />
           </DropdownMenuShortcut>
         </DropdownMenuItem>
 

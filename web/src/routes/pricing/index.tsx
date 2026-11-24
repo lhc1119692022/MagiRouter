@@ -20,13 +20,30 @@ import { createFileRoute, redirect } from '@tanstack/react-router'
 import z from 'zod'
 
 import { Pricing } from '@/features/pricing'
+import {
+  MODEL_CAPABILITY_CATEGORIES,
+  MODEL_TASK_CAPABILITIES,
+} from '@/lib/model-task-capabilities'
 import { getModuleAccessForGuard } from '@/lib/nav-modules'
 import { useAuthStore } from '@/stores/auth-store'
 
+const catalogTask = z.enum([
+  'creative',
+  ...MODEL_CAPABILITY_CATEGORIES,
+  ...MODEL_TASK_CAPABILITIES,
+])
+
 const pricingSearchSchema = z.object({
+  task: z
+    .union([catalogTask, z.array(catalogTask)])
+    .optional()
+    .catch(undefined),
   search: z.string().optional(),
   sort: z.string().optional(),
-  vendor: z.string().optional(),
+  vendor: z
+    .union([z.string(), z.array(z.string())])
+    .optional()
+    .catch(undefined),
   group: z.string().optional(),
   quotaType: z.string().optional(),
   endpointType: z.string().optional(),

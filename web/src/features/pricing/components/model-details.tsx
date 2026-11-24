@@ -16,7 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useQuery } from '@tanstack/react-query'
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router'
 import {
   ArrowLeft,
@@ -48,7 +47,6 @@ import {
 } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { getPerfMetrics } from '@/features/performance-metrics/api'
 import {
   formatLatency,
   formatThroughput,
@@ -57,12 +55,12 @@ import {
 } from '@/features/performance-metrics/lib/format'
 import { PluginIcon } from '@/features/task-plugins/components/plugin-icon'
 import { getLobeIcon } from '@/lib/lobe-icon'
-import { requireServerSuccess } from '@/lib/server-error-message'
 import { cn } from '@/lib/utils'
 import { useSystemConfigStore } from '@/stores/system-config-store'
 
 import { DEFAULT_TOKEN_UNIT } from '../constants'
 import { useBillingTime } from '../hooks/use-billing-time'
+import { useModelMonitoring } from '../hooks/use-model-monitoring'
 import { usePricingData } from '../hooks/use-pricing-data'
 import type { ParsedTaskTier, ParsedTier } from '../lib/billing-expr'
 import { formatBillingCondition } from '../lib/billing-expression/condition-display'
@@ -79,7 +77,12 @@ import {
   type DynamicPriceEntry,
 } from '../lib/dynamic-price'
 import { parseTags } from '../lib/filters'
+import type { SupportedParameter } from '../lib/mock-stats'
 import { getAvailableGroups, isTokenBasedModel } from '../lib/model-helpers'
+import {
+  isMeasuredRate,
+  monitoringWindowLabel,
+} from '../lib/monitored-requests'
 import {
   withBasePricing,
   withOrdinaryPricing,
@@ -272,36 +275,48 @@ function OverviewMetric(props: {
 
 function OverviewSummaryGrid(props: { model: PricingModel }) {
   const { t } = useTranslation()
-  const metricsQuery = useQuery({
-    queryKey: ['perf-metrics', props.model.model_name],
-    queryFn: async () =>
-      requireServerSuccess(await getPerfMetrics(props.model.model_name, 24)),
-    staleTime: 60 * 1000,
-  })
-
-  const summary = metricsQuery.data?.data.summary
-  const successRate = summary?.success_rate ?? Number.NaN
+  const metricsQuery = useModelMonitoring(props.model.model_name)
+  const summary = metricsQuery.data?.summary
+  if (!summary) {
+    let statusText = t('Not monitored')
+    if (metricsQuery.isPending) statusText = t('Loading...')
+    if (metricsQuery.isError) statusText = t('Monitoring unavailable')
+    return (
+      <p className='text-muted-foreground text-xs'>
+        {t('Monitored relay requests')} · {statusText}
+      </p>
+    )
+  }
+  const successRate = isMeasuredRate(summary.success_rate)
+    ? summary.success_rate
+    : Number.NaN
   const avgTps = summary?.avg_tps ?? 0
   const avgLatency = summary?.avg_latency_ms ?? 0
 
   return (
-    <div className='bg-muted/20 grid overflow-hidden rounded-lg border sm:grid-cols-3 sm:divide-x'>
-      <OverviewMetric
-        icon={Timer}
-        label='TPS'
-        value={formatThroughput(avgTps)}
-      />
-      <OverviewMetric
-        icon={Timer}
-        label={t('Average latency')}
-        value={formatLatency(avgLatency)}
-      />
-      <OverviewMetric
-        icon={HeartPulse}
-        label={t('Success rate')}
-        value={formatUptimePct(successRate)}
-        valueClassName={getSuccessRateTextClass(successRate)}
-      />
+    <div>
+      <p className='text-muted-foreground mb-1 text-xs'>
+        {t('All visible groups')} · {t('Monitored relay requests')}{' '}
+        {monitoringWindowLabel(metricsQuery.data ?? undefined)}
+      </p>
+      <div className='bg-muted/20 grid overflow-hidden rounded-lg border sm:grid-cols-3 sm:divide-x'>
+        <OverviewMetric
+          icon={Timer}
+          label='TPS'
+          value={formatThroughput(avgTps)}
+        />
+        <OverviewMetric
+          icon={Timer}
+          label={t('Average latency')}
+          value={formatLatency(avgLatency)}
+        />
+        <OverviewMetric
+          icon={HeartPulse}
+          label={t('Success rate')}
+          value={formatUptimePct(successRate)}
+          valueClassName={getSuccessRateTextClass(successRate)}
+        />
+      </div>
     </div>
   )
 }
@@ -1494,6 +1509,8 @@ const TAB_META: Record<
 }
 
 export interface ModelDetailsContentProps {
+  chatParameters?: SupportedParameter[]
+  hideEstimates?: boolean
   model: PricingModel
   groupRatio: Record<string, number>
   usableGroup: Record<string, { desc: string; ratio: number }>
@@ -1593,6 +1610,7 @@ export function ModelDetailsContent(props: ModelDetailsContentProps) {
 
         <TabsContent value='api' className='outline-none'>
           <ModelDetailsApi
+            chatParameters={props.chatParameters}
             model={props.model}
             endpointMap={props.endpointMap}
           />

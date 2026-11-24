@@ -47,7 +47,9 @@ export type UpstreamCommit = {
 const HASH = '[0-9a-f]{7,40}'
 
 function readToken(metadata: string, name: string): string | null {
-  const match = metadata.match(new RegExp(`(?:^|\\.)${name}\\.(${HASH})(?:\\.|$)`))
+  const match = metadata.match(
+    new RegExp(`(?:^|\\.)${name}\\.(${HASH})(?:\\.|$)`)
+  )
   return match ? match[1].toLowerCase() : null
 }
 
@@ -58,7 +60,9 @@ function readToken(metadata: string, name: string): string | null {
  * Returns `null` when no version is reported, so callers can distinguish
  * "server did not say" from "server said nothing useful".
  */
-export function parseBuildMeta(raw: string | null | undefined): BuildMeta | null {
+export function parseBuildMeta(
+  raw: string | null | undefined
+): BuildMeta | null {
   const value = raw?.trim()
   if (!value) return null
 

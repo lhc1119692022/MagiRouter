@@ -16,29 +16,35 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { createFileRoute, redirect } from '@tanstack/react-router'
+import { createFileRoute } from '@tanstack/react-router'
 
 import { Main } from '@/components/layout'
+import { PresetWorkspace } from '@/features/creation/preset-workspace'
+import { BrandFooter } from '@/features/magirouter-home/components/brand-footer'
 import { Playground } from '@/features/playground'
-import { isSidebarModuleEnabled } from '@/lib/nav-modules'
+import { playgroundSearchSchema } from '@/features/playground/lib/workspace-search'
 
 export const Route = createFileRoute('/_authenticated/playground/')({
-  beforeLoad: () => {
-    // The Playground owns its own flag. Gating it on the enclosing `chat`
-    // section means disabling an unrelated sidebar group (or an older server
-    // config that only knows `chat`) silently sends every AI-creation entry
-    // to the console.
-    if (!isSidebarModuleEnabled('chat', 'playground', { ignoreSectionFlag: true })) {
-      throw redirect({ to: '/dashboard' })
-    }
-  },
+  validateSearch: playgroundSearchSchema,
   component: PlaygroundPage,
 })
 
 function PlaygroundPage() {
+  const { mode, model, preset, scene, group, editPreset } = Route.useSearch()
+  const presetId = preset ?? scene
   return (
-    <Main className='p-0'>
-      <Playground />
+    <Main className='console-document-page pg-document-page overflow-visible'>
+      {presetId ? (
+        <PresetWorkspace id={presetId} group={group} />
+      ) : (
+        <Playground
+          key={JSON.stringify([mode, model, editPreset])}
+          editPreset={editPreset}
+          initialMode={mode}
+          initialModel={model}
+        />
+      )}
+      <BrandFooter />
     </Main>
   )
 }

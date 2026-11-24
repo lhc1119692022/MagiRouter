@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { zodResolver } from '@hookform/resolvers/zod'
+import { Link } from '@tanstack/react-router'
 import { useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -41,7 +42,9 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import { handleServerError } from '@/lib/handle-server-error'
 
+import { getSiteModuleEnvelope } from '../api'
 import {
   SettingsForm,
   SettingsSwitchContent,
@@ -54,6 +57,9 @@ import { safeNumberFieldProps } from '../utils/numeric-field'
 
 const dataDashboardSchema = z.object({
   DataExportEnabled: z.boolean(),
+  overview_quickstart_enabled: z.boolean(),
+  overview_report_enabled: z.boolean(),
+  overview_distributions_enabled: z.boolean(),
   DataExportInterval: z.number().int().min(1).max(1440),
   DataExportDefaultTime: z.enum(['hour', 'day', 'week']),
 })
@@ -69,6 +75,22 @@ const granularityOptions = [
   { label: 'Day', value: 'day' },
   { label: 'Week', value: 'week' },
 ]
+
+const overviewSwitches = [
+  { field: 'overview_quickstart_enabled', label: 'Quickstart' },
+  { field: 'overview_report_enabled', label: 'Usage report' },
+  {
+    field: 'overview_distributions_enabled',
+    label: 'Model and vendor breakdowns',
+  },
+] as const
+
+const contentEditors = [
+  { section: 'api-info', label: 'API Addresses' },
+  { section: 'announcements', label: 'Announcements' },
+  { section: 'faq', label: 'FAQ' },
+  { section: 'uptime-kuma', label: 'Uptime Kuma' },
+] as const
 
 export function DashboardSection({ defaultValues }: DashboardSectionProps) {
   const { t } = useTranslation()
@@ -89,12 +111,30 @@ export function DashboardSection({ defaultValues }: DashboardSectionProps) {
         value !== defaultValues[key as keyof DataDashboardFormValues]
     )
 
+    const panelUpdates = updates.filter(([key]) => key.startsWith('overview_'))
+    if (panelUpdates.length) {
+      let value: string
+      try {
+        const { envelope, flags } = await getSiteModuleEnvelope()
+        value = JSON.stringify({
+          ...envelope,
+          overview_panels: { ...flags, ...Object.fromEntries(panelUpdates) },
+        })
+      } catch (error) {
+        handleServerError(error, t('Failed to update settings'))
+        return
+      }
+      await updateOption.mutateAsync({ key: 'SidebarModulesAdmin', value })
+    }
     for (const [key, value] of updates) {
-      await updateOption.mutateAsync({ key, value })
+      if (!key.startsWith('overview_')) {
+        await updateOption.mutateAsync({ key, value })
+      }
     }
   }
 
   const isEnabled = form.watch('DataExportEnabled')
+  const reportEnabled = form.watch('overview_report_enabled')
 
   return (
     <SettingsSection title={t('Data Dashboard')}>
@@ -102,8 +142,70 @@ export function DashboardSection({ defaultValues }: DashboardSectionProps) {
         <SettingsForm onSubmit={form.handleSubmit(onSubmit)}>
           <SettingsPageFormActions
             onSave={form.handleSubmit(onSubmit)}
-            isSaving={updateOption.isPending}
+            isSaving={form.formState.isSubmitting || updateOption.isPending}
           />
+          <fieldset className='space-y-2'>
+            <legend className='text-base font-medium'>
+              {t('Overview panels')}
+            </legend>
+            <p className='text-muted-foreground text-sm'>
+              {t(
+                'These settings change the overview, not permissions or data collection.'
+              )}
+            </p>
+            {overviewSwitches.map(({ field, label }) => (
+              <FormField
+                key={field}
+                control={form.control}
+                name={field}
+                render={({ field: input }) => (
+                  <SettingsSwitchItem>
+                    <SettingsSwitchContent>
+                      <FormLabel>{t(label)}</FormLabel>
+                    </SettingsSwitchContent>
+                    <FormControl>
+                      <Switch
+                        disabled={
+                          field === 'overview_distributions_enabled' &&
+                          !reportEnabled
+                        }
+                        checked={input.value}
+                        onCheckedChange={input.onChange}
+                      />
+                    </FormControl>
+                  </SettingsSwitchItem>
+                )}
+              />
+            ))}
+          </fieldset>
+          <nav aria-label={t('Edit overview content')} className='space-y-2'>
+            <h2 className='text-base font-medium'>
+              {t('Edit overview content')}
+            </h2>
+            <div className='flex flex-wrap gap-2'>
+              {contentEditors.map((editor) => (
+                <Link
+                  key={editor.section}
+                  to='/system-settings/content/$section'
+                  params={{ section: editor.section }}
+                  className='el-btn el-btn-sm el-btn-white'
+                >
+                  {t(editor.label)}
+                </Link>
+              ))}
+              <Link to='/models' className='el-btn el-btn-sm el-btn-white'>
+                {t('Model metadata')}
+              </Link>
+              <Link
+                to='/system-settings/site/$section'
+                params={{ section: 'system-info' }}
+                className='el-btn el-btn-sm el-btn-white'
+              >
+                {t('Server Address')}
+              </Link>
+            </div>
+          </nav>
+          <h2 className='text-base font-medium'>{t('Data collection')}</h2>
           <FormField
             control={form.control}
             name='DataExportEnabled'
@@ -154,12 +256,10 @@ export function DashboardSection({ defaultValues }: DashboardSectionProps) {
                 <FormItem>
                   <FormLabel>{t('Default time granularity')}</FormLabel>
                   <Select
-                    items={[
-                      ...granularityOptions.map((option) => ({
-                        value: option.value,
-                        label: t(option.label),
-                      })),
-                    ]}
+                    items={granularityOptions.map((option) => ({
+                      value: option.value,
+                      label: t(option.label),
+                    }))}
                     onValueChange={field.onChange}
                     value={field.value}
                     disabled={!isEnabled}

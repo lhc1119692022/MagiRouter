@@ -16,6 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { isPublishableApiUrl } from '@/features/dashboard/lib/api-info'
+import { readOverviewPanels } from '@/features/dashboard/lib/overview-publication'
 import { useStatus } from '@/hooks/use-status'
 
 import type { AnnouncementItem, ApiInfoItem, FAQItem } from '../types'
@@ -26,19 +28,27 @@ import type { AnnouncementItem, ApiInfoItem, FAQItem } from '../types'
 export function useStatusData<T = unknown>(
   enabledKey: string,
   dataKey: string
-): { items: T[]; loading: boolean } {
-  const { status, loading } = useStatus()
-  const enabled = status ? status[enabledKey] !== false : false
-  const items = (enabled ? status?.[dataKey] || [] : []) as T[]
-
-  return { items, loading }
+): { items: T[]; loading: boolean; enabled: boolean; failed: boolean } {
+  const { status, loading, error } = useStatus()
+  const enabled = Boolean(status) && status?.[enabledKey] !== false
+  const value = status?.[dataKey]
+  const items = enabled && Array.isArray(value) ? (value as T[]) : []
+  const failed =
+    Boolean(error) || (enabled && value != null && !Array.isArray(value))
+  return { items, loading, enabled, failed }
 }
 
 /**
  * Get API info list
  */
 export function useApiInfo() {
-  return useStatusData<ApiInfoItem>('api_info_enabled', 'api_info')
+  const publication = useStatusData<ApiInfoItem>('api_info_enabled', 'api_info')
+  return {
+    ...publication,
+    items: publication.items.filter(
+      (item) => item && isPublishableApiUrl(item.url)
+    ),
+  }
 }
 
 /**
@@ -64,9 +74,12 @@ export function useFAQ() {
 export function useDashboardContentVisibility() {
   const { status } = useStatus()
   const hasStatus = Boolean(status)
+  const panels = readOverviewPanels(status?.SidebarModulesAdmin)
 
   return {
-    apiInfo: hasStatus && status?.api_info_enabled !== false,
+    quickstart: hasStatus && panels.overview_quickstart_enabled,
+    report: hasStatus && panels.overview_report_enabled,
+    distributions: hasStatus && panels.overview_distributions_enabled,
     announcements: hasStatus && status?.announcements_enabled !== false,
     faq: hasStatus && status?.faq_enabled !== false,
     uptimeKuma: hasStatus && status?.uptime_kuma_enabled !== false,

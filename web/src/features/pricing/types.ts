@@ -56,6 +56,13 @@ export type BillingPluginVariant = {
 }
 
 export type PricingModel = {
+  price_unconfigured?: boolean
+  official_price?: {
+    source_url: string
+    input_usd_per_million?: number
+    output_usd_per_million?: number
+    usd_per_request?: number
+  }
   billing_plugin_variants?: BillingPluginVariant[]
   // Requests outside the plugin variants still pay the model-level price.
   ordinary_pricing?: boolean

@@ -83,7 +83,7 @@ export function RequestProcessing() {
     queryFn: listRequestPluginOptions,
   })
   const groupsQuery = useQuery({
-    queryKey: ['groups'],
+    queryKey: ['groups', 'billing'],
     queryFn: async () => requireServerSuccess(await getGroups()),
   })
   const modelsQuery = useQuery({

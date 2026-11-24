@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/common"
 	"gorm.io/gorm"
@@ -97,6 +98,9 @@ func GetMetadataSyncState(db *gorm.DB) (map[string]*Model, map[string]*Vendor, e
 }
 
 func ValidateMetadataValues(values MetadataValues) error {
+	if utf8.RuneCountInString(values.Tags) > 255 {
+		return errors.New("Tags and task capabilities exceed 255 characters. Shorten the tags before saving.")
+	}
 	if values.NameRule < NameRuleExact || values.NameRule > NameRuleSuffix {
 		return errors.New("invalid metadata matching rule")
 	}
@@ -224,7 +228,20 @@ func ApplyMetadataSync(updates []MetadataSyncUpdate, upstreamVendors map[string]
 				case "icon":
 					fields[field] = update.Values.Icon
 				case "tags":
-					fields[field] = update.Values.Tags
+					tags, _ := SplitCatalogTaskTags(update.Values.Tags)
+					if local := locals[update.ModelName]; local != nil {
+						_, declaration := SplitCatalogTaskTags(local.Tags)
+						if declaration != "" {
+							if tags != "" {
+								tags += ","
+							}
+							tags += declaration
+						}
+					}
+					if utf8.RuneCountInString(tags) > 255 {
+						return errors.New("Tags and task capabilities exceed 255 characters. Shorten the tags before saving.")
+					}
+					fields[field] = tags
 				case "endpoints":
 					fields[field] = update.Values.Endpoints
 				case "name_rule":

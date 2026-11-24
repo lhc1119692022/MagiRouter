@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { Link } from '@tanstack/react-router'
 import { Plus, MoreHorizontal, List, AlertCircle } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
@@ -84,6 +85,18 @@ export function ModelsPrimaryButtons() {
           <MoreHorizontal className='h-4 w-4' />
         </DropdownMenuTrigger>
         <DropdownMenuContent align='end' className='w-56'>
+          {canPrice && (
+            <DropdownMenuItem
+              render={
+                <Link
+                  to='/system-settings/content/$section'
+                  params={{ section: 'official-model-prices' }}
+                />
+              }
+            >
+              {t('Official reference prices')}
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem onClick={handleMissingModels}>
             {t('Missing Models')}
             <DropdownMenuShortcut>

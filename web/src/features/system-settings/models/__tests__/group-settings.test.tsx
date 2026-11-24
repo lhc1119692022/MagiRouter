@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { zodResolver } from '@hookform/resolvers/zod'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
   fireEvent,
   render,
@@ -25,14 +26,17 @@ import {
   waitFor,
 } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
+
+import { api } from '@/lib/api'
 
 import { SettingsPageProvider } from '../../components/settings-page-context'
 import { positiveIntegerSchema } from '../../utils/numeric-field'
 import { GroupRatioForm } from '../group-ratio-form'
+import { RatioSettingsCard } from '../ratio-settings-card'
 
 const defaults = {
   GroupRatio: '{"default":1,"vip":0.8}',
@@ -43,6 +47,7 @@ const defaults = {
   MaxTokenAutoGroups: 5,
   DefaultUseAutoGroup: false,
   GroupSpecialUsableGroup: '{}',
+  UserManagementGroups: '{}',
 }
 
 const schema = z.object({
@@ -54,7 +59,23 @@ const schema = z.object({
   MaxTokenAutoGroups: positiveIntegerSchema('Enter a positive integer'),
   DefaultUseAutoGroup: z.boolean(),
   GroupSpecialUsableGroup: z.string(),
+  UserManagementGroups: z.string(),
 })
+
+const defaultModelDefaults = {
+  ModelPrice: '{}',
+  ModelRatio: '{}',
+  CacheRatio: '{}',
+  CreateCacheRatio: '{}',
+  CompletionRatio: '{}',
+  ImageRatio: '{}',
+  AudioRatio: '{}',
+  AudioCompletionRatio: '{}',
+  ExposeRatioEnabled: false,
+  BillingMode: '{}',
+  BillingExpr: '{}',
+  PluginBillingExpr: '{}',
+}
 
 function Fixture(props: {
   onSave?: (values: typeof defaults) => Promise<void>
@@ -77,6 +98,34 @@ function Fixture(props: {
     </SettingsPageProvider>
   )
 }
+
+function RatioCardFixture(props: {
+  initial?: Partial<typeof defaults>
+  queryClient: QueryClient
+}) {
+  const [actions, setActions] = useState<HTMLDivElement | null>(null)
+  const groupDefaults = useMemo(
+    () => ({ ...defaults, ...props.initial }),
+    [props.initial]
+  )
+  return (
+    <QueryClientProvider client={props.queryClient}>
+      <SettingsPageProvider actionsContainer={actions}>
+        <div ref={setActions} />
+        <RatioSettingsCard
+          modelDefaults={defaultModelDefaults}
+          groupDefaults={groupDefaults}
+          toolPricesDefault='{}'
+          visibleTabs={['groups']}
+        />
+      </SettingsPageProvider>
+    </QueryClientProvider>
+  )
+}
+
+afterEach(() => {
+  vi.restoreAllMocks()
+})
 
 describe('group settings workspace', () => {
   it('filters by description and clears search without discarding edits', async () => {
@@ -128,7 +177,9 @@ describe('group settings workspace', () => {
         .map((input) => input.value)
     ).toEqual(['group_2', 'group_1', 'default', 'vip'])
 
-    await user.click(screen.getByRole('button', { name: 'Save group settings' }))
+    await user.click(
+      screen.getByRole('button', { name: 'Save group settings' })
+    )
     await waitFor(() => expect(onSave).toHaveBeenCalled())
     const saved = onSave.mock.calls[0][0]
     expect(JSON.parse(saved.GroupRatio)).toEqual({
@@ -201,7 +252,9 @@ describe('group settings workspace', () => {
     expect(screen.getByRole('button', { name: 'Move vip up' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Move vip down' })).toBeDisabled()
     await user.click(screen.getByRole('tab', { name: 'Pricing groups' }))
-    await user.click(screen.getByRole('button', { name: 'Save group settings' }))
+    await user.click(
+      screen.getByRole('button', { name: 'Save group settings' })
+    )
     await waitFor(() => expect(onSave).toHaveBeenCalled())
     expect(onSave.mock.calls[0]?.[0]).toEqual(
       expect.objectContaining({
@@ -244,7 +297,9 @@ describe('group settings workspace', () => {
     )
     expect(screen.getByText('Not in pricing table')).toBeVisible()
     await user.click(screen.getByRole('tab', { name: 'Pricing groups' }))
-    await user.click(screen.getByRole('button', { name: 'Save group settings' }))
+    await user.click(
+      screen.getByRole('button', { name: 'Save group settings' })
+    )
     await waitFor(() => expect(onSave).toHaveBeenCalled())
     expect(JSON.parse(onSave.mock.calls[0][0].AutoGroups)).toEqual([
       'vip',
@@ -286,7 +341,9 @@ describe('group settings workspace', () => {
       { target: { value: '0' } }
     )
     await user.click(screen.getByRole('tab', { name: 'Pricing groups' }))
-    await user.click(screen.getByRole('button', { name: 'Save group settings' }))
+    await user.click(
+      screen.getByRole('button', { name: 'Save group settings' })
+    )
     await waitFor(() =>
       expect(
         screen.getByRole('tab', { name: 'Auto group order' })
@@ -341,5 +398,324 @@ describe('group settings workspace', () => {
     expect(
       screen.getAllByRole('textbox', { name: 'Group description' })[1]
     ).toHaveValue('Updated description')
+  })
+
+  it('toggles a group to user management only, updates serialized fields, and restores ratio and selectability when toggled back', async () => {
+    const user = userEvent.setup()
+    const onSave = vi.fn(async (_values: typeof defaults) => {})
+    render(
+      <Fixture
+        onSave={onSave}
+        initial={{
+          GroupRatio: '{"default":1.5,"vip":0.8}',
+          TopupGroupRatio: '{"default":1.1,"vip":1.2}',
+        }}
+      />
+    )
+
+    const defaultRow = screen.getByDisplayValue('default').closest('tr')
+    expect(defaultRow).not.toBeNull()
+    const rowScope = within(defaultRow as HTMLTableRowElement)
+
+    expect(rowScope.getByRole('spinbutton', { name: 'Ratio' })).toHaveValue(1.5)
+    expect(
+      rowScope.getByRole('checkbox', { name: 'User selectable' })
+    ).toBeChecked()
+    expect(
+      rowScope.getByRole('textbox', { name: 'Group description' })
+    ).toHaveValue('Standard access')
+
+    const userManagementCheckbox = rowScope.getByRole('checkbox', {
+      name: 'User management only',
+    })
+    await user.click(userManagementCheckbox)
+
+    expect(userManagementCheckbox).toBeChecked()
+    expect(
+      rowScope.queryByRole('spinbutton', { name: 'Ratio' })
+    ).not.toBeInTheDocument()
+    expect(
+      rowScope.queryByRole('checkbox', { name: 'User selectable' })
+    ).not.toBeInTheDocument()
+    expect(
+      rowScope.getByRole('spinbutton', { name: 'Top-up ratio' })
+    ).toHaveValue(1.1)
+    expect(
+      rowScope.getByRole('textbox', { name: 'Group description' })
+    ).toHaveValue('Standard access')
+
+    await user.click(
+      screen.getByRole('button', { name: 'Save group settings' })
+    )
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1))
+    const savedWhenUserManaged = onSave.mock.calls[0][0]
+    expect(JSON.parse(savedWhenUserManaged.GroupRatio)).toEqual({ vip: 0.8 })
+    expect(JSON.parse(savedWhenUserManaged.UserUsableGroups)).toEqual({
+      vip: 'Premium access',
+    })
+    expect(JSON.parse(savedWhenUserManaged.TopupGroupRatio)).toEqual({
+      default: 1.1,
+      vip: 1.2,
+    })
+    expect(JSON.parse(savedWhenUserManaged.UserManagementGroups)).toEqual({
+      default: 'Standard access',
+    })
+
+    await user.click(userManagementCheckbox)
+
+    expect(userManagementCheckbox).not.toBeChecked()
+    expect(rowScope.getByRole('spinbutton', { name: 'Ratio' })).toHaveValue(1.5)
+    expect(
+      rowScope.getByRole('checkbox', { name: 'User selectable' })
+    ).toBeChecked()
+
+    await user.click(
+      screen.getByRole('button', { name: 'Save group settings' })
+    )
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(2))
+    const savedWhenRestored = onSave.mock.calls[1][0]
+    expect(JSON.parse(savedWhenRestored.GroupRatio)).toEqual({
+      default: 1.5,
+      vip: 0.8,
+    })
+    expect(JSON.parse(savedWhenRestored.UserUsableGroups)).toEqual({
+      default: 'Standard access',
+      vip: 'Premium access',
+    })
+    expect(JSON.parse(savedWhenRestored.UserManagementGroups)).toEqual({})
+  })
+
+  it('treats user-management-only groups as user groups while excluding them from billing and auto targets', async () => {
+    const user = userEvent.setup()
+    render(
+      <Fixture
+        initial={{
+          GroupRatio: '{"standard":1,"vip_line":0.8}',
+          TopupGroupRatio: '{"default":1.1}',
+          UserUsableGroups: '{"standard":"Standard access"}',
+          UserManagementGroups:
+            '{"default":"Default user tier","member":"Member tier"}',
+          GroupGroupRatio: '{"standard":{"default":0.5}}',
+          GroupSpecialUsableGroup:
+            '{"default":{"+:vip_line":"VIP line"},"standard":{"+:default":"Legacy target"}}',
+          AutoGroups: '["default","standard"]',
+        }}
+      />
+    )
+
+    const pricingTable = screen.getByRole('table', { name: 'Pricing groups' })
+    const defaultRow = within(pricingTable)
+      .getByDisplayValue('default')
+      .closest('tr')
+    expect(defaultRow).not.toBeNull()
+    await user.click(
+      within(defaultRow as HTMLTableRowElement).getByRole('button', {
+        name: 'Details',
+      })
+    )
+    const detailDialog = screen.getByRole('dialog')
+    expect(within(detailDialog).getByText('User management only')).toBeVisible()
+    expect(
+      within(detailDialog).getByText('Effective billing groups')
+    ).toBeVisible()
+    expect(within(detailDialog).getByText('standard')).toBeVisible()
+    expect(within(detailDialog).getByText('vip_line')).toBeVisible()
+    expect(within(detailDialog).queryByText('member')).not.toBeInTheDocument()
+    await user.keyboard('{Escape}')
+
+    await user.click(screen.getByRole('tab', { name: 'Special ratio rules' }))
+    await user.click(screen.getByRole('button', { name: 'Rules for standard' }))
+    const overridesPanel = screen.getByRole('tabpanel', {
+      name: 'Special ratio rules',
+    })
+    expect(
+      within(overridesPanel).getByText('User management only')
+    ).toBeVisible()
+
+    await user.click(screen.getByRole('button', { name: 'Add user group' }))
+    const addUserDialog = screen.getByRole('dialog')
+    const userGroupPicker = within(addUserDialog).getByRole('combobox', {
+      name: 'Select a group',
+    })
+    await user.click(userGroupPicker)
+    const userGroupOptions = screen
+      .getAllByRole('option')
+      .map((option) => option.textContent)
+    expect(userGroupOptions).toContain('default')
+    expect(userGroupOptions).toContain('member')
+    expect(userGroupOptions).toContain('standard')
+    await user.click(screen.getByRole('option', { name: 'default' }))
+    await user.click(within(addUserDialog).getByRole('button', { name: 'Add' }))
+
+    const defaultRulesHeader = screen
+      .getByRole('button', { name: 'Rules for default' })
+      .closest('div')
+    expect(defaultRulesHeader).not.toBeNull()
+    await user.click(
+      within(defaultRulesHeader as HTMLDivElement).getByRole('button', {
+        name: 'Add ratio override',
+      })
+    )
+    const overrideDialog = screen.getByRole('dialog')
+    await user.click(
+      within(overrideDialog).getByRole('combobox', { name: 'Select a group' })
+    )
+    const billingTargetOptions = screen
+      .getAllByRole('option')
+      .map((option) => option.textContent)
+    expect(billingTargetOptions).toContain('standard')
+    expect(billingTargetOptions).toContain('vip_line')
+    expect(billingTargetOptions).not.toContain('default')
+    expect(billingTargetOptions).not.toContain('member')
+    await user.keyboard('{Escape}{Escape}')
+
+    await user.click(screen.getByRole('tab', { name: 'Group visibility' }))
+    const visibilityPanel = screen.getByRole('tabpanel', {
+      name: 'Group visibility',
+    })
+    expect(
+      within(visibilityPanel).getByText('User management only')
+    ).toBeVisible()
+    const visibilityPicker = within(visibilityPanel).getByRole('combobox', {
+      name: 'Add rules for a user group',
+    })
+    await user.click(visibilityPicker)
+    const visibilityUserOptions = screen
+      .getAllByRole('option')
+      .map((option) => option.textContent)
+    expect(visibilityUserOptions).toContain('member')
+    expect(visibilityUserOptions).toContain('vip_line')
+    await user.keyboard('{Escape}')
+
+    const defaultVisibilitySection = within(visibilityPanel)
+      .getByRole('button', { name: 'Rules for default' })
+      .closest('div')?.parentElement
+    expect(defaultVisibilitySection).not.toBeNull()
+    const targetCombo = within(
+      defaultVisibilitySection as HTMLElement
+    ).getByRole('combobox', { name: 'Group name' })
+    await user.click(targetCombo)
+    const visibilityTargetOptions = screen
+      .getAllByRole('option')
+      .map((option) => option.textContent)
+    expect(visibilityTargetOptions).toContain('standard')
+    expect(visibilityTargetOptions).toContain('vip_line')
+    expect(visibilityTargetOptions).not.toContain('default')
+    expect(visibilityTargetOptions).not.toContain('member')
+    await user.keyboard('{Escape}')
+
+    await user.click(screen.getByRole('tab', { name: 'Auto group order' }))
+    const autoList = screen.getByRole('list', { name: 'Auto group order' })
+    expect(within(autoList).getByText('User management only')).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Remove default' }))
+    await user.click(screen.getByRole('combobox', { name: 'Add group' }))
+    const autoCandidates = screen
+      .getAllByRole('option')
+      .map((option) => option.textContent)
+    expect(autoCandidates).toContain('vip_line')
+    expect(autoCandidates).not.toContain('default')
+    expect(autoCandidates).not.toContain('member')
+  })
+
+  it('persists group_ratio_setting.user_management_groups via diff-only PUT /api/option/ and invalidates group queries', async () => {
+    const user = userEvent.setup()
+    const putSpy = vi
+      .spyOn(api, 'put')
+      .mockResolvedValue({ data: { success: true } })
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    })
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
+
+    render(<RatioCardFixture queryClient={queryClient} />)
+
+    const defaultRow = screen.getByDisplayValue('default').closest('tr')
+    expect(defaultRow).not.toBeNull()
+    await user.click(
+      within(defaultRow as HTMLTableRowElement).getByRole('checkbox', {
+        name: 'User management only',
+      })
+    )
+
+    await user.click(
+      screen.getByRole('button', { name: 'Save group settings' })
+    )
+
+    await waitFor(() => expect(putSpy).toHaveBeenCalledTimes(3))
+    const sentCalls = putSpy.mock.calls.map(([url, payload]) => ({
+      url,
+      payload: payload as { key: string; value: unknown },
+    }))
+    expect(sentCalls.every((call) => call.url === '/api/option/')).toBe(true)
+    expect(sentCalls.map((call) => call.payload.key)).toEqual([
+      'GroupRatio',
+      'UserUsableGroups',
+      'group_ratio_setting.user_management_groups',
+    ])
+    expect(
+      JSON.parse(
+        String(
+          sentCalls.find(
+            (call) =>
+              call.payload.key === 'group_ratio_setting.user_management_groups'
+          )?.payload.value
+        )
+      )
+    ).toEqual({ default: 'Standard access' })
+    expect(
+      JSON.parse(
+        String(
+          sentCalls.find((call) => call.payload.key === 'GroupRatio')?.payload
+            .value
+        )
+      )
+    ).toEqual({ vip: 0.8 })
+    expect(
+      JSON.parse(
+        String(
+          sentCalls.find((call) => call.payload.key === 'UserUsableGroups')
+            ?.payload.value
+        )
+      )
+    ).toEqual({ vip: 'Premium access' })
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['groups'] })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['user-groups'] })
+  })
+
+  it('rejects reserved group names in UserManagementGroups JSON and prevents saving', async () => {
+    const user = userEvent.setup()
+    const putSpy = vi
+      .spyOn(api, 'put')
+      .mockResolvedValue({ data: { success: true } })
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    })
+
+    render(<RatioCardFixture queryClient={queryClient} />)
+
+    await user.click(screen.getByRole('button', { name: 'Switch to JSON' }))
+    const editor = screen.getByRole('textbox', {
+      name: 'User management only groups',
+    })
+    fireEvent.input(editor, { target: { value: '{"auto":"Reserved"}' } })
+    await user.click(
+      screen.getByRole('button', { name: 'Save group settings' })
+    )
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          'Expected a JSON object mapping non-reserved group names to description strings'
+        )
+      ).toBeVisible()
+    )
+    expect(putSpy).not.toHaveBeenCalled()
   })
 })

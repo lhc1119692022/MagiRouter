@@ -19,9 +19,8 @@ For commercial licensing, please contact support@quantumnous.com
 import { render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { useUpstreamSync } from '../use-upstream-sync'
-
 import { UpstreamSyncPanel } from '../upstream-sync-panel'
+import type { useUpstreamSync } from '../use-upstream-sync'
 
 let syncState: ReturnType<typeof useUpstreamSync>
 
@@ -88,9 +87,7 @@ describe('UpstreamSyncPanel', () => {
     expect(screen.getByText('feat: one')).toBeInTheDocument()
     expect(screen.getByText('fix: two')).toBeInTheDocument()
     expect(screen.getByText('docs: three')).toBeInTheDocument()
-    expect(
-      screen.getByText('chore: upstream head')
-    ).toBeInTheDocument()
+    expect(screen.getByText('chore: upstream head')).toBeInTheDocument()
     expect(screen.getAllByText('abcdef1').length).toBeGreaterThan(0)
   })
 

@@ -16,107 +16,111 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Megaphone } from 'lucide-react'
-import { memo, useState } from 'react'
+import { Link } from '@tanstack/react-router'
+import { useId, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { IconBadge } from '@/components/ui/icon-badge'
-import { ScrollArea } from '@/components/ui/scroll-area'
+import { Button } from '@/components/ui/button'
 import { useAnnouncements } from '@/features/dashboard/hooks/use-status-data'
 import { getPreviewText } from '@/features/dashboard/lib'
 import type { AnnouncementItem } from '@/features/dashboard/types'
-import { getAnnouncementColorClass } from '@/lib/colors'
-import { formatDateTimeObject } from '@/lib/time'
-import { cn } from '@/lib/utils'
+import { useStatus } from '@/hooks/use-status'
+import { parseHeaderNavModules } from '@/lib/nav-modules'
+import {
+  NOTICE_CATEGORY_LABELS,
+  publishedNotices,
+} from '@/lib/published-notices'
 
-import { PanelWrapper } from '../ui/panel-wrapper'
 import { AnnouncementDetailModal } from './announcement-detail-dialog'
 
-const AnnouncementStatusDot = memo(function AnnouncementStatusDot(props: {
-  type?: string
-}) {
-  return (
-    <span
-      className={cn(
-        'mt-1.5 inline-block size-2 shrink-0 rounded-full',
-        getAnnouncementColorClass(props.type)
-      )}
-    />
-  )
-})
+import '@/styles/dashboard-editorial.css'
 
 export function AnnouncementsPanel() {
   const { t } = useTranslation()
-  const { items: list, loading } = useAnnouncements()
+  const heading = useId()
+  const { status } = useStatus()
+  const { items, loading, enabled, failed } = useAnnouncements()
+  const timelineEnabled = parseHeaderNavModules(status?.HeaderNavModules).about
+  const list = useMemo(() => publishedNotices(items), [items])
+  const [expanded, setExpanded] = useState(false)
   const [selectedAnnouncement, setSelectedAnnouncement] =
     useState<AnnouncementItem | null>(null)
-  const [isDialogOpen, setIsDialogOpen] = useState(false)
-
-  const handleAnnouncementClick = (item: AnnouncementItem) => {
-    setSelectedAnnouncement(item)
-    setIsDialogOpen(true)
-  }
-
+  if (!enabled && !loading && !failed) return null
+  const visible = !timelineEnabled && expanded ? list : list.slice(0, 4)
+  let message = t('No announcements at this time')
+  if (loading) message = t('Loading...')
+  if (failed) message = t('Could not load this source')
   return (
-    <PanelWrapper
-      title={
-        <span className='flex items-center gap-2'>
-          <IconBadge tone='warning' size='sm'>
-            <Megaphone />
-          </IconBadge>
-          {t('Announcements')}
-        </span>
-      }
-      description={t('Latest platform updates and notices')}
-      loading={loading}
-      empty={!list.length}
-      emptyMessage={t('No announcements at this time')}
-      height='h-72'
-      contentClassName='p-0'
-    >
-      <ScrollArea className='h-72'>
-        <div>
-          {list.map((item: AnnouncementItem, idx: number) => {
-            const key = item.id ?? `announcement-${idx}`
-            return (
-              <button
-                key={key}
-                type='button'
-                onClick={() => handleAnnouncementClick(item)}
-                className={cn(
-                  'group hover:bg-muted/40 w-full px-3 py-3 text-left transition-colors sm:px-5 sm:py-3.5',
-                  idx < list.length - 1 && 'border-border/60 border-b'
-                )}
-              >
-                <div className='flex items-start gap-2.5'>
-                  <AnnouncementStatusDot type={item.type} />
-                  <div className='flex min-w-0 flex-1 flex-col gap-1'>
-                    <p className='line-clamp-1 text-sm font-medium'>
-                      {getPreviewText(item.content)}
-                    </p>
-                    <div className='flex items-center justify-between'>
-                      {item.publishDate && (
-                        <time className='text-muted-foreground/60 text-xs'>
-                          {formatDateTimeObject(new Date(item.publishDate))}
-                        </time>
-                      )}
-                      <span className='text-muted-foreground/40 text-xs opacity-0 transition-opacity group-hover:opacity-100'>
-                        {t('Click for details')}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </button>
-            )
-          })}
-        </div>
-      </ScrollArea>
-
+    <section className='dash-panel dash-editorial' aria-labelledby={heading}>
+      <div className='dash-panel-head'>
+        <h2 id={heading} className='dash-panel-title'>
+          {t('Recent notices')}
+        </h2>
+        {timelineEnabled && (
+          <Link
+            to='/about'
+            hash='timeline-feed-section'
+            className='dash-panel-link'
+          >
+            {t('See all notices')} <span aria-hidden='true'>→</span>
+          </Link>
+        )}
+        {!timelineEnabled && list.length > 4 && (
+          <Button
+            variant='ghost'
+            size='xs'
+            className='dash-panel-link'
+            aria-expanded={expanded}
+            onClick={() => setExpanded(!expanded)}
+          >
+            {expanded ? t('Collapse') : t('See all notices')}
+          </Button>
+        )}
+      </div>
+      {!list.length && (
+        <p
+          className='dash-editorial-message'
+          role={failed ? 'alert' : 'status'}
+        >
+          {message}
+        </p>
+      )}
+      <div className='dash-notices-list'>
+        {visible.map((item) => (
+          <Button
+            key={item.id}
+            className='dash-notice-row'
+            variant='ghost'
+            onClick={() => setSelectedAnnouncement(item.record)}
+          >
+            <span className='dash-notice-top'>
+              <span className='dash-editorial-kind'>
+                {item.kindLabel || t(NOTICE_CATEGORY_LABELS[item.category])}
+              </span>
+              {item.date && (
+                <time
+                  dateTime={item.date}
+                  className='dash-notice-date tabular-nums'
+                >
+                  {item.dateLabel}
+                </time>
+              )}
+            </span>
+            <span className='dash-notice-title'>
+              {typeof item.record.title === 'string' && item.record.title.trim()
+                ? item.title
+                : getPreviewText(item.title, 120)}
+            </span>
+          </Button>
+        ))}
+      </div>
       <AnnouncementDetailModal
-        open={isDialogOpen}
-        onOpenChange={setIsDialogOpen}
+        open={Boolean(selectedAnnouncement)}
+        onOpenChange={(open) => {
+          if (!open) setSelectedAnnouncement(null)
+        }}
         announcement={selectedAnnouncement}
       />
-    </PanelWrapper>
+    </section>
   )
 }

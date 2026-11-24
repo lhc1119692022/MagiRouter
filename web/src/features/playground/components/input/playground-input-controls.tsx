@@ -21,103 +21,98 @@ import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { PromptInputButton } from '@/components/ai-elements/prompt-input'
-import { ModelGroupSelector } from '@/components/model-group-selector'
+import { Combobox } from '@/components/ui/combobox'
 
 import { getInputControlState } from '../../lib'
 import type { GroupOption, ModelOption } from '../../types'
 
 type PlaygroundInputControlsProps = {
+  allowSubmit: boolean
   disabled?: boolean
   groups: GroupOption[]
-  groupValue: string
   isGenerating?: boolean
   isModelLoading?: boolean
   models: ModelOption[]
   modelValue: string
-  onGroupChange: (value: string) => void
   onModelChange: (value: string) => void
   onStop?: () => void
   text: string
   tools: ReactNode
+  priceQuote?: ReactNode
+  showModelSelector?: boolean
 }
 
 export function PlaygroundInputControls({
+  allowSubmit,
   disabled,
   groups,
-  groupValue,
   isGenerating,
   isModelLoading = false,
   models,
   modelValue,
-  onGroupChange,
   onModelChange,
   onStop,
   text,
   tools,
+  priceQuote,
+  showModelSelector = true,
 }: PlaygroundInputControlsProps) {
   const { t } = useTranslation()
-  const { canSubmit, isSelectorDisabled, shouldShowStop } =
-    getInputControlState({
-      disabled,
-      groups,
-      hasStopHandler: Boolean(onStop),
-      isGenerating,
-      isModelLoading,
-      models,
-      text,
-    })
-
-  const renderSelector = () => (
-    <ModelGroupSelector
-      selectedModel={modelValue}
-      models={models}
-      onModelChange={onModelChange}
-      selectedGroup={groupValue}
-      groups={groups}
-      onGroupChange={onGroupChange}
-      disabled={isSelectorDisabled}
-    />
-  )
+  const { canSubmit, shouldShowStop } = getInputControlState({
+    disabled,
+    groups,
+    hasStopHandler: Boolean(onStop),
+    isGenerating,
+    isModelLoading,
+    models,
+    text,
+  })
 
   const renderSubmitButton = () =>
     shouldShowStop ? (
       <PromptInputButton
-        className='border-destructive/25 bg-destructive/10 text-destructive hover:bg-destructive/15 font-medium'
+        className='pg-composer-stop-btn border-destructive/25 bg-destructive/10 text-destructive hover:bg-destructive/15 font-medium'
         onClick={onStop}
         variant='secondary'
       >
-        <SquareIcon className='fill-current' size={16} />
+        <SquareIcon className='fill-current' size={13} />
         <span className='hidden sm:inline'>{t('Stop')}</span>
         <span className='sr-only sm:hidden'>{t('Stop')}</span>
       </PromptInputButton>
     ) : (
       <PromptInputButton
-        className='bg-primary text-primary-foreground hover:bg-primary/90 disabled:bg-muted disabled:text-muted-foreground h-8 px-3 font-medium shadow-sm'
-        disabled={!canSubmit}
+        className='pg-composer-send-btn'
+        aria-label={t('Send')}
+        disabled={!allowSubmit || !canSubmit}
         type='submit'
         variant='default'
       >
-        <SendIcon size={16} />
+        <SendIcon size={14} />
         <span className='hidden sm:inline'>{t('Send')}</span>
         <span className='sr-only sm:hidden'>{t('Send')}</span>
       </PromptInputButton>
     )
 
   return (
-    <div className='flex w-full flex-col gap-2.5 md:flex-row md:items-center md:justify-between'>
-      <div className='flex min-w-0 items-center justify-end md:hidden'>
-        {renderSelector()}
-      </div>
-
-      <div className='flex items-center justify-between gap-2 md:justify-start'>
+    <div className='pg-chat-composer-foot'>
+      <div className='pg-chat-composer-controls'>
+        {showModelSelector && models.length > 0 && (
+          <Combobox
+            className='pg-composer-combobox'
+            aria-label={t('Switch model')}
+            value={modelValue || null}
+            options={models}
+            placeholder={t('Select model')}
+            disabled={disabled || isModelLoading || !models.length}
+            onValueChange={(value) => {
+              if (value) onModelChange(value)
+            }}
+          />
+        )}
         {tools}
-        <div className='flex items-center gap-1.5 md:hidden'>
-          {renderSubmitButton()}
-        </div>
       </div>
-
-      <div className='hidden min-w-0 items-center gap-2 md:flex'>
-        {renderSelector()}
+      <div className='pg-chat-composer-right'>
+        {priceQuote}
         {renderSubmitButton()}
       </div>
     </div>

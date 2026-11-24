@@ -18,20 +18,22 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { Link } from '@tanstack/react-router'
 import { X, User, Wallet, LogOut, ShieldCheck } from 'lucide-react'
-import { AnimatePresence, motion, type Variants } from 'motion/react'
+import { useRef, type RefObject } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { SignOutDialog } from '@/components/sign-out-dialog'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
+import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
 import useDialogState from '@/hooks/use-dialog'
 import { useIsSidebarModuleVisible } from '@/hooks/use-sidebar-config'
 import { useUserDisplay } from '@/hooks/use-user-display'
 import type { AuthUser } from '@/stores/auth-store'
 
-import { MOBILE_DRAWER_ANIMATION, MOBILE_DRAWER_CONFIG } from '../constants'
 import type { TopNavLink } from '../types'
+import { CreationNavigation } from './creation-navigation'
+import { HeaderNavLink } from './header-nav-link'
 
 /**
  * Brand logo component with skeleton loading
@@ -170,14 +172,23 @@ interface MobileSignInButtonProps {
 function MobileSignInButton({ onNavigate }: MobileSignInButtonProps) {
   const { t } = useTranslation()
   return (
-    <Button
-      variant='secondary'
-      size='sm'
-      className='h-10 w-full'
-      render={<Link to='/sign-in' onClick={onNavigate} />}
-    >
-      {t('Sign in')}
-    </Button>
+    <div className='flex gap-2'>
+      <Button
+        variant='secondary'
+        size='sm'
+        className='h-10 w-full'
+        render={<Link to='/sign-in' onClick={onNavigate} />}
+      >
+        {t('Sign in')}
+      </Button>
+      <Button
+        size='sm'
+        className='h-10 w-full'
+        render={<Link to='/sign-up' onClick={onNavigate} />}
+      >
+        {t('Sign up')}
+      </Button>
+    </div>
   )
 }
 
@@ -193,8 +204,11 @@ export interface MobileDrawerProps {
   loading: boolean
   logoLoaded: boolean
   mobileLinksList: TopNavLink[]
+  creationActive?: boolean
   showAuthButtons: boolean
   user: AuthUser | null
+  returnFocusRef?: RefObject<HTMLButtonElement | null>
+  onOpenCommands?: () => void
 }
 
 /**
@@ -210,100 +224,111 @@ export function MobileDrawer({
   loading,
   logoLoaded,
   mobileLinksList,
+  creationActive,
   showAuthButtons,
   user,
+  returnFocusRef,
+  onOpenCommands,
 }: MobileDrawerProps) {
   const { t } = useTranslation()
+  const closeRef = useRef<HTMLButtonElement>(null)
   return (
-    <AnimatePresence>
-      {isOpen && (
-        <>
-          {/* Overlay */}
-          <motion.div
-            className={MOBILE_DRAWER_CONFIG.overlayClassName}
-            initial='hidden'
-            animate='visible'
-            exit='exit'
-            variants={MOBILE_DRAWER_ANIMATION.overlay as Variants}
-            transition={{
-              duration: MOBILE_DRAWER_CONFIG.overlayTransitionDuration,
-            }}
-            onClick={onClose}
-          />
+    <Sheet
+      open={isOpen}
+      onOpenChange={(open) => {
+        if (!open) onClose()
+      }}
+    >
+      <SheetContent
+        side='bottom'
+        showCloseButton={false}
+        className='max-h-[85dvh] overflow-y-auto rounded-t-xl p-4 pb-[max(1rem,env(safe-area-inset-bottom))]'
+        initialFocus={closeRef}
+        finalFocus={returnFocusRef}
+      >
+        <SheetTitle className='sr-only'>{t('Navigation')}</SheetTitle>
+        <div className='flex flex-col gap-4'>
+          {/* Header with logo and close button */}
+          <div className='flex items-center justify-between'>
+            <BrandLogo
+              homeUrl={homeUrl}
+              displayLogo={displayLogo}
+              displaySiteName={displaySiteName}
+              loading={loading}
+              logoLoaded={logoLoaded}
+              onClick={onClose}
+            />
+            <Button
+              variant='ghost'
+              size='icon-sm'
+              onClick={onClose}
+              className='hover:text-primary cursor-pointer'
+              aria-label={t('Close menu')}
+              ref={closeRef}
+            >
+              <X className='size-5' />
+            </Button>
+          </div>
 
-          {/* Drawer Content */}
-          <motion.div
-            className={MOBILE_DRAWER_CONFIG.drawerClassName}
-            initial='hidden'
-            animate='visible'
-            exit='exit'
-            variants={MOBILE_DRAWER_ANIMATION.drawer as Variants}
+          {/* Navigation links */}
+          <nav
+            aria-label={t('Navigation')}
+            className='border-border mb-4 flex flex-col rounded-md border text-sm'
           >
-            <div className='flex flex-col gap-4'>
-              {/* Header with logo and close button */}
-              <div className='flex items-center justify-between'>
-                <BrandLogo
-                  homeUrl={homeUrl}
-                  displayLogo={displayLogo}
-                  displaySiteName={displaySiteName}
-                  loading={loading}
-                  logoLoaded={logoLoaded}
-                  onClick={onClose}
-                />
-                <Button
-                  variant='ghost'
-                  size='icon-sm'
-                  onClick={onClose}
-                  className='hover:text-primary cursor-pointer'
-                  aria-label={t('Close menu')}
-                >
-                  <X className='size-5' />
-                </Button>
-              </div>
-
-              {/* Navigation links */}
-              <motion.div
-                className='border-border mb-4 flex flex-col rounded-md border text-sm'
-                variants={{ hidden: { opacity: 0 }, visible: { opacity: 1 } }}
-              >
-                {loading ? (
-                  <div className='flex flex-col gap-1 p-2'>
-                    {Array.from({ length: 4 }, (_, i) => (
-                      <Skeleton key={i} className='h-8 w-full' />
-                    ))}
-                  </div>
-                ) : (
-                  <AnimatePresence>
-                    {mobileLinksList.map((link) => (
-                      <motion.div
-                        key={link.href}
-                        className='border-border border-b p-2.5 last:border-b-0'
-                        variants={MOBILE_DRAWER_ANIMATION.menuItem as Variants}
-                      >
-                        <Link
-                          to={link.href}
-                          className='text-primary/60 hover:text-primary/80 transition-colors'
-                          onClick={onClose}
-                        >
-                          {link.title}
-                        </Link>
-                      </motion.div>
-                    ))}
-                  </AnimatePresence>
-                )}
-              </motion.div>
-
-              {/* User profile section */}
-              {showAuthButtons &&
-                (user ? (
-                  <MobileUserProfile user={user} onNavigate={onClose} />
-                ) : (
-                  <MobileSignInButton onNavigate={onClose} />
+            {loading && mobileLinksList.length === 0 ? (
+              <div className='flex flex-col gap-1 p-2'>
+                {Array.from({ length: 4 }, (_, i) => (
+                  <Skeleton key={i} className='h-8 w-full' />
                 ))}
-            </div>
-          </motion.div>
-        </>
-      )}
-    </AnimatePresence>
+              </div>
+            ) : (
+              mobileLinksList.map((link) => (
+                <div
+                  key={link.href}
+                  className='border-border border-b p-2.5 last:border-b-0'
+                >
+                  {link.href === '/create' ? (
+                    <CreationNavigation
+                      mobile
+                      link={link}
+                      active={creationActive}
+                      pricingLink={mobileLinksList.find(
+                        (item) => item.href === '/pricing'
+                      )}
+                      onNavigate={onClose}
+                    />
+                  ) : (
+                    <HeaderNavLink
+                      link={link}
+                      className='text-foreground block py-1'
+                      onNavigate={onClose}
+                    />
+                  )}
+                </div>
+              ))
+            )}
+          </nav>
+          {onOpenCommands && (
+            <Button
+              variant='outline'
+              onClick={() => {
+                onClose()
+                onOpenCommands()
+              }}
+            >
+              {t('Command palette')}
+            </Button>
+          )}
+
+          {/* User profile section */}
+          {showAuthButtons &&
+            (user ? (
+              <MobileUserProfile user={user} onNavigate={onClose} />
+            ) : (
+              <MobileSignInButton onNavigate={onClose} />
+            ))}
+        </div>
+      </SheetContent>
+    </Sheet>
   )
 }

@@ -16,19 +16,32 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Link, useSearch } from '@tanstack/react-router'
+import { Link, useNavigate, useSearch } from '@tanstack/react-router'
+import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { useStatus } from '@/hooks/use-status'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { AuthLayout } from '../auth-layout'
 import { TermsFooter } from '../components/terms-footer'
+import { sanitizeAuthRedirect } from '../lib/auth-redirect'
 import { UserAuthForm } from './components/user-auth-form'
 
 export function SignIn() {
   const { t } = useTranslation()
   const { redirect } = useSearch({ from: '/(auth)/sign-in' })
   const { status } = useStatus()
+  const navigate = useNavigate()
+  const userId = useAuthStore((state) => state.auth.user?.id)
+
+  // 后台会话复核完成后补一次跳转（进入页面时可能还没有内存会话）。
+  useEffect(() => {
+    if (!userId) return
+    const target =
+      sanitizeAuthRedirect(redirect, window.location.origin) ?? '/dashboard'
+    void navigate({ href: target, replace: true })
+  }, [navigate, redirect, userId])
 
   return (
     <AuthLayout>

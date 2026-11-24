@@ -317,10 +317,7 @@ export function AccountBindings({ profile, onUpdate }: AccountBindingsProps) {
 
   return (
     <>
-      <ul
-        aria-label={t('Account Bindings')}
-        className='grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3'
-      >
+      <ul aria-label={t('Account Bindings')} className='identity-bindings'>
         {bindings.map((binding) => {
           let actionLabel = t('Bind')
           if (binding.isBound && binding.id === 'email') {

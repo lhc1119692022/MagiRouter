@@ -119,7 +119,12 @@ const DOCS_FAMILY_RULES: Array<{
     vendor: 'DeepSeek',
     cap: 'text',
   },
-  { test: /^(kimi|moonshot)/i, name: 'Kimi 系列', vendor: 'Moonshot', cap: 'text' },
+  {
+    test: /^(kimi|moonshot)/i,
+    name: 'Kimi 系列',
+    vendor: 'Moonshot',
+    cap: 'text',
+  },
   { test: /^(qwen|qwq)/i, name: 'Qwen 系列', vendor: 'Alibaba', cap: 'text' },
   { test: /^grok/i, name: 'Grok 系列', vendor: 'xAI', cap: 'text' },
   { test: /^(glm|chatglm)/i, name: 'GLM 系列', vendor: 'Zhipu', cap: 'text' },
@@ -191,7 +196,9 @@ export function inferDocsModality(model: {
   ) {
     return 'audio'
   }
-  const endpoints = (model.supported_endpoint_types ?? []).join(' ').toLowerCase()
+  const endpoints = (model.supported_endpoint_types ?? [])
+    .join(' ')
+    .toLowerCase()
   if (endpoints.includes('image')) return 'image'
   if (endpoints.includes('video')) return 'video'
   if (endpoints.includes('audio') || endpoints.includes('speech')) {
@@ -213,7 +220,9 @@ export function buildDocsModelFamilies(
   const order: string[] = []
 
   for (const model of models) {
-    const rule = DOCS_FAMILY_RULES.find((entry) => entry.test.test(model.model_name))
+    const rule = DOCS_FAMILY_RULES.find((entry) =>
+      entry.test.test(model.model_name)
+    )
     const name = rule?.name ?? `${model.vendor_name || '其他'} 系列`
     const vendor = rule?.vendor ?? model.vendor_name ?? 'MagiRouter'
     const cap = rule?.cap ?? inferDocsModality(model)
@@ -294,10 +303,26 @@ export function buildStaticDocs(baseUrl: string): DocsArticle[] {
           table: {
             headers: ['入口 / 鉴权方式', '地址或请求头格式', '适用场景'],
             rows: [
-              ['主站直连', 'https://magirouter.com/v1', '默认主力入口，全协议兼容'],
-              ['国内优化', 'https://cn.magirouter.com/v1', '国内网络与桌面客户端低延迟直连'],
-              ['全球加速', 'https://cf.magirouter.com/v1', '海外服务器与云端 Agent 边缘接入'],
-              ['美国备用', 'https://us.magirouter.com/v1', '高并发容灾与美西节点直连'],
+              [
+                '主站直连',
+                'https://magirouter.com/v1',
+                '默认主力入口，全协议兼容',
+              ],
+              [
+                '国内优化',
+                'https://cn.magirouter.com/v1',
+                '国内网络与桌面客户端低延迟直连',
+              ],
+              [
+                '全球加速',
+                'https://cf.magirouter.com/v1',
+                '海外服务器与云端 Agent 边缘接入',
+              ],
+              [
+                '美国备用',
+                'https://us.magirouter.com/v1',
+                '高并发容灾与美西节点直连',
+              ],
               [
                 '鉴权请求头',
                 'Authorization: Bearer sk-... / x-api-key / x-goog-api-key',
@@ -354,10 +379,30 @@ export function buildStaticDocs(baseUrl: string): DocsArticle[] {
           table: {
             headers: ['模态分类', '典型端点', '主流计费方式', '返回形式'],
             rows: [
-              ['文本推理', '/v1/responses · /v1/chat/completions · /v1/messages', '按百万输入/输出 Token', '同步 JSON / SSE 流式'],
-              ['图像生成', '/v1/images/generations · /v1/images/edits', '按张或分辨率分档', '同步返回 URL / Base64'],
-              ['视频生成', '/v1/videos · 任务端点', '按次或按秒计费', '异步任务提交 + 状态轮询'],
-              ['语音音频', '/v1/audio/speech · /v1/audio/transcriptions', '按字符 / 分钟计费', '音频流或转写文本'],
+              [
+                '文本推理',
+                '/v1/responses · /v1/chat/completions · /v1/messages',
+                '按百万输入/输出 Token',
+                '同步 JSON / SSE 流式',
+              ],
+              [
+                '图像生成',
+                '/v1/images/generations · /v1/images/edits',
+                '按张或分辨率分档',
+                '同步返回 URL / Base64',
+              ],
+              [
+                '视频生成',
+                '/v1/videos · 任务端点',
+                '按次或按秒计费',
+                '异步任务提交 + 状态轮询',
+              ],
+              [
+                '语音音频',
+                '/v1/audio/speech · /v1/audio/transcriptions',
+                '按字符 / 分钟计费',
+                '音频流或转写文本',
+              ],
             ],
           },
         },
@@ -399,7 +444,11 @@ export function buildStaticDocs(baseUrl: string): DocsArticle[] {
             rows: [
               ['model', 'string', '目标模型名称，例如 gpt-5.6 或 o4-mini'],
               ['input', 'string | array', '用户输入文本或多模态消息数组'],
-              ['reasoning', 'object', '推理深度控制，如 { "effort": "medium" }'],
+              [
+                'reasoning',
+                'object',
+                '推理深度控制，如 { "effort": "medium" }',
+              ],
               ['stream', 'boolean', '是否开启 SSE 流式事件输出'],
             ],
           },
@@ -478,7 +527,10 @@ export function buildStaticDocs(baseUrl: string): DocsArticle[] {
       urlValue: `${root}/v1beta/models/gemini-2.5-pro:generateContent`,
       endpoints: [
         { method: 'POST', path: '/v1beta/models/{model}:generateContent' },
-        { method: 'POST', path: '/v1beta/models/{model}:streamGenerateContent' },
+        {
+          method: 'POST',
+          path: '/v1beta/models/{model}:streamGenerateContent',
+        },
       ],
       sections: [
         {
@@ -560,7 +612,11 @@ export function buildStaticDocs(baseUrl: string): DocsArticle[] {
               ['SUBMITTED', '已受理排队中', '等待 3–5 秒后开始轮询'],
               ['IN_PROGRESS', '模型正在渲染生成', '按退避间隔继续查询状态'],
               ['SUCCESS', '产物已就绪', '尽快下载并转存至自有对象存储'],
-              ['FAILURE', '上游执行异常', '查看错误原因，已预扣费用自动全额退还'],
+              [
+                'FAILURE',
+                '上游执行异常',
+                '查看错误原因，已预扣费用自动全额退还',
+              ],
             ],
           },
         },
@@ -929,10 +985,26 @@ export function buildStaticDocs(baseUrl: string): DocsArticle[] {
           table: {
             headers: ['状态码', '常见原因', '建议处理方式'],
             rows: [
-              ['401 Unauthorized', 'API 密钥无效、已禁用或缺失请求头', '检查 Authorization / x-api-key 是否正确'],
-              ['403 Forbidden', '当前密钥无权调用该模型或受 IP 白名单限制', '在「API 密钥」页检查分组与模型白名单'],
-              ['429 Too Many Requests', '触发并发限流或账户余额不足', '启用指数退避重试或在「钱包」页检查余额'],
-              ['502 / 503', '上游渠道临时抖动', '网关会自动切换健康渠道，失败调用免扣费'],
+              [
+                '401 Unauthorized',
+                'API 密钥无效、已禁用或缺失请求头',
+                '检查 Authorization / x-api-key 是否正确',
+              ],
+              [
+                '403 Forbidden',
+                '当前密钥无权调用该模型或受 IP 白名单限制',
+                '在「API 密钥」页检查分组与模型白名单',
+              ],
+              [
+                '429 Too Many Requests',
+                '触发并发限流或账户余额不足',
+                '启用指数退避重试或在「钱包」页检查余额',
+              ],
+              [
+                '502 / 503',
+                '上游渠道临时抖动',
+                '网关会自动切换健康渠道，失败调用免扣费',
+              ],
             ],
           },
         },
@@ -950,7 +1022,7 @@ export function buildStaticDocs(baseUrl: string): DocsArticle[] {
 }
 
 function getModelEndpointPath(
-  cap: DocsModalityKey,
+  cap: DocsModality,
   modelId: string,
   vendor: string
 ): string {
@@ -965,7 +1037,7 @@ function getModelEndpointPath(
 }
 
 function buildModelCurlSnippet(
-  cap: DocsModalityKey,
+  cap: DocsModality,
   v1: string,
   modelId: string
 ): string {
@@ -985,7 +1057,7 @@ function buildModelCurlSnippet(
 }
 
 function buildModelPythonSnippet(
-  cap: DocsModalityKey,
+  cap: DocsModality,
   v1: string,
   modelId: string
 ): string {
@@ -1001,7 +1073,7 @@ function buildModelPythonSnippet(
   return `import os\nfrom openai import OpenAI\n\nclient = OpenAI(base_url="${v1}", api_key=os.environ["MAGIROUTER_API_KEY"])\nres = client.chat.completions.create(\n    model="${modelId}",\n    messages=[{"role": "user", "content": "请简要分析这段架构设计的优缺点"}],\n)\nprint(res.choices[0].message.content)`
 }
 
-function buildModelJsonSnippet(cap: DocsModalityKey, modelId: string): string {
+function buildModelJsonSnippet(cap: DocsModality, modelId: string): string {
   if (cap === 'image') {
     return `{\n  "model": "${modelId}",\n  "prompt": "极简黑白摄影风格，柔光静物构图",\n  "size": "1024x1024"\n}`
   }
@@ -1070,7 +1142,11 @@ export function buildModelDocArticle(
           headers: ['项目', '规格值', '说明'],
           rows: [
             ['模型标识 (model)', modelId, 'API 请求中直接传入该模型 ID'],
-            ['所属系列与厂商', `${liveModel?.vendor_name || family.vendor} · ${family.name}`, DOCS_MODALITY_TITLES[cap]],
+            [
+              '所属系列与厂商',
+              `${liveModel?.vendor_name || family.vendor} · ${family.name}`,
+              DOCS_MODALITY_TITLES[cap],
+            ],
             ['推荐端点', endpointPath, '兼容对应官方 SDK 与 HTTP 直调'],
             ['可用路由分组', groupsText, '可在 API 密钥配置中切换分组'],
           ],
@@ -1090,7 +1166,8 @@ export function buildModelDocArticle(
       node: nodeSnippet,
       json: jsonSnippet,
     },
-    responseTitle: cap === 'video' ? 'Response · Async Accepted' : 'Response · 200 OK',
+    responseTitle:
+      cap === 'video' ? 'Response · Async Accepted' : 'Response · 200 OK',
     responseJson:
       cap === 'video'
         ? `{\n  "id": "video_01mr",\n  "model": "${modelId}",\n  "status": "queued"\n}`

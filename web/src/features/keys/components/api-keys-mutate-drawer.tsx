@@ -97,13 +97,17 @@ import { AutoGroupOrderEditor } from './auto-group-order-editor'
 
 type ApiKeyMutateDrawerProps = {
   open: boolean
-  onOpenChange: (open: boolean) => void
+  onOpenChange: (open: boolean, createdId?: number) => void
+  closeLabel?: string
+  singleCreate?: boolean
   currentRow?: ApiKey
 }
 
 export function ApiKeysMutateDrawer({
   open,
   onOpenChange,
+  closeLabel,
+  singleCreate,
   currentRow,
 }: ApiKeyMutateDrawerProps) {
   const { t } = useTranslation()
@@ -162,6 +166,8 @@ export function ApiKeysMutateDrawer({
   })
 
   const models = modelsData?.data || []
+  const requireExplicitGroup = groupsData?.require_explicit_group === true
+  const accountUserGroup = groupsData?.user_group || ''
   const groups = useMemo<ApiKeyGroupOption[]>(
     () =>
       Object.entries(groupsData?.data || {}).map(([key, info]) => ({
@@ -196,8 +202,8 @@ export function ApiKeysMutateDrawer({
       ? Number(autoGroupsData?.data?.max_count)
       : 5
   const schema = useMemo(
-    () => getApiKeyFormSchema(t, maxAutoGroups),
-    [t, maxAutoGroups]
+    () => getApiKeyFormSchema(t, maxAutoGroups, requireExplicitGroup),
+    [t, maxAutoGroups, requireExplicitGroup]
   )
 
   const form = useForm<ApiKeyFormValues>({
@@ -271,13 +277,17 @@ export function ApiKeysMutateDrawer({
 
   // Correct group after groups load: if the form value is not in available groups, fall back
   useEffect(() => {
-    if (groups.length === 0) return
+    if (!groupsFetched || groupsFetching) return
+    if (groups.length === 0 && !requireExplicitGroup) return
     const currentGroup = selectedGroup
     if (currentGroup && !groups.some((g) => g.value === currentGroup)) {
-      const fallback =
-        groups.find((g) => g.value === 'default')?.value ??
-        groups[0]?.value ??
-        ''
+      let fallback = ''
+      if (!requireExplicitGroup) {
+        fallback =
+          groups.find((g) => g.value === 'default')?.value ??
+          groups[0]?.value ??
+          ''
+      }
       form.setValue('group', fallback)
       if (currentGroup === 'auto') {
         form.setValue('auto_groups', [])
@@ -285,7 +295,14 @@ export function ApiKeysMutateDrawer({
         form.setValue('cross_group_retry', false)
       }
     }
-  }, [groups, form, selectedGroup])
+  }, [
+    groups,
+    groupsFetched,
+    groupsFetching,
+    form,
+    selectedGroup,
+    requireExplicitGroup,
+  ])
 
   const onSubmit = async (data: ApiKeyFormValues) => {
     setIsSubmitting(true)
@@ -306,8 +323,9 @@ export function ApiKeysMutateDrawer({
         }
       } else {
         // Create mode - handle batch creation
-        const count = data.tokenCount || 1
+        const count = singleCreate ? 1 : data.tokenCount || 1
         let successCount = 0
+        let createdId: number | undefined
 
         for (let i = 0; i < count; i++) {
           const result = await createApiKey({
@@ -319,6 +337,7 @@ export function ApiKeysMutateDrawer({
           })
           if (result.success) {
             successCount++
+            if (singleCreate) createdId = result.data?.id
           } else {
             handleServerError(result, t(ERROR_MESSAGES.CREATE_FAILED))
             break
@@ -331,7 +350,7 @@ export function ApiKeysMutateDrawer({
               count: successCount,
             })
           )
-          onOpenChange(false)
+          onOpenChange(false, createdId)
           triggerRefresh()
         }
       }
@@ -369,9 +388,18 @@ export function ApiKeysMutateDrawer({
     : t('Enter quota in {{currency}}', { currency: currencyLabel })
   const autoGroupsMode = form.watch('auto_groups_mode')
   const unlimitedQuota = form.watch('unlimited_quota')
+  const noBillingGroupsAvailable = requireExplicitGroup && groups.length === 0
+  const groupPlaceholder = requireExplicitGroup
+    ? t('Select a billing group (required)')
+    : t('Select a group')
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <Sheet
+      open={open}
+      onOpenChange={(next) => {
+        if (!isSubmitting) onOpenChange(next)
+      }}
+    >
       <SheetContent
         className={sideDrawerContentClassName('max-w-none sm:!max-w-[620px]')}
       >
@@ -419,7 +447,9 @@ export function ApiKeysMutateDrawer({
                 name='group'
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{t('Group')}</FormLabel>
+                    <FormLabel required={requireExplicitGroup}>
+                      {t('Group')}
+                    </FormLabel>
                     <FormControl>
                       <ApiKeyGroupCombobox
                         options={groups}
@@ -436,9 +466,27 @@ export function ApiKeysMutateDrawer({
                             shouldDirty: true,
                           })
                         }}
-                        placeholder={t('Select a group')}
+                        placeholder={groupPlaceholder}
                       />
                     </FormControl>
+                    {requireExplicitGroup && (
+                      <FormDescription
+                        className={
+                          noBillingGroupsAvailable
+                            ? 'text-destructive'
+                            : undefined
+                        }
+                      >
+                        {noBillingGroupsAvailable
+                          ? t(
+                              'No billing groups are available for your account yet. Contact an administrator to configure billing groups.'
+                            )
+                          : t(
+                              'Your account group ({{group}}) is for user management only. Select a billing group for this API key.',
+                              { group: accountUserGroup || 'default' }
+                            )}
+                      </FormDescription>
+                    )}
                     <FormMessage />
                   </FormItem>
                 )}
@@ -572,7 +620,7 @@ export function ApiKeysMutateDrawer({
                 )}
               />
 
-              {!isUpdate && (
+              {!isUpdate && !singleCreate && (
                 <FormField
                   control={form.control}
                   name='tokenCount'
@@ -780,9 +828,10 @@ export function ApiKeysMutateDrawer({
         </Form>
         <SheetFooter className={sideDrawerFooterClassName()}>
           <SheetClose
+            disabled={isSubmitting}
             render={<Button variant='outline' className='w-full sm:w-auto' />}
           >
-            {t('Close')}
+            {closeLabel ?? t('Close')}
           </SheetClose>
           <Button
             type='button'

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -21,6 +22,7 @@ import (
 
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/samber/lo"
@@ -50,6 +52,50 @@ func nearlyEqual(a, b float64) bool {
 		return a-b < floatEpsilon
 	}
 	return b-a < floatEpsilon
+}
+
+func pricingSourceClient(request *http.Request, source dto.UpstreamDTO, publicClient *http.Client) (*http.Client, error) {
+	openRouter := source.Endpoint == "openrouter"
+	if source.ID <= 0 {
+		if openRouter {
+			return nil, errors.New("OpenRouter requires a valid channel with API key")
+		}
+		return publicClient, nil
+	}
+	channel, err := model.GetChannelById(source.ID, openRouter)
+	if err != nil {
+		return nil, errors.New("Failed to load channel")
+	}
+	origin, err := url.Parse(channel.GetBaseURL())
+	if err != nil || origin.Host == "" || !sameTaskMediaOrigin(origin, request.URL) {
+		if openRouter {
+			return nil, errors.New("OpenRouter requires a valid channel with API key")
+		}
+		return publicClient, nil
+	}
+	settings := channel.GetSetting()
+	shared, err := service.GetHttpClientWithProxySettings(settings.Proxy, settings)
+	if err != nil {
+		return nil, errors.New("Invalid channel proxy")
+	}
+	if openRouter {
+		key, _, apiErr := channel.GetNextEnabledKey()
+		if apiErr != nil || strings.TrimSpace(key) == "" {
+			return nil, errors.New("no API key configured for this channel")
+		}
+		request.Header.Set("Authorization", "Bearer "+strings.TrimSpace(key))
+	}
+	client := *shared
+	client.CheckRedirect = func(next *http.Request, via []*http.Request) error {
+		if !sameTaskMediaOrigin(origin, next.URL) || len(via) >= 10 {
+			return http.ErrUseLastResponse
+		}
+		if shared.CheckRedirect != nil {
+			return shared.CheckRedirect(next, via)
+		}
+		return nil
+	}
+	return &client, nil
 }
 
 func valuesEqual(a, b any) bool {
@@ -269,7 +315,8 @@ func FetchUpstreamRatios(c *gin.Context) {
 	sem := make(chan struct{}, maxConcurrentFetches)
 
 	dialer := &net.Dialer{Timeout: 10 * time.Second}
-	transport := &http.Transport{MaxIdleConns: 100, IdleConnTimeout: 90 * time.Second, TLSHandshakeTimeout: 10 * time.Second, ExpectContinueTimeout: 1 * time.Second, ResponseHeaderTimeout: 10 * time.Second}
+	transport := &http.Transport{Proxy: http.ProxyFromEnvironment, MaxIdleConns: 100, IdleConnTimeout: 90 * time.Second, TLSHandshakeTimeout: 10 * time.Second, ExpectContinueTimeout: 1 * time.Second, ResponseHeaderTimeout: 10 * time.Second}
+	defer transport.CloseIdleConnections()
 	if common.TLSInsecureSkipVerify {
 		transport.TLSClientConfig = common.InsecureTLSConfig.Clone()
 	}
@@ -287,7 +334,7 @@ func FetchUpstreamRatios(c *gin.Context) {
 		}
 		return dialer.DialContext(ctx, network, addr)
 	}
-	client := &http.Client{Transport: transport}
+	publicClient := &http.Client{Transport: transport}
 
 	for _, chn := range upstreams {
 		wg.Add(1)
@@ -330,25 +377,9 @@ func FetchUpstreamRatios(c *gin.Context) {
 				return
 			}
 
-			// OpenRouter requires Bearer token auth
-			if isOpenRouter && chItem.ID != 0 {
-				dbCh, err := model.GetChannelById(chItem.ID, true)
-				if err != nil {
-					ch <- upstreamResult{Name: uniqueName, Err: "failed to get channel key: " + err.Error()}
-					return
-				}
-				key, _, apiErr := dbCh.GetNextEnabledKey()
-				if apiErr != nil {
-					ch <- upstreamResult{Name: uniqueName, Err: "failed to get enabled channel key: " + apiErr.Error()}
-					return
-				}
-				if strings.TrimSpace(key) == "" {
-					ch <- upstreamResult{Name: uniqueName, Err: "no API key configured for this channel"}
-					return
-				}
-				httpReq.Header.Set("Authorization", "Bearer "+strings.TrimSpace(key))
-			} else if isOpenRouter {
-				ch <- upstreamResult{Name: uniqueName, Err: "OpenRouter requires a valid channel with API key"}
+			client, err := pricingSourceClient(httpReq, chItem, publicClient)
+			if err != nil {
+				ch <- upstreamResult{Name: uniqueName, Err: err.Error()}
 				return
 			}
 

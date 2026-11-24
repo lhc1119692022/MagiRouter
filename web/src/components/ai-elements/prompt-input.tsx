@@ -177,20 +177,19 @@ export function PromptInputProvider({
   const openRef = useRef<() => void>(() => {})
 
   const add = useCallback((files: File[] | FileList) => {
-    const incoming = Array.from(files)
+    const incoming = [...files]
     if (incoming.length === 0) return
 
-    setAttachements((prev) =>
-      prev.concat(
-        incoming.map((file) => ({
-          id: nanoid(),
-          type: 'file' as const,
-          url: URL.createObjectURL(file),
-          mediaType: file.type,
-          filename: file.name,
-        }))
-      )
-    )
+    setAttachements((prev) => [
+      ...prev,
+      ...incoming.map((file) => ({
+        id: nanoid(),
+        type: 'file' as const,
+        url: URL.createObjectURL(file),
+        mediaType: file.type,
+        filename: file.name,
+      })),
+    ])
   }, [])
 
   const remove = useCallback((id: string) => {
@@ -430,6 +429,7 @@ export type PromptInputProps = Omit<
   'onSubmit' | 'onError'
 > & {
   accept?: string // e.g., "image/*" or leave undefined for any
+  attachmentsEnabled?: boolean
   multiple?: boolean
   // When true, accepts drops anywhere on document. Default false (opt-in).
   globalDrop?: boolean
@@ -439,7 +439,7 @@ export type PromptInputProps = Omit<
   maxFiles?: number
   maxFileSize?: number // bytes
   onError?: (err: {
-    code: 'max_files' | 'max_file_size' | 'accept'
+    code: 'max_files' | 'max_file_size' | 'accept' | 'read'
     message: string
   }) => void
   onSubmit: (
@@ -457,6 +457,7 @@ export const PromptInput = ({
   className,
   groupClassName,
   accept,
+  attachmentsEnabled = true,
   multiple,
   globalDrop,
   syncHiddenInput,
@@ -474,16 +475,7 @@ export const PromptInput = ({
 
   // Refs
   const inputRef = useRef<HTMLInputElement | null>(null)
-  const anchorRef = useRef<HTMLSpanElement>(null)
   const formRef = useRef<HTMLFormElement | null>(null)
-
-  // Find nearest form to scope drag & drop
-  useEffect(() => {
-    const root = anchorRef.current?.closest('form')
-    if (root instanceof HTMLFormElement) {
-      formRef.current = root
-    }
-  }, [])
 
   // ----- Local attachments (only used when no provider)
   const [items, setItems] = useState<(FileUIPart & { id: string })[]>([])
@@ -494,22 +486,31 @@ export const PromptInput = ({
   }, [])
 
   const matchesAccept = useCallback(
-    (f: File) => {
+    (file: File) => {
       if (!accept || accept.trim() === '') {
         return true
       }
-      if (accept.includes('image/*')) {
-        return f.type.startsWith('image/')
-      }
-      // NOTE: keep simple; expand as needed
-      return true
+      return accept
+        .toLowerCase()
+        .split(',')
+        .some((item) => {
+          const type = item.trim()
+          if (!type) return false
+          if (type.startsWith('.')) {
+            return file.name.toLowerCase().endsWith(type)
+          }
+          if (type.endsWith('/*')) {
+            return file.type.toLowerCase().startsWith(type.slice(0, -1))
+          }
+          return file.type.toLowerCase() === type
+        })
     },
     [accept]
   )
 
   const addLocal = useCallback(
     (fileList: File[] | FileList) => {
-      const incoming = Array.from(fileList)
+      const incoming = [...fileList]
       const accepted = incoming.filter((f) => matchesAccept(f))
       if (incoming.length && accepted.length === 0) {
         onError?.({
@@ -552,18 +553,19 @@ export const PromptInput = ({
             filename: file.name,
           })
         }
-        return prev.concat(next)
+        return [...prev, ...next]
       })
     },
     [matchesAccept, maxFiles, maxFileSize, onError, t]
   )
 
-  const add = useMemo(
-    () =>
-      controller
-        ? (files: File[] | FileList) => controller.attachments.add(files)
-        : addLocal,
-    [controller, addLocal]
+  const add = useCallback(
+    (incoming: File[] | FileList) => {
+      if (!attachmentsEnabled) return
+      if (controller) controller.attachments.add(incoming)
+      else addLocal(incoming)
+    },
+    [attachmentsEnabled, controller, addLocal]
   )
 
   const remove = useMemo(
@@ -669,20 +671,25 @@ export const PromptInput = ({
     }
   }, [add, globalDrop])
 
+  const localFiles = useRef(items)
+  useEffect(() => {
+    localFiles.current = items
+  }, [items])
   useEffect(
     () => () => {
       if (!usingProvider) {
-        for (const f of files) {
-          if (f.url) URL.revokeObjectURL(f.url)
+        for (const file of localFiles.current) {
+          if (file.url) URL.revokeObjectURL(file.url)
         }
       }
     },
-    [usingProvider, files]
+    [usingProvider]
   )
 
   const handleChange: ChangeEventHandler<HTMLInputElement> = (event) => {
     if (event.currentTarget.files) {
       add(event.currentTarget.files)
+      event.currentTarget.value = ''
     }
   }
 
@@ -691,8 +698,8 @@ export const PromptInput = ({
     const blob = await response.blob()
     return new Promise((resolve, reject) => {
       const reader = new FileReader()
-      reader.onloadend = () => resolve(reader.result as string)
-      reader.onerror = reject
+      reader.addEventListener('loadend', () => resolve(reader.result as string))
+      reader.addEventListener('error', () => reject(reader.error))
       reader.readAsDataURL(blob)
     })
   }
@@ -737,50 +744,59 @@ export const PromptInput = ({
         }
         return item
       })
-    ).then((convertedFiles: FileUIPart[]) => {
-      try {
-        const result = onSubmit({ text, files: convertedFiles }, event)
+    )
+      .then((convertedFiles: FileUIPart[]) => {
+        if (!form.isConnected) return
+        try {
+          const result = onSubmit({ text, files: convertedFiles }, event)
 
-        // Handle both sync and async onSubmit
-        if (result instanceof Promise) {
-          result
-            .then(() => {
-              clear()
-              if (usingProvider) {
-                controller.textInput.clear()
-              }
-            })
-            .catch(() => {
-              // Don't clear on error - user may want to retry
-            })
-        } else {
-          // Sync function completed without throwing, clear attachments
-          clear()
-          if (usingProvider) {
-            controller.textInput.clear()
+          // Handle both sync and async onSubmit
+          if (result instanceof Promise) {
+            result
+              .then(() => {
+                clear()
+                if (usingProvider) {
+                  controller.textInput.clear()
+                }
+              })
+              .catch(() => {
+                // Don't clear on error - user may want to retry
+              })
+          } else {
+            // Sync function completed without throwing, clear attachments
+            clear()
+            if (usingProvider) {
+              controller.textInput.clear()
+            }
           }
+        } catch {
+          // Don't clear on error - user may want to retry
         }
-      } catch (_error) {
-        // Don't clear on error - user may want to retry
-      }
-    })
+      })
+      .catch(() => {
+        if (form.isConnected) {
+          onError?.({ code: 'read', message: t('Failed to load image') })
+        }
+      })
   }
 
   // Render with or without local provider
   const inner = (
     <>
-      <span aria-hidden='true' className='hidden' ref={anchorRef} />
-      <input
-        accept={accept}
-        aria-label={t('Upload files')}
-        className='hidden'
-        multiple={multiple}
-        onChange={handleChange}
-        ref={inputRef}
-        title={t('Upload files')}
-        type='file'
-      />
+      {attachmentsEnabled && (
+        <input
+          accept={accept}
+          aria-label={t('Upload files')}
+          className='hidden'
+          multiple={multiple}
+          onChange={handleChange}
+          ref={inputRef}
+          title={t('Upload files')}
+          type='file'
+        />
+      )}
       <form
+        ref={formRef}
         className={cn('w-full', className)}
         onSubmit={handleSubmit}
         {...props}
@@ -842,9 +858,7 @@ export const PromptInputTextarea = ({
     ) {
       e.preventDefault()
       const lastAttachment =
-        attachments.files.length > 0
-          ? attachments.files[attachments.files.length - 1]
-          : undefined
+        attachments.files.length > 0 ? attachments.files.at(-1) : undefined
       if (lastAttachment) {
         attachments.remove(lastAttachment.id)
       }
@@ -889,7 +903,10 @@ export const PromptInputTextarea = ({
 
   return (
     <InputGroupTextarea
-      className={cn('field-sizing-content max-h-48 min-h-16 break-all', className)}
+      className={cn(
+        'field-sizing-content max-h-48 min-h-16 break-all',
+        className
+      )}
       name='message'
       onCompositionEnd={() => setIsComposing(false)}
       onCompositionStart={() => setIsComposing(true)}
@@ -1138,6 +1155,8 @@ export const PromptInputSpeechButton = ({
       speechRecognition.onresult = (event) => {
         let finalTranscript = ''
 
+        // SpeechRecognitionResultList is not iterable in the TS DOM lib.
+        // oxlint-disable-next-line unicorn/prefer-spread
         const results = Array.from(event.results)
 
         for (const result of results) {
@@ -1158,11 +1177,11 @@ export const PromptInputSpeechButton = ({
         }
       }
 
-      speechRecognition.onerror = (event) => {
+      speechRecognition.addEventListener('error', () => {
         // eslint-disable-next-line no-console
-        console.error('Speech recognition error:', event.error)
+        console.error('Speech recognition error')
         setIsListening(false)
-      }
+      })
 
       recognitionRef.current = speechRecognition
       // eslint-disable-next-line react-hooks/set-state-in-effect

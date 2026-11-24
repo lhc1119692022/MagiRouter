@@ -1,20 +1,26 @@
 import { Link, useNavigate } from '@tanstack/react-router'
+/* oxlint-disable react/no-array-index-key -- these lists render positional data
+   (demo transcript lines, tokenised fragments, static feature rows). The index
+   is the identity; no stable key exists to key on. */
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import type { PricingModel } from '@/features/pricing/types'
 import { copyToClipboard } from '@/lib/copy-to-clipboard'
 
+import type { CatalogQuote } from '../lib/catalog-quote'
+
 interface HeroProps {
   isAuthenticated: boolean
   baseUrl: string
-  sampleModel: string
   models: PricingModel[]
-  cheapestGroupLabel?: string
+  quote?: CatalogQuote
 }
 
 type CapabilityKey = 'text' | 'image' | 'video' | 'audio'
 
-const IMAGE_PATTERN = /image|flux|dall|midjourney|seedream|banana|ideogram|recraft/i
+const IMAGE_PATTERN =
+  /image|flux|dall|midjourney|seedream|banana|ideogram|recraft/i
 const VIDEO_PATTERN = /video|seedance|kling|veo|sora|minimax|runway|luma|vidu/i
 const AUDIO_PATTERN = /audio|tts|whisper|speech|transcrib|voice/i
 
@@ -24,7 +30,6 @@ function pickLiveChips(
   preferred: string[]
 ): string[] {
   const matched = models.filter(matcher)
-  if (matched.length === 0) return preferred
   const chosen: string[] = []
   for (const name of preferred) {
     const found = matched.find(
@@ -44,6 +49,7 @@ function pickLiveChips(
 }
 
 export function Hero(props: HeroProps) {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const [activeCapability, setActiveCapability] =
     useState<CapabilityKey>('text')
@@ -51,8 +57,6 @@ export function Hero(props: HeroProps) {
   const [audioPlaying, setAudioPlaying] = useState(false)
   const audioTimerRef = useRef<number | null>(null)
   const endpoint = `${props.baseUrl}/v1`
-
-  const modelNameSet = new Set(props.models.map((item) => item.model_name))
 
   const textChips = pickLiveChips(
     props.models,
@@ -64,7 +68,12 @@ export function Hero(props: HeroProps) {
         !AUDIO_PATTERN.test(combined)
       )
     },
-    ['gpt-6.2-sol', 'claude-opus-5.5', 'gemini-4-hydrogen', 'deepseek-v4.1-flash']
+    [
+      'gpt-6.2-sol',
+      'claude-opus-5.5',
+      'gemini-4-hydrogen',
+      'deepseek-v4.1-flash',
+    ]
   )
   const imageChips = pickLiveChips(
     props.models,
@@ -92,19 +101,9 @@ export function Hero(props: HeroProps) {
 
   const handleJumpModel = useCallback(
     (modelName: string) => {
-      if (modelNameSet.has(modelName)) {
-        void navigate({
-          to: '/pricing/$modelId',
-          params: { modelId: modelName },
-        })
-      } else {
-        void navigate({
-          to: '/pricing',
-          search: { search: modelName },
-        })
-      }
+      void navigate({ to: '/pricing/$modelId', params: { modelId: modelName } })
     },
-    [modelNameSet, navigate]
+    [navigate]
   )
 
   const handleToggleAudioDemo = useCallback(() => {
@@ -154,10 +153,10 @@ export function Hero(props: HeroProps) {
     }
   }, [])
 
-  const leadTextModel = textChips[0] || props.sampleModel || 'gpt-6.2-sol'
-  const leadImageModel = imageChips[0] || 'gpt-image-2.5'
-  const leadVideoModel = videoChips[0] || 'seedance-2.5'
-  const leadAudioModel = audioChips[audioChips.length - 1] || 'gpt-audio-1.5'
+  const leadTextModel = textChips[0] ?? 'YOUR_TEXT_MODEL'
+  const leadImageModel = imageChips[0] ?? 'YOUR_IMAGE_MODEL'
+  const leadVideoModel = videoChips[0] ?? 'YOUR_VIDEO_MODEL'
+  const leadAudioModel = audioChips.at(-1) ?? 'YOUR_AUDIO_MODEL'
 
   return (
     <section className='hero-section'>
@@ -169,7 +168,9 @@ export function Hero(props: HeroProps) {
             以极低折扣接通全球顶级模型
           </h1>
           <p className='el-body' style={{ maxWidth: 680 }}>
-            MagiRouter 帮你把图片、视频和语言模型放在同一把 Key 后面。只为交付的内容付费，请求失败不收费，让团队以极低成本快速把生产级 AI 能力接入自己的产品。
+            MagiRouter 帮你把图片、视频和语言模型放在同一把 Key
+            后面。只为交付的内容付费，请求失败不收费，让团队以极低成本快速把生产级
+            AI 能力接入自己的产品。
           </p>
           <div className='hero-cta-row'>
             <Link
@@ -360,7 +361,10 @@ export function Hero(props: HeroProps) {
                         LANGUAGE MODELS · OPENAI RESPONSES
                       </span>
                       <p className='showcase-desc'>
-                        优先通过 OpenAI Responses（/v1/responses）接入对话、深度推理、代码生成与智能体工具调用，并按优先级提供 Anthropic Messages、Gemini 与 OpenAI Chat Completions 协议接口。全系列不降智号池稳定输出。
+                        优先通过 OpenAI
+                        Responses（/v1/responses）接入对话、深度推理、代码生成与智能体工具调用，并按优先级提供
+                        Anthropic Messages、Gemini 与 OpenAI Chat Completions
+                        协议接口。具体支持范围见模型广场。
                       </p>
                       <div className='showcase-model-chips'>
                         {textChips.map((chipName) => (
@@ -389,7 +393,8 @@ export function Hero(props: HeroProps) {
                     <div className='showcase-paper'>
                       <div>
                         <div className='demo-prompt-card'>
-                          为新款陶瓷香薰花器撰写一段 60 字以内的商品介绍，突出手工釉面与极简桌面陈列感。
+                          为新款陶瓷香薰花器撰写一段 60
+                          字以内的商品介绍，突出手工釉面与极简桌面陈列感。
                         </div>
                         <div className='demo-reply-stream'>
                           <div
@@ -427,10 +432,13 @@ export function Hero(props: HeroProps) {
                         }}
                       >
                         <span>
-                          支持 Responses 工具调用 · Structured Outputs · Prompt Caching
+                          支持 Responses 工具调用 · Structured Outputs · Prompt
+                          Caching
                         </span>
                         <span className='tabular-nums'>
-                          {props.cheapestGroupLabel || 'GPT Pro ×0.25'}
+                          {props.quote?.modelName === leadTextModel
+                            ? `${props.quote.group} ×${props.quote.groupRatio}`
+                            : '—'}
                         </span>
                       </div>
                     </div>
@@ -439,7 +447,7 @@ export function Hero(props: HeroProps) {
                       <span style={{ color: 'var(--ink-muted)' }}>
                         &quot;model&quot;: &quot;{leadTextModel}&quot;
                       </span>
-                      <span className='endpoint-status'>✓ 200 OK</span>
+                      <span className='endpoint-status'>{t('Example')}</span>
                     </div>
                   </div>
                 </div>
@@ -453,7 +461,8 @@ export function Hero(props: HeroProps) {
                         IMAGE GENERATION &amp; EDITING
                       </span>
                       <p className='showcase-desc'>
-                        通过自然语言提示词与多参考图完成文生图与图像编辑。覆盖商品精修、角色一致性、精准海报文字排版与最高 4K 分辨率输出，按张或按用量透明计费。
+                        通过自然语言提示词与多参考图完成文生图与图像编辑。覆盖商品精修、角色一致性、精准海报文字排版与最高
+                        4K 分辨率输出，按张或按用量透明计费。
                       </p>
                       <div className='showcase-model-chips'>
                         {imageChips.map((chipName) => (
@@ -541,7 +550,11 @@ export function Hero(props: HeroProps) {
                               />
                             </radialGradient>
                           </defs>
-                          <rect width='560' height='220' fill='url(#mrSunGlow)' />
+                          <rect
+                            width='560'
+                            height='220'
+                            fill='url(#mrSunGlow)'
+                          />
                           <ellipse
                             cx='320'
                             cy='192'
@@ -633,7 +646,7 @@ export function Hero(props: HeroProps) {
                       <span style={{ color: 'var(--ink-muted)' }}>
                         &quot;model&quot;: &quot;{leadImageModel}&quot;
                       </span>
-                      <span className='endpoint-status'>✓ completed</span>
+                      <span className='endpoint-status'>{t('Example')}</span>
                     </div>
                   </div>
                 </div>
@@ -647,7 +660,8 @@ export function Hero(props: HeroProps) {
                         VIDEO &amp; NATIVE AUDIO TASKS
                       </span>
                       <p className='showcase-desc'>
-                        支持文生视频与首帧驱动生成，按模型原生能力输出分辨率与时长，支持原生音频的模型自动随片交付。提交后返回任务 ID，支持轮询或 Webhook 通知。
+                        支持文生视频与首帧驱动生成，按模型原生能力输出分辨率与时长，支持原生音频的模型自动随片交付。提交后返回任务
+                        ID，支持轮询或 Webhook 通知。
                       </p>
                       <div className='showcase-model-chips'>
                         {videoChips.map((chipName) => (
@@ -764,7 +778,7 @@ export function Hero(props: HeroProps) {
                       <span style={{ color: 'var(--ink-muted)' }}>
                         &quot;model&quot;: &quot;{leadVideoModel}&quot;
                       </span>
-                      <span className='endpoint-status'>✓ completed</span>
+                      <span className='endpoint-status'>{t('Example')}</span>
                     </div>
                   </div>
                 </div>
@@ -806,7 +820,8 @@ export function Hero(props: HeroProps) {
                   <div className='showcase-right'>
                     <div className='showcase-paper'>
                       <div className='demo-prompt-card'>
-                        “欢迎接入 MagiRouter 统一路由网关。只需一次配置，即可稳定调用全系列文本、视觉与语音模型。”
+                        “欢迎接入 MagiRouter
+                        统一路由网关。只需一次配置，即可稳定调用全系列文本、视觉与语音模型。”
                       </div>
                       <div
                         className={`demo-audio-player${audioPlaying ? ' is-playing' : ''}`}
@@ -855,7 +870,9 @@ export function Hero(props: HeroProps) {
                           type='button'
                           className='el-btn el-btn-sm el-btn-primary'
                           style={{ width: 36, height: 36, padding: 0 }}
-                          aria-label={audioPlaying ? '停止试听' : '试听音频演示'}
+                          aria-label={
+                            audioPlaying ? '停止试听' : '试听音频演示'
+                          }
                           onClick={handleToggleAudioDemo}
                         >
                           {audioPlaying ? '❚❚' : '▶'}
@@ -867,7 +884,7 @@ export function Hero(props: HeroProps) {
                       <span style={{ color: 'var(--ink-muted)' }}>
                         &quot;model&quot;: &quot;{leadAudioModel}&quot;
                       </span>
-                      <span className='endpoint-status'>✓ streaming</span>
+                      <span className='endpoint-status'>{t('Example')}</span>
                     </div>
                   </div>
                 </div>

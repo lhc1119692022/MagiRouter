@@ -30,6 +30,8 @@ For commercial licensing, please contact support@quantumnous.com
 @import './theme.css';
 @import './theme-presets.css';
 @import './magirouter.css';
+@import '../components/layout/components/public-header-responsive.css';
+@import '../components/data-table/core/table-empty.css';
 
 @layer base {
   :root {

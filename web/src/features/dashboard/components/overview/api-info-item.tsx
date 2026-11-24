@@ -16,126 +16,124 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Zap, ExternalLink, Gauge } from 'lucide-react'
+import { ChevronDown } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { CopyButton } from '@/components/copy-button'
-import { StatusBadge } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import {
-  getLatencyColorClass,
-  openExternalSpeedTest,
-} from '@/features/dashboard/lib/api-info'
+  Popover,
+  PopoverContent,
+  PopoverDescription,
+  PopoverTitle,
+  PopoverTrigger,
+} from '@/components/ui/popover'
+import { openExternalSpeedTest } from '@/features/dashboard/lib/api-info'
 import type { ApiInfoItem, PingStatus } from '@/features/dashboard/types'
+import { toIntlLocale } from '@/i18n/languages'
 import { getBgColorClass } from '@/lib/colors'
+import { formatNumber } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 interface ApiInfoItemProps {
   item: ApiInfoItem
-  status: PingStatus
+  status?: PingStatus
   onTest: (url: string) => void
 }
 
 export function ApiInfoItemComponent(props: ApiInfoItemProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
   const item = props.item
   const status = props.status
+  let pingLabel = t('Not tested')
+  if (status?.testing) pingLabel = t('Testing...')
+  else if (status?.error) pingLabel = t('Unavailable')
+  else if (typeof status?.latency === 'number') {
+    pingLabel = `${formatNumber(status.latency, locale)} ${t('ms')}`
+  }
 
   return (
-    <div className='group hover:bg-muted/40 flex items-center justify-between gap-2 px-3 py-2.5 transition-colors sm:gap-3 sm:px-5 sm:py-3'>
-      <div className='flex min-w-0 flex-1 items-center gap-2 sm:gap-3'>
-        <span
-          className={cn(
-            'inline-block size-2 shrink-0 rounded-full',
-            getBgColorClass(item.color)
-          )}
-        />
-
-        <div className='flex min-w-0 flex-1 flex-col gap-0.5'>
-          <div className='flex items-baseline gap-2'>
-            <span className='font-mono text-sm font-semibold'>
-              {item.route}
-            </span>
-            <span className='text-muted-foreground/60 hidden truncate text-xs md:inline'>
-              {item.description}
-            </span>
-          </div>
-          <span className='text-muted-foreground/40 truncate font-mono text-xs'>
-            {item.url}
+    <div className='dash-route-row' role='group' aria-label={item.route}>
+      <div className='dash-route-info'>
+        <a
+          className='dash-route-url block hover:underline'
+          href={item.url}
+          target='_blank'
+          rel='noopener noreferrer'
+          title={t('Open in New Tab')}
+        >
+          {item.url}
+        </a>
+        <div className='dash-route-note'>
+          <Popover>
+            <PopoverTrigger
+              render={
+                <Button
+                  variant='link'
+                  size='xs'
+                  className='dash-route-details'
+                />
+              }
+              aria-label={`${item.route}: ${t('Details')}`}
+            >
+              <span
+                aria-hidden='true'
+                className={cn(
+                  'size-1.5 shrink-0 rounded-full',
+                  getBgColorClass(item.color)
+                )}
+              />
+              <span className='truncate'>{item.route}</span>
+              <ChevronDown aria-hidden='true' />
+            </PopoverTrigger>
+            <PopoverContent
+              align='start'
+              className='max-w-[calc(100vw-2rem)] break-words'
+            >
+              <PopoverTitle>{item.route}</PopoverTitle>
+              {item.description && (
+                <PopoverDescription>{item.description}</PopoverDescription>
+              )}
+              <Button
+                variant='outline'
+                size='sm'
+                onClick={() => openExternalSpeedTest(item.url)}
+              >
+                {t('External Speed Test')}
+              </Button>
+            </PopoverContent>
+          </Popover>
+          <span
+            className='dash-ping-badge tabular-nums'
+            data-measured={typeof status?.latency === 'number'}
+            aria-live='polite'
+            title={t('Browser round trip; not model latency.')}
+          >
+            {pingLabel}
           </span>
         </div>
       </div>
-
-      <div className='flex shrink-0 items-center gap-2'>
-        <div className='flex items-center'>
-          {status.testing && (
-            <StatusBadge
-              label={t('Testing...')}
-              variant='warning'
-              className='animate-pulse'
-              copyable={false}
-            />
-          )}
-          {status.latency !== null && !status.testing && (
-            <StatusBadge
-              variant='success'
-              label={`${status.latency}${t('ms')}`}
-              className={cn(
-                'font-mono font-medium',
-                getLatencyColorClass(status.latency)
-              )}
-              copyable={false}
-            />
-          )}
-          {status.error && (
-            <StatusBadge label={t('N/A')} variant='neutral' copyable={false} />
-          )}
-        </div>
-
-        <div className='flex items-center gap-0.5'>
-          <Button
-            variant='ghost'
-            size='sm'
-            onClick={() => props.onTest(item.url)}
-            disabled={status.testing}
-            className='size-7 p-0'
-            title={t('Test Latency')}
-          >
-            <Zap
-              className={cn('size-3.5', status.testing && 'animate-pulse')}
-            />
-          </Button>
-
-          <Button
-            variant='ghost'
-            size='sm'
-            onClick={() => openExternalSpeedTest(item.url)}
-            className='hidden size-7 p-0 sm:inline-flex'
-            title={t('External Speed Test')}
-          >
-            <Gauge className='size-3.5' />
-          </Button>
-
-          <CopyButton
-            value={item.url}
-            variant='ghost'
-            size='sm'
-            className='size-7 p-0'
-            iconClassName='size-3.5'
-            tooltip={t('Copy URL')}
-            aria-label={t('Copy URL')}
-          />
-
-          <Button
-            variant='ghost'
-            size='sm'
-            className='hidden size-7 p-0 sm:inline-flex'
-            title={t('Open in New Tab')}
-            render={<a href={item.url} target='_blank' rel='noreferrer' />}
-          >
-            <ExternalLink className='size-3.5' />
-          </Button>
-        </div>
+      <div className='dash-route-actions'>
+        <Button
+          variant='ghost'
+          size='sm'
+          disabled={status?.testing}
+          className='el-btn el-btn-xs el-btn-ghost'
+          onClick={() => props.onTest(item.url)}
+        >
+          {t('Test latency')}
+        </Button>
+        <CopyButton
+          value={item.url}
+          aria-label={t('Copy')}
+          variant='outline'
+          size='sm'
+          className='el-btn el-btn-xs el-btn-white'
+          iconClassName='hidden'
+        >
+          {t('Copy')}
+        </CopyButton>
       </div>
     </div>
   )

@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -42,6 +42,7 @@ import { handleServerError } from '@/lib/handle-server-error'
 import { SettingsPageTitleStatusPortal } from '../components/settings-page-context'
 import { SettingsSection } from '../components/settings-section'
 import { useUpdateOption } from '../hooks/use-update-option'
+import { isObjectRecord } from '../utils/json-validators'
 import { positiveIntegerSchema } from '../utils/numeric-field'
 import { GroupRatioForm } from './group-ratio-form'
 import { ModelRatioForm } from './model-ratio-form'
@@ -146,6 +147,22 @@ const createGroupSchema = (t: Translate) =>
     MaxTokenAutoGroups: positiveIntegerSchema(t('Enter a positive integer')),
     DefaultUseAutoGroup: z.boolean(),
     GroupSpecialUsableGroup: createJsonStringField(t),
+    UserManagementGroups: createJsonStringField(t, {
+      predicate: (parsed) => {
+        if (!isObjectRecord(parsed)) return false
+        return Object.entries(parsed).every(([rawName, description]) => {
+          const trimmedName = rawName.trim()
+          return (
+            trimmedName !== '' &&
+            trimmedName !== 'auto' &&
+            trimmedName !== 'all' &&
+            typeof description === 'string'
+          )
+        })
+      },
+      predicateMessage:
+        'Expected a JSON object mapping non-reserved group names to description strings',
+    }),
   })
 
 type ModelFormValues = z.infer<ReturnType<typeof createModelSchema>>
@@ -173,6 +190,7 @@ export function RatioSettingsCard({
   visibleTabs = ['models', 'groups', 'tool-prices', 'upstream-sync'],
 }: RatioSettingsCardProps) {
   const { t } = useTranslation()
+  const queryClient = useQueryClient()
   const isMobile = useMediaQuery('(max-width: 639px)')
   const updateOption = useUpdateOption()
   const [confirmOpen, setConfirmOpen] = useState(false)
@@ -254,6 +272,9 @@ export function RatioSettingsCard({
     GroupSpecialUsableGroup: normalizeJsonString(
       groupDefaults.GroupSpecialUsableGroup
     ),
+    UserManagementGroups: normalizeJsonString(
+      groupDefaults.UserManagementGroups
+    ),
   })
   const modelSchema = useMemo(() => createModelSchema(t), [t])
   const groupSchema = useMemo(() => createGroupSchema(t), [t])
@@ -291,6 +312,9 @@ export function RatioSettingsCard({
       AutoGroups: formatJsonForTextarea(groupDefaults.AutoGroups),
       GroupSpecialUsableGroup: formatJsonForTextarea(
         groupDefaults.GroupSpecialUsableGroup
+      ),
+      UserManagementGroups: formatJsonForTextarea(
+        groupDefaults.UserManagementGroups
       ),
     },
   })
@@ -344,6 +368,9 @@ export function RatioSettingsCard({
       GroupSpecialUsableGroup: normalizeJsonString(
         groupDefaults.GroupSpecialUsableGroup
       ),
+      UserManagementGroups: normalizeJsonString(
+        groupDefaults.UserManagementGroups
+      ),
     }
 
     groupForm.reset({
@@ -355,6 +382,9 @@ export function RatioSettingsCard({
       AutoGroups: formatJsonForTextarea(groupDefaults.AutoGroups),
       GroupSpecialUsableGroup: formatJsonForTextarea(
         groupDefaults.GroupSpecialUsableGroup
+      ),
+      UserManagementGroups: formatJsonForTextarea(
+        groupDefaults.UserManagementGroups
       ),
     })
   }, [groupDefaults, groupForm])
@@ -422,12 +452,13 @@ export function RatioSettingsCard({
         GroupSpecialUsableGroup: normalizeJsonString(
           values.GroupSpecialUsableGroup
         ),
+        UserManagementGroups: normalizeJsonString(values.UserManagementGroups),
       }
 
-      // Map form field names to API keys (most are 1:1, except GroupSpecialUsableGroup)
       const apiKeyMap: Record<string, string> = {
         GroupSpecialUsableGroup:
           'group_ratio_setting.group_special_usable_group',
+        UserManagementGroups: 'group_ratio_setting.user_management_groups',
       }
 
       const updates = (
@@ -442,8 +473,15 @@ export function RatioSettingsCard({
       }
 
       groupNormalizedDefaults.current = normalized
+
+      if (updates.length > 0) {
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ['groups'] }),
+          queryClient.invalidateQueries({ queryKey: ['user-groups'] }),
+        ])
+      }
     },
-    [updateOption]
+    [queryClient, updateOption]
   )
 
   const handleResetRatios = useCallback(() => {

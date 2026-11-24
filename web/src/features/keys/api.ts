@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
+import { createServerError } from '@/lib/server-error-message'
 
 import type {
   ApiKey,
@@ -34,10 +35,14 @@ import type {
 
 // Get paginated API keys list
 export async function getApiKeys(
-  params: GetApiKeysParams = {}
+  params: GetApiKeysParams = {},
+  signal?: AbortSignal
 ): Promise<GetApiKeysResponse> {
   const { p = 1, size = 10 } = params
-  const res = await api.get(`/api/token/?p=${p}&size=${size}`)
+  const path = `/api/token/?p=${p}&size=${size}`
+  const res = signal
+    ? await api.get(path, { signal, disableDuplicate: true })
+    : await api.get(path)
   return res.data
 }
 
@@ -72,7 +77,7 @@ export async function getTokenAutoGroups(): Promise<
 // Create a new API key
 export async function createApiKey(
   data: ApiKeyFormData
-): Promise<ApiResponse<ApiKey>> {
+): Promise<ApiResponse<{ id: number }>> {
   const res = await api.post('/api/token/', data)
   return res.data
 }
@@ -114,6 +119,14 @@ export async function fetchTokenKey(
 ): Promise<{ success: boolean; message?: string; data?: { key: string } }> {
   const res = await api.post(`/api/token/${id}/key`)
   return res.data
+}
+
+export async function resolveApiKeyValue(id: number): Promise<string> {
+  const result = await fetchTokenKey(id)
+  if (!result.success || !result.data?.key) {
+    throw createServerError(result.message, 'Failed to load API keys')
+  }
+  return `sk-${result.data.key}`
 }
 
 // Batch fetch real (unmasked) keys for multiple tokens

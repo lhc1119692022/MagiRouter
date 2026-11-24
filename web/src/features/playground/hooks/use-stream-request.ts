@@ -19,9 +19,9 @@ For commercial licensing, please contact support@quantumnous.com
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { SSE } from 'sse.js'
 
-import { getFreshAuthHeaders } from '@/lib/api'
+import { resolveApiKeyValue } from '@/features/keys/api'
 
-import { API_ENDPOINTS, ERROR_MESSAGES } from '../constants'
+import { ERROR_MESSAGES } from '../constants'
 import {
   getStreamReadyStateError,
   isStreamClosedReadyState,
@@ -48,10 +48,11 @@ interface StreamRequestCallbacks {
 }
 
 interface StreamRequestControllerRuntime {
-  getHeaders: () => Promise<Record<string, string>>
+  getHeaders: (keyId?: number | null) => Promise<Record<string, string>>
   createSource: (
     payload: ChatCompletionRequest,
-    headers: Record<string, string>
+    headers: Record<string, string>,
+    keyId?: number | null
   ) => StreamEventSource
   setStreaming: (streaming: boolean) => void
 }
@@ -72,7 +73,8 @@ export function createStreamRequestController(
 
   const send = async (
     payload: ChatCompletionRequest,
-    callbacks: StreamRequestCallbacks
+    callbacks: StreamRequestCallbacks,
+    keyId?: number | null
   ) => {
     const requestGeneration = generation + 1
     generation = requestGeneration
@@ -83,7 +85,7 @@ export function createStreamRequestController(
 
     let headers: Record<string, string>
     try {
-      headers = await runtime.getHeaders()
+      headers = await runtime.getHeaders(keyId)
     } catch (error: unknown) {
       if (generation !== requestGeneration) return
       callbacks.onError(
@@ -95,7 +97,7 @@ export function createStreamRequestController(
     }
     if (generation !== requestGeneration) return
 
-    const nextSource = runtime.createSource(payload, headers)
+    const nextSource = runtime.createSource(payload, headers, keyId)
     source = nextSource
     runtime.setStreaming(true)
     let completed = false
@@ -136,8 +138,6 @@ export function createStreamRequestController(
     nextSource.addEventListener('error', (event) => {
       if (!isCurrent() || completed) return
       if (!isStreamClosedReadyState(nextSource.readyState)) {
-        // eslint-disable-next-line no-console
-        console.error('SSE Error:', event)
         const { errorCode, errorMessage } = parseStreamErrorDetails(event.data)
         handleError(errorMessage, errorCode)
       }
@@ -190,9 +190,17 @@ export function useStreamRequest() {
   > | null>(null)
   if (!controllerRef.current) {
     controllerRef.current = createStreamRequestController({
-      getHeaders: getFreshAuthHeaders,
+      getHeaders: async (keyId) => {
+        if (keyId == null || !Number.isSafeInteger(keyId) || keyId <= 0) {
+          throw new Error('Select an API key')
+        }
+        return {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${await resolveApiKeyValue(keyId)}`,
+        }
+      },
       createSource: (payload, headers) =>
-        new SSE(API_ENDPOINTS.CHAT_COMPLETIONS, {
+        new SSE('/v1/chat/completions', {
           headers,
           method: 'POST',
           payload: JSON.stringify(payload),
@@ -206,13 +214,18 @@ export function useStreamRequest() {
       payload: ChatCompletionRequest,
       onUpdate: (type: 'reasoning' | 'content', chunk: string) => void,
       onComplete: () => void,
-      onError: (error: string, errorCode?: string) => void
+      onError: (error: string, errorCode?: string) => void,
+      keyId?: number | null
     ) =>
-      controllerRef.current?.send(payload, {
-        onUpdate,
-        onComplete,
-        onError,
-      }),
+      controllerRef.current?.send(
+        payload,
+        {
+          onUpdate,
+          onComplete,
+          onError,
+        },
+        keyId
+      ),
     []
   )
 

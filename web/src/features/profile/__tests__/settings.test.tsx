@@ -16,6 +16,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+/* oxlint-disable react/no-array-index-key -- these lists render positional data
+   (demo transcript lines, tokenised fragments, static feature rows). The index
+   is the identity; no stable key exists to key on. */
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -60,6 +63,9 @@ afterEach(() => vi.restoreAllMocks())
 
 /** The body a PUT sends over the wire: undefined fields are left out. */
 function sentBody(put: { mock: { calls: unknown[][] } }): unknown {
+  // JSON round-trip on purpose: it drops undefined-valued keys, which is what
+  // the request body does, whereas structuredClone keeps them.
+  // oxlint-disable-next-line unicorn/prefer-structured-clone
   return JSON.parse(JSON.stringify(put.mock.calls[0][1]))
 }
 

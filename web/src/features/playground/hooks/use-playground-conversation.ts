@@ -31,7 +31,7 @@ type UsePlaygroundConversationOptions = {
   updateMessages: (
     updater: Message[] | ((prev: Message[]) => Message[])
   ) => void
-  sendChat: (messages: Message[]) => void
+  sendChat: (messages: Message[], imageUrls?: string[]) => void
 }
 
 export function usePlaygroundConversation({
@@ -44,10 +44,11 @@ export function usePlaygroundConversation({
   )
 
   const handleSendMessage = useCallback(
-    (text: string) => {
+    (text: string, imageUrls?: string[]) => {
       const nextMessages = appendUserMessagePair(messages, text)
       updateMessages(nextMessages)
-      sendChat(nextMessages)
+      if (imageUrls?.length) sendChat(nextMessages, imageUrls)
+      else sendChat(nextMessages)
     },
     [messages, updateMessages, sendChat]
   )

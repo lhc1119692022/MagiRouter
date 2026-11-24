@@ -1,3 +1,4 @@
+import { parseSiteModuleEnvelope } from '@/features/dashboard/lib/overview-publication'
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -17,6 +18,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
+import { requireServerSuccess } from '@/lib/server-error-message'
 
 import type {
   ConfirmPaymentComplianceResponse,
@@ -37,6 +39,14 @@ import type {
 export async function getSystemOptions() {
   const res = await api.get<SystemOptionsResponse>('/api/option/')
   return res.data
+}
+
+export async function getSiteModuleEnvelope() {
+  const response = requireServerSuccess(await getSystemOptions())
+  const raw = response.data.find(
+    (option) => option.key === 'SidebarModulesAdmin'
+  )?.value
+  return parseSiteModuleEnvelope(raw)
 }
 
 export async function updateSystemOption(request: UpdateOptionRequest) {

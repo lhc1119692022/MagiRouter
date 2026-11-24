@@ -43,7 +43,7 @@ type SidebarViewHeaderProps = {
  */
 export function SidebarViewHeader(props: SidebarViewHeaderProps) {
   const { t } = useTranslation()
-  const { isMobile, setOpenMobile } = useSidebar()
+  const { isMobile } = useSidebar()
 
   return (
     <SidebarHeader className='border-sidebar-border border-b px-2 py-2'>
@@ -59,7 +59,6 @@ export function SidebarViewHeader(props: SidebarViewHeaderProps) {
               <Link
                 to={props.view.parent.to}
                 preload={isMobile ? false : undefined}
-                onClick={() => setOpenMobile(false)}
               />
             }
           >

@@ -18,31 +18,33 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { z } from 'zod'
 
+import { CHAT_REASONING_EFFORTS } from '../../types'
+
 export const STORAGE_VERSION = 1
 export const MAX_STORED_MESSAGES = 100
 export const MAX_STORED_MESSAGES_BYTES = 1024 * 1024
 export const MAX_LOADED_MESSAGES_CHARS = 120_000
 export const MAX_LOADED_MESSAGE_CHARS = 40_000
 
+export const parameterEnabledSchema = z.object({
+  temperature: z.boolean(),
+  top_p: z.boolean(),
+  max_tokens: z.boolean(),
+  frequency_penalty: z.boolean(),
+  presence_penalty: z.boolean(),
+  seed: z.boolean(),
+})
+
 export const playgroundConfigSchema = z.object({
   model: z.string().optional(),
   group: z.string().optional(),
-  temperature: z.number().optional(),
-  top_p: z.number().optional(),
-  max_tokens: z.number().optional(),
-  frequency_penalty: z.number().optional(),
-  presence_penalty: z.number().optional(),
-  seed: z.number().nullable().optional(),
+  reasoning_effort: z
+    .union([z.literal(''), z.enum(CHAT_REASONING_EFFORTS)])
+    .optional(),
+  historyTurns: z
+    .union([z.literal(0), z.literal(1), z.literal(4), z.literal(12)])
+    .optional(),
   stream: z.boolean().optional(),
-})
-
-export const parameterEnabledSchema = z.object({
-  temperature: z.boolean().optional(),
-  top_p: z.boolean().optional(),
-  max_tokens: z.boolean().optional(),
-  frequency_penalty: z.boolean().optional(),
-  presence_penalty: z.boolean().optional(),
-  seed: z.boolean().optional(),
 })
 
 const messageRoleSchema = z.enum(['user', 'assistant', 'system'])

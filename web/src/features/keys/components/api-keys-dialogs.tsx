@@ -16,19 +16,67 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { getRouteApi } from '@tanstack/react-router'
+import { useTranslation } from 'react-i18next'
+
+import { playgroundCreatedKeySchema } from '@/features/playground/lib/workspace-search'
+import { useAuthStore } from '@/stores/auth-store'
+
 import { ApiKeysDeleteDialog } from './api-keys-delete-dialog'
 import { ApiKeysMutateDrawer } from './api-keys-mutate-drawer'
 import { useApiKeys } from './api-keys-provider'
 import { CCSwitchDialog } from './dialogs/cc-switch-dialog'
 
+const route = getRouteApi('/_authenticated/keys/')
+
 export function ApiKeysDialogs() {
+  const { t } = useTranslation()
   const { open, setOpen, currentRow, resolvedKey } = useApiKeys()
+  const { action, playground } = route.useSearch()
+  const createRequested = action === 'create'
+  const navigate = route.useNavigate()
+  const owner = useAuthStore((state) => state.auth.user?.id)
 
   return (
     <>
       <ApiKeysMutateDrawer
-        open={open === 'create' || open === 'update'}
-        onOpenChange={(isOpen) => !isOpen && setOpen(null)}
+        open={createRequested || open === 'create' || open === 'update'}
+        singleCreate={createRequested && !!playground}
+        closeLabel={
+          createRequested && playground ? t('Back to Playground') : undefined
+        }
+        onOpenChange={(isOpen, createdId) => {
+          if (isOpen) return
+          setOpen(null)
+          if (createRequested && playground) {
+            const created = playgroundCreatedKeySchema.safeParse({
+              id: createdId,
+              owner,
+            })
+            const accepted =
+              created.success &&
+              created.data.owner === useAuthStore.getState().auth.user?.id
+            void navigate({
+              to: '/playground',
+              search: playground,
+              replace: true,
+              state: (current) => {
+                const next = { ...current }
+                delete next.playgroundCreatedKey
+                if (accepted) next.playgroundCreatedKey = created.data
+                return next
+              },
+            })
+            return
+          }
+          if (createRequested) {
+            void navigate({
+              search: (search) => ({ ...search, action: undefined }),
+              replace: true,
+              resetScroll: false,
+            })
+          }
+        }}
         currentRow={open === 'update' ? currentRow || undefined : undefined}
       />
       <ApiKeysDeleteDialog />

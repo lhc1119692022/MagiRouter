@@ -59,6 +59,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { isPublishableApiUrl } from '@/features/dashboard/lib/api-info'
 import { getBgColorClass } from '@/lib/colors'
 import { handleServerError } from '@/lib/handle-server-error'
 
@@ -81,7 +82,16 @@ type ApiInfoSectionProps = {
 
 const createApiInfoSchema = (t: (key: string) => string) =>
   z.object({
-    url: z.string().url(t('Must be a valid URL')),
+    url: z
+      .string()
+      .trim()
+      .url(t('Must be a valid URL'))
+      .refine(
+        isPublishableApiUrl,
+        t(
+          'Use a public HTTP(S) base URL without credentials, query or fragment.'
+        )
+      ),
     route: z.string().min(1, t('Route is required')),
     description: z.string().min(1, t('Description is required')),
     color: z.string().min(1, t('Color is required')),
@@ -266,6 +276,11 @@ export function ApiInfoSection({ enabled, data }: ApiInfoSectionProps) {
   return (
     <SettingsSection title={t('API Addresses')}>
       <div className='space-y-4'>
+        <p className='text-muted-foreground text-sm'>
+          {t(
+            'Published routes appear in the dashboard, quickstart and API keys. List only client-facing addresses, never private upstreams.'
+          )}
+        </p>
         <div className='flex flex-wrap items-center justify-between gap-2'>
           <div className='flex flex-wrap items-center gap-2'>
             <Button onClick={handleAdd} size='sm'>
@@ -293,6 +308,8 @@ export function ApiInfoSection({ enabled, data }: ApiInfoSectionProps) {
             </Button>
           </div>
           <SettingsSwitchField
+            controlId='public-api-routes-enabled'
+            disabled={updateOption.isPending}
             checked={isEnabled}
             onCheckedChange={handleToggleEnabled}
             label={t('Enabled')}
@@ -428,6 +445,11 @@ export function ApiInfoSection({ enabled, data }: ApiInfoSectionProps) {
                       {...field}
                     />
                   </FormControl>
+                  <FormDescription>
+                    {t(
+                      'Use a public HTTP(S) base URL without credentials, query or fragment.'
+                    )}
+                  </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}

@@ -241,6 +241,11 @@ export function UptimeKumaSection({ enabled, data }: UptimeKumaSectionProps) {
   return (
     <SettingsSection title={t('Uptime Kuma')}>
       <div className='space-y-4'>
+        <p className='text-muted-foreground text-sm'>
+          {t(
+            'Each category becomes a dashboard group and a channel status filter. Only monitor names and measurements are published, not the source URL or slug.'
+          )}
+        </p>
         <div className='flex flex-wrap items-center justify-between gap-2'>
           <div className='flex flex-wrap items-center gap-2'>
             <Button onClick={handleAdd} size='sm'>
@@ -268,6 +273,8 @@ export function UptimeKumaSection({ enabled, data }: UptimeKumaSectionProps) {
             </Button>
           </div>
           <SettingsSwitchField
+            controlId='public-group-monitoring-enabled'
+            disabled={updateOption.isPending}
             checked={isEnabled}
             onCheckedChange={handleToggleEnabled}
             label={t('Enabled')}

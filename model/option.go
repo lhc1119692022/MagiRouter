@@ -153,6 +153,12 @@ func InitOptionMap() {
 	common.OptionMap["ModelRequestRateLimitDurationMinutes"] = strconv.Itoa(setting.ModelRequestRateLimitDurationMinutes)
 	common.OptionMap["ModelRequestRateLimitSuccessCount"] = strconv.Itoa(setting.ModelRequestRateLimitSuccessCount)
 	common.OptionMap["ModelRequestRateLimitGroup"] = setting.ModelRequestRateLimitGroup2JSONString()
+	common.OptionMap["UserConcurrencyLimitEnabled"] = strconv.FormatBool(setting.IsUserConcurrencyLimitEnabled())
+	common.OptionMap["UserConcurrencyLimitDefault"] = strconv.Itoa(setting.GetUserConcurrencyLimitDefault())
+	common.OptionMap["UserConcurrencyLimitGroup"] = setting.UserConcurrencyLimitGroup2JSONString()
+	common.OptionMap["UserConcurrencyLimitWaitTimeoutSeconds"] = strconv.Itoa(setting.GetUserConcurrencyLimitWaitTimeoutSeconds())
+	common.OptionMap["UserConcurrencyLimitMaxWaitExtra"] = strconv.Itoa(setting.GetUserConcurrencyLimitMaxWaitExtra())
+	common.OptionMap["UserConcurrencyLimitSlotTTLSeconds"] = strconv.Itoa(setting.GetUserConcurrencyLimitSlotTTLSeconds())
 	common.OptionMap["ModelRatio"] = ratio_setting.ModelRatio2JSONString()
 	common.OptionMap["ModelPrice"] = ratio_setting.ModelPrice2JSONString()
 	common.OptionMap["CacheRatio"] = ratio_setting.CacheRatio2JSONString()
@@ -198,6 +204,8 @@ func InitOptionMap() {
 // LoadOptionsFromDatabase applies every stored option. A failed read keeps
 // the options in memory as they are.
 func LoadOptionsFromDatabase() error {
+	creationPresetsMutex.Lock()
+	defer creationPresetsMutex.Unlock()
 	requestPolicyOptionMutex.Lock()
 	defer requestPolicyOptionMutex.Unlock()
 	passkeyOptionMutex.Lock()
@@ -485,6 +493,8 @@ func updateOptionMap(key string, value string) (err error) {
 			operation_setting.SelfUseModeEnabled = boolValue
 		case "ModelRequestRateLimitEnabled":
 			setting.ModelRequestRateLimitEnabled = boolValue
+		case "UserConcurrencyLimitEnabled":
+			setting.SetUserConcurrencyLimitEnabled(boolValue)
 		case "SMTPSSLEnabled":
 			common.SMTPSSLEnabled = boolValue
 		case "SMTPStartTLSEnabled":
@@ -660,6 +670,32 @@ func updateOptionMap(key string, value string) (err error) {
 		setting.ModelRequestRateLimitSuccessCount, _ = strconv.Atoi(value)
 	case "ModelRequestRateLimitGroup":
 		err = setting.UpdateModelRequestRateLimitGroupByJSONString(value)
+	case "UserConcurrencyLimitDefault":
+		parsed, parseErr := strconv.Atoi(value)
+		if parseErr != nil {
+			return parseErr
+		}
+		setting.SetUserConcurrencyLimitDefault(parsed)
+	case "UserConcurrencyLimitGroup":
+		err = setting.UpdateUserConcurrencyLimitGroupByJSONString(value)
+	case "UserConcurrencyLimitWaitTimeoutSeconds":
+		parsed, parseErr := strconv.Atoi(value)
+		if parseErr != nil {
+			return parseErr
+		}
+		setting.SetUserConcurrencyLimitWaitTimeoutSeconds(parsed)
+	case "UserConcurrencyLimitMaxWaitExtra":
+		parsed, parseErr := strconv.Atoi(value)
+		if parseErr != nil {
+			return parseErr
+		}
+		setting.SetUserConcurrencyLimitMaxWaitExtra(parsed)
+	case "UserConcurrencyLimitSlotTTLSeconds":
+		parsed, parseErr := strconv.Atoi(value)
+		if parseErr != nil {
+			return parseErr
+		}
+		setting.SetUserConcurrencyLimitSlotTTLSeconds(parsed)
 	case "RetryTimes":
 		common.RetryTimes, _ = strconv.Atoi(value)
 	case "DataExportInterval":
@@ -746,6 +782,8 @@ func handleConfigUpdate(key, value string) bool {
 		performance_setting.UpdateAndSync()
 	} else if configName == "billing_setting" {
 		InvalidatePricingCache()
+		ratio_setting.InvalidateExposedDataCache()
+	} else if configName == "group_ratio_setting" {
 		ratio_setting.InvalidateExposedDataCache()
 	}
 

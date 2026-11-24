@@ -31,6 +31,15 @@ export interface ApiResponse<T = unknown> {
   data?: T
 }
 
+export type UserConcurrencySource = 'disabled' | 'user' | 'group' | 'default'
+
+export interface UserConcurrencySummary {
+  enabled: boolean
+  user_override: number
+  effective_limit: number
+  source: UserConcurrencySource
+}
+
 /**
  * User profile data
  */
@@ -55,6 +64,10 @@ export interface UserProfile {
   used_quota: number
   /** Total request count */
   request_count: number
+  /** User-specific max concurrency override (0 = follow group/global settings) */
+  max_concurrency?: number
+  /** Resolved concurrency limit summary */
+  concurrency_limit?: UserConcurrencySummary
   /** Account status (1=启用, 2=禁用, 3=待审核, 4=已删除) */
   status: number
   /** Access token (system token) */

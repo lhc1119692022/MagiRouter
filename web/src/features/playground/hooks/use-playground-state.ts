@@ -18,13 +18,13 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { DEFAULT_CONFIG, DEFAULT_PARAMETER_ENABLED } from '../constants'
+import type { CreationPreset } from '@/features/creation/presets'
+
+import { DEFAULT_CONFIG, DEFAULT_NUMERIC_PARAMETERS } from '../constants'
 import {
   saveConfig,
-  saveParameterEnabled,
   saveMessages,
   applyMessageStateUpdate,
-  getInitialParameterEnabled,
   getInitialPlaygroundConfig,
   loadMessages,
   type MessageStateUpdater,
@@ -42,15 +42,21 @@ const MESSAGE_SAVE_DEBOUNCE_MS = 500
 /**
  * Main state management hook for playground
  */
-export function usePlaygroundState() {
+export function usePlaygroundState(
+  preset?: CreationPreset,
+  initialGroup?: string
+) {
   // Load initial state from localStorage
-  const [config, setConfig] = useState<PlaygroundConfig>(
-    getInitialPlaygroundConfig
+  const [config, setConfig] = useState<PlaygroundConfig>(() =>
+    getInitialPlaygroundConfig(preset, initialGroup)
   )
-
-  const [parameterEnabled, setParameterEnabled] = useState<ParameterEnabled>(
-    getInitialParameterEnabled
-  )
+  const presetMode = preset?.mode
+  const { model, group, stream, historyTurns, reasoning_effort } = config
+  useEffect(() => {
+    if (presetMode !== 'chat') {
+      saveConfig({ model, group, stream, historyTurns, reasoning_effort })
+    }
+  }, [model, group, stream, historyTurns, reasoning_effort, presetMode])
 
   const [messages, setMessages] = useState<Message[]>([])
   const [isLoadingMessages, setIsLoadingMessages] = useState(true)
@@ -112,9 +118,18 @@ export function usePlaygroundState() {
   const updateConfig = useCallback(
     <K extends keyof PlaygroundConfig>(key: K, value: PlaygroundConfig[K]) => {
       setConfig((prev) => {
-        const updated = { ...prev, [key]: value }
-        saveConfig(updated)
-        return updated
+        if (prev[key] === value) return prev
+        if (key === 'model' || key === 'group') {
+          return {
+            ...DEFAULT_CONFIG,
+            model: prev.model,
+            group: prev.group,
+            stream: prev.stream,
+            historyTurns: prev.historyTurns,
+            [key]: value,
+          }
+        }
+        return { ...prev, [key]: value }
       })
     },
     []
@@ -123,11 +138,10 @@ export function usePlaygroundState() {
   // Update parameter enabled with automatic save
   const updateParameterEnabled = useCallback(
     (key: keyof ParameterEnabled, value: boolean) => {
-      setParameterEnabled((prev) => {
-        const updated = { ...prev, [key]: value }
-        saveParameterEnabled(updated)
-        return updated
-      })
+      setConfig((prev) => ({
+        ...prev,
+        parameterEnabled: { ...prev.parameterEnabled, [key]: value },
+      }))
     },
     []
   )
@@ -147,20 +161,32 @@ export function usePlaygroundState() {
   // Clear all messages
   const clearMessages = useCallback(() => {
     updateMessages([])
+    setConfig((previous) => ({
+      ...previous,
+      ...DEFAULT_NUMERIC_PARAMETERS,
+      web_search: false,
+    }))
   }, [updateMessages])
 
   // Reset config to defaults
   const resetConfig = useCallback(() => {
     setConfig(DEFAULT_CONFIG)
-    setParameterEnabled(DEFAULT_PARAMETER_ENABLED)
-    saveConfig(DEFAULT_CONFIG)
-    saveParameterEnabled(DEFAULT_PARAMETER_ENABLED)
+  }, [])
+
+  const resetParameterOverrides = useCallback(() => {
+    setConfig((previous) => ({
+      ...DEFAULT_CONFIG,
+      model: previous.model,
+      group: previous.group,
+      stream: previous.stream,
+      historyTurns: previous.historyTurns,
+    }))
   }, [])
 
   return {
     // State
     config,
-    parameterEnabled,
+    parameterEnabled: config.parameterEnabled,
     messages,
     isLoadingMessages,
     models,
@@ -176,5 +202,6 @@ export function usePlaygroundState() {
     updateMessages,
     clearMessages,
     resetConfig,
+    resetParameterOverrides,
   }
 }

@@ -71,6 +71,10 @@ export function usePricingData(enabled = true) {
     usableGroup: data?.usable_group ?? {},
     endpointMap: data?.supported_endpoint ?? {},
     autoGroups: data?.auto_groups ?? [],
+    catalogReady:
+      Array.isArray(data?.data) &&
+      Array.isArray(data.vendors) &&
+      data.usable_group != null,
     isLoading,
     error,
     refetch,

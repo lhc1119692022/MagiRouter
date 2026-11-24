@@ -34,7 +34,12 @@ export function SearchProvider({ children }: SearchProviderProps) {
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
-      if (e.key === 'k' && (e.metaKey || e.ctrlKey)) {
+      if (
+        !e.defaultPrevented &&
+        e.shiftKey &&
+        (e.metaKey || e.ctrlKey) &&
+        e.key.toLowerCase() === 'k'
+      ) {
         e.preventDefault()
         setOpen((open) => !open)
       }

@@ -36,6 +36,7 @@ type ApiKeyGroupCellProps = {
   group: string
   ratio?: GroupRatio
   shouldReduceMotion: boolean
+  requireExplicitGroup?: boolean
 }
 
 export function ApiKeyGroupCell(props: ApiKeyGroupCellProps) {
@@ -43,6 +44,39 @@ export function ApiKeyGroupCell(props: ApiKeyGroupCellProps) {
   const isMobile = useMediaQuery('(max-width: 640px)')
 
   const group = props.group?.trim() || ''
+  if (!group && props.requireExplicitGroup) {
+    return (
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <BadgeCell
+              data-api-key-group-cell='billing-group-required'
+              tabIndex={0}
+              className={cn(
+                'ml-0 overflow-visible text-xs',
+                isMobile ? 'w-full justify-between' : 'max-w-50'
+              )}
+            />
+          }
+        >
+          <StatusBadge
+            label={t('Billing group required')}
+            variant='warning'
+            copyable={false}
+            className='px-0'
+          />
+        </TooltipTrigger>
+        <TooltipContent>
+          <span className='text-xs'>
+            {t(
+              'Your account group is for user management only. Edit this key and select a billing group.'
+            )}
+          </span>
+        </TooltipContent>
+      </Tooltip>
+    )
+  }
+
   if (group !== 'auto') {
     const ratio =
       group && typeof props.ratio === 'number' ? props.ratio : undefined

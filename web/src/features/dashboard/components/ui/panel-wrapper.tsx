@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Skeleton } from '@/components/ui/skeleton'
@@ -40,25 +40,17 @@ function PanelHeader(props: {
   description?: ReactNode
   actions?: ReactNode
 }) {
-  const heading = (
-    <div className='flex flex-col gap-1'>
-      <div className='text-sm font-semibold'>{props.title}</div>
-      {props.description != null && (
-        <div className='text-muted-foreground text-xs'>{props.description}</div>
-      )}
-    </div>
-  )
-
   return (
-    <div className='border-b px-4 py-3 sm:px-5'>
+    <div className='dash-panel-head px-4 pt-4 sm:px-5 sm:pt-5'>
+      <div className='flex min-w-0 flex-col gap-1'>
+        <h3 className='dash-panel-title'>{props.title}</h3>
+        {props.description != null && (
+          <p className='text-muted-foreground text-xs'>{props.description}</p>
+        )}
+      </div>
       {props.actions != null ? (
-        <div className='flex items-start justify-between gap-2'>
-          {heading}
-          {props.actions}
-        </div>
-      ) : (
-        heading
-      )}
+        <div className='flex shrink-0 items-center gap-2'>{props.actions}</div>
+      ) : null}
     </div>
   )
 }
@@ -67,16 +59,15 @@ export function PanelWrapper(props: PanelWrapperProps) {
   const { t } = useTranslation()
   const resolvedEmptyMessage = props.emptyMessage ?? t('No data available')
   const height = props.height ?? 'h-64'
-  const frameClassName = cn(
-    'overflow-hidden rounded-2xl border bg-card shadow-xs',
-    props.className
-  )
+  const frameClassName = cn('dash-surface overflow-hidden', props.className)
 
   if (props.loading) {
     return (
       <div className={frameClassName}>
         <PanelHeader title={props.title} description={props.description} />
-        <div className={cn('p-4 sm:p-5', props.contentClassName)}>
+        <div
+          className={cn('px-4 pb-4 sm:px-5 sm:pb-5', props.contentClassName)}
+        >
           <Skeleton className={`w-full ${height}`} />
         </div>
       </div>
@@ -107,7 +98,7 @@ export function PanelWrapper(props: PanelWrapperProps) {
         description={props.description}
         actions={props.headerActions}
       />
-      <div className={cn('p-4 sm:p-5', props.contentClassName)}>
+      <div className={cn('px-4 pb-4 sm:px-5 sm:pb-5', props.contentClassName)}>
         {props.children}
       </div>
     </div>

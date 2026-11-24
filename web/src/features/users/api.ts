@@ -30,7 +30,9 @@ import type {
   SearchUsersParams,
   UserFormData,
   ManageUserAction,
+  ManageUserConcurrencyPayload,
   ManageUserQuotaPayload,
+  UserConcurrencySummary,
   ApiResponse,
 } from './types'
 
@@ -172,6 +174,21 @@ export async function adjustUserQuota(
   return res.data
 }
 
+/**
+ * Adjust user concurrency limit atomically without changing user group or quota
+ */
+export async function adjustUserConcurrency(
+  payload: ManageUserConcurrencyPayload
+): Promise<
+  ApiResponse<{
+    id: number
+    max_concurrency: number
+    concurrency_limit?: UserConcurrencySummary
+  }>
+> {
+  const res = await api.post('/api/user/manage', payload)
+  return res.data
+}
 /**
  * Reset user's Passkey registration; requires an `admin.user.passkey.reset` proof
  */

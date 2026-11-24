@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/pkg/jsplugin"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/setting/billing_setting"
+	"github.com/QuantumNous/new-api/setting/console_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
 )
@@ -27,6 +28,8 @@ type PricingPluginVariant struct {
 }
 
 type Pricing struct {
+	OfficialPrice          *console_setting.OfficialModelPrice  `json:"official_price,omitempty"`
+	PriceUnconfigured      bool                                 `json:"price_unconfigured,omitempty"`
 	BillingPluginVariants  []PricingPluginVariant               `json:"billing_plugin_variants,omitempty"`
 	ModelName              string                               `json:"model_name"`
 	Description            string                               `json:"description,omitempty"`
@@ -380,35 +383,43 @@ func updatePricing() {
 			pricing.Tags = meta.Tags
 			pricing.VendorID = meta.VendorID
 		}
-		modelPrice, findPrice := ratio_setting.GetModelPrice(model, false)
+		priceName := model
+		if ordinaryChannelModels[model] {
+			if matched := billing_setting.ResolveOrdinaryBillingModel(model); matched != "" {
+				priceName = matched
+			}
+		}
+		modelPrice, findPrice := ratio_setting.GetModelPrice(priceName, false)
 		if findPrice {
 			pricing.ModelPrice = modelPrice
 			pricing.QuotaType = 1
 		} else {
-			modelRatio, _, _ := ratio_setting.GetModelRatio(model)
+			modelRatio, found, _ := ratio_setting.GetModelRatio(priceName)
 			pricing.ModelRatio = modelRatio
-			pricing.CompletionRatio = ratio_setting.GetCompletionRatio(model)
+			pricing.CompletionRatio = ratio_setting.GetCompletionRatio(priceName)
+			pricing.PriceUnconfigured = !found
 			pricing.QuotaType = 0
 		}
-		if cacheRatio, ok := ratio_setting.GetCacheRatio(model); ok {
+		if cacheRatio, ok := ratio_setting.GetCacheRatio(priceName); ok {
 			pricing.CacheRatio = &cacheRatio
 		}
-		if createCacheRatio, ok := ratio_setting.GetCreateCacheRatio(model); ok {
+		if createCacheRatio, ok := ratio_setting.GetCreateCacheRatio(priceName); ok {
 			pricing.CreateCacheRatio = &createCacheRatio
 		}
-		if imageRatio, ok := ratio_setting.GetImageRatio(model); ok {
+		if imageRatio, ok := ratio_setting.GetImageRatio(priceName); ok {
 			pricing.ImageRatio = &imageRatio
 		}
-		if ratio_setting.ContainsAudioRatio(model) {
-			audioRatio := ratio_setting.GetAudioRatio(model)
+		if ratio_setting.ContainsAudioRatio(priceName) {
+			audioRatio := ratio_setting.GetAudioRatio(priceName)
 			pricing.AudioRatio = &audioRatio
 		}
-		if ratio_setting.ContainsAudioCompletionRatio(model) {
-			audioCompletionRatio := ratio_setting.GetAudioCompletionRatio(model)
+		if ratio_setting.ContainsAudioCompletionRatio(priceName) {
+			audioCompletionRatio := ratio_setting.GetAudioCompletionRatio(priceName)
 			pricing.AudioCompletionRatio = &audioCompletionRatio
 		}
-		if billingMode := billing_setting.GetBillingMode(model); billingMode == "tiered_expr" {
-			if expr, ok := billing_setting.GetBillingExpr(model); ok && strings.TrimSpace(expr) != "" {
+		billingMode := billing_setting.GetBillingMode(priceName)
+		if billingMode == billing_setting.BillingModeTieredExpr {
+			if expr, ok := billing_setting.GetBillingExpr(priceName); ok && strings.TrimSpace(expr) != "" {
 				pricing.BillingMode = billingMode
 				pricing.BillingExpr = expr
 			}
@@ -434,6 +445,10 @@ func updatePricing() {
 			pricing.BillingUsageExamples = jsplugin.CloneUsageExamples(usageExamples)
 		}
 		providers := pluginGeneration.PluginsByModel(model)
+		if pricing.PriceUnconfigured {
+			_, defaultPerCall := ratio_setting.GetDefaultModelPriceMap()[model]
+			pricing.PriceUnconfigured = ordinaryChannelModels[model] && !ok && len(providers) == 0 && !defaultPerCall && billingMode == billing_setting.BillingModeRatio && pricing.BillingMode == ""
+		}
 		hasProviderOverride, relayed := false, false
 		for _, provider := range providers {
 			if _, configured := billing_setting.GetPluginBillingExpr(provider.Meta.Key, model); configured {

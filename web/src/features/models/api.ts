@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
+import { createServerError } from '@/lib/server-error-message'
 
 import type {
   GetModelsParams,
@@ -60,6 +61,60 @@ export async function searchModels(
 ): Promise<GetModelsResponse> {
   const res = await api.get('/api/models/search', { params })
   return res.data
+}
+
+export async function getChannelModelMetadata(
+  name: string
+): Promise<Model | null> {
+  for (const exactLookup of [true, false]) {
+    const inherited: Model[] = []
+    let seen = 0
+    for (let page = 1; ; page++) {
+      const params = { p: page, page_size: 100 }
+      const response = exactLookup
+        ? await searchModels({ ...params, keyword: name })
+        : await getModels(params)
+      if (!response.success || !Array.isArray(response.data?.items)) {
+        throw createServerError(response, 'Failed to load model')
+      }
+      const { items, total } = response.data
+      if (
+        !Number.isSafeInteger(total) ||
+        total < 0 ||
+        (!items.length && seen < total)
+      ) {
+        throw createServerError(response, 'Failed to load model')
+      }
+      for (const record of items) {
+        if (record.model_name === name) {
+          if (record.name_rule === 0 && record.id > 0) return record
+          throw new Error(
+            'This name is already used by a matching rule. Edit that rule in Model management.'
+          )
+        }
+        if (
+          !exactLookup &&
+          ((record.name_rule === 1 && name.startsWith(record.model_name)) ||
+            (record.name_rule === 2 && name.includes(record.model_name)) ||
+            (record.name_rule === 3 && name.endsWith(record.model_name)))
+        ) {
+          inherited.push(record)
+        }
+      }
+      seen += items.length
+      if (seen >= total || !items.length) break
+    }
+    for (const rule of [1, 3, 2]) {
+      const matches = inherited.filter((record) => record.name_rule === rule)
+      if (matches.length > 1) {
+        throw new Error(
+          'Multiple metadata rules match this model. Review its metadata in Model management first.'
+        )
+      }
+      if (matches.length === 1) return matches[0]
+    }
+  }
+  return null
 }
 
 /**

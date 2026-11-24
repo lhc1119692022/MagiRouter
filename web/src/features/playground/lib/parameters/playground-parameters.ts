@@ -16,9 +16,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import type { PlaygroundConfig, ParameterEnabled } from '../../types'
+import type { SupportedParameter } from '@/features/pricing/lib/mock-stats'
 
-type ParameterValue = PlaygroundConfig[keyof PlaygroundConfig]
+import {
+  CHAT_REASONING_EFFORTS,
+  type ChatControls,
+  type PlaygroundConfig,
+  type ParameterEnabled,
+} from '../../types'
 
 export type PlaygroundParameterKey = keyof ParameterEnabled
 
@@ -38,8 +43,8 @@ export const PLAYGROUND_PARAMETER_CONTROLS = [
     labelKey: 'Temperature',
     descriptionKey: 'Controls randomness and creativity',
     valueType: 'slider',
-    min: 0.1,
-    max: 1,
+    min: 0,
+    max: 2,
     step: 0.1,
   },
   {
@@ -47,7 +52,7 @@ export const PLAYGROUND_PARAMETER_CONTROLS = [
     labelKey: 'Top P',
     descriptionKey: 'Limits token selection to a probability mass',
     valueType: 'slider',
-    min: 0.1,
+    min: 0,
     max: 1,
     step: 0.1,
   },
@@ -74,7 +79,7 @@ export const PLAYGROUND_PARAMETER_CONTROLS = [
     labelKey: 'Max Tokens',
     descriptionKey: 'Caps the response length',
     valueType: 'number',
-    min: 0,
+    min: 1,
     max: 200000,
     step: 1,
   },
@@ -89,41 +94,78 @@ export const PLAYGROUND_PARAMETER_CONTROLS = [
   },
 ] as const satisfies readonly PlaygroundParameterControl[]
 
-export const PLAYGROUND_PARAMETER_PANEL_SCROLL_CLASS =
-  'max-h-[min(28rem,calc(100vh-10rem))] overflow-y-auto pr-1'
-
-export function normalizeParameterNumberValue(
-  key: PlaygroundParameterKey,
-  value: string | number
-): number | null {
-  if (value === '') {
-    return key === 'seed' ? null : 0
+export function resolveChatControls(
+  config: PlaygroundConfig,
+  controls?: ChatControls
+) {
+  const efforts = CHAT_REASONING_EFFORTS.filter((value) =>
+    controls?.efforts?.includes(value)
+  )
+  const reasoning =
+    config.reasoning_effort && efforts.includes(config.reasoning_effort)
+      ? config.reasoning_effort
+      : ''
+  const defaultEffort =
+    controls?.default_effort && efforts.includes(controls.default_effort)
+      ? controls.default_effort
+      : undefined
+  const webSearchSupported = controls?.web_search === true
+  const webSearchEnabled = webSearchSupported && config.web_search === true
+  const sampling =
+    controls?.sampling === 'always' ||
+    (controls?.sampling === 'none_only' &&
+      (reasoning || defaultEffort) === 'none')
+  const supported = PLAYGROUND_PARAMETER_CONTROLS.filter(({ key }) => {
+    if (key === 'temperature' || key === 'top_p') return sampling
+    return controls?.fields?.includes(key) === true
+  })
+  const parameterInfo: SupportedParameter[] = supported.map((control) => ({
+    name: control.key,
+    type: control.step === 1 ? 'integer' : 'number',
+    descriptionKey: control.descriptionKey,
+    range: `${control.min} – ${control.max}`,
+  }))
+  if (efforts.length) {
+    parameterInfo.push({
+      name: 'reasoning_effort',
+      type: 'enum',
+      descriptionKey: 'Reasoning Effort',
+      enumValues: efforts,
+      range: efforts.join(' · '),
+      defaultValue: defaultEffort,
+    })
   }
-
-  const control = PLAYGROUND_PARAMETER_CONTROLS.find((item) => item.key === key)
-  const parsed = typeof value === 'number' ? value : Number.parseFloat(value)
-
-  if (!control || Number.isNaN(parsed)) {
-    return key === 'seed' ? null : 0
+  if (webSearchSupported) {
+    parameterInfo.push({
+      name: 'web_search_options',
+      type: 'object',
+      descriptionKey: 'Web search',
+    })
   }
-
-  const clamped = Math.min(control.max, Math.max(control.min, parsed))
-
-  if (control.step >= 1) {
-    return Math.trunc(clamped)
+  return {
+    parameterInfo,
+    efforts,
+    defaultEffort,
+    webSearchSupported,
+    fields: PLAYGROUND_PARAMETER_CONTROLS,
+    config: {
+      ...config,
+      historyTurns: 0 as const,
+      reasoning_effort: reasoning,
+      web_search: webSearchEnabled,
+    } satisfies PlaygroundConfig,
   }
-
-  const precision = Math.max(0, String(control.step).split('.')[1]?.length ?? 0)
-  return Number(clamped.toFixed(precision))
 }
 
-export function getParameterControlValueText(
-  key: PlaygroundParameterKey,
-  value: ParameterValue
-): string {
-  if (key === 'seed' && value === null) {
-    return 'Not set'
-  }
-
-  return String(value)
+export function isValidPlaygroundParameterValue(
+  control: PlaygroundParameterControl,
+  value: number | null
+): value is number {
+  return (
+    value !== null &&
+    Number.isFinite(value) &&
+    value >= control.min &&
+    value <= control.max &&
+    (control.step !== 1 || Number.isInteger(value))
+  )
 }

@@ -3,9 +3,8 @@
 Stamps a build with the commit it was produced from and the upstream commit
 it was last merged with, then builds the web bundle and optionally the image.
 
-The stamp is written into the tracked VERSION file only for the duration of
-the build, because the Go binary embeds it via `-X common.Version=...`.
-The working tree is restored afterwards, so the repository stays clean.
+Only allowlisted build sources are staged. The working tree and local runtime
+configuration are never copied as a unit. Web assets go to release-artifacts.
 
 Version format:
     v1.0.0-rc.51+sha.<our commit>.up.<upstream commit>
@@ -67,6 +66,8 @@ if (-not $ReleasePart) {
 }
 
 $version = "$ReleasePart+sha.$commit.up.$base"
+if ($version -notmatch '^[a-zA-Z0-9][a-zA-Z0-9._+-]{0,127}$') { throw 'Invalid release version.' }
+$imageTag = $version.Replace('+', '-')
 
 Write-Host ''
 Write-Host '  branch        : ' -NoNewline; Write-Host $branch
@@ -83,20 +84,48 @@ if ($behind -gt 0) {
     Write-Host ''
 }
 
-$versionFile = Join-Path $root 'VERSION'
-$originalVersion = if (Test-Path $versionFile) { Get-Content $versionFile -Raw } else { '' }
+$stage = Join-Path $root ('.release-work-' + [Guid]::NewGuid().ToString('N'))
+$releaseOutput = Join-Path (Join-Path $root 'release-artifacts') $version
+$bundleTool = Join-Path $PSScriptRoot 'release_bundle.py'
 
 try {
-    [System.IO.File]::WriteAllText($versionFile, $version, [System.Text.Encoding]::ASCII)
+    if (-not $SkipWebBuild -and (Test-Path -LiteralPath $releaseOutput)) { throw 'Release output already exists. Preserve or move it before rebuilding.' }
+    & python -B $bundleTool stage $stage
+    if ($LASTEXITCODE -ne 0) { throw 'Release source manifest rejected.' }
+    [System.IO.File]::WriteAllText((Join-Path $stage 'VERSION'), $version, [System.Text.Encoding]::ASCII)
 
     if (-not $SkipWebBuild) {
         Write-Host 'Building web bundle...' -ForegroundColor Cyan
-        Push-Location (Join-Path $root 'web')
+        $buildEnvDefaults = [ordered]@{
+            RAYON_NUM_THREADS    = '4'
+            TOKIO_WORKER_THREADS = '4'
+            UV_THREADPOOL_SIZE   = '4'
+            NODE_OPTIONS         = '--max-old-space-size=3072'
+        }
+        $previousBuildEnv = @{}
+        foreach ($key in $buildEnvDefaults.Keys) {
+            $previousBuildEnv[$key] = [Environment]::GetEnvironmentVariable($key, 'Process')
+            if ([string]::IsNullOrWhiteSpace($previousBuildEnv[$key])) {
+                [Environment]::SetEnvironmentVariable($key, $buildEnvDefaults[$key], 'Process')
+            }
+        }
+        $publicEnv = @(Get-ChildItem Env: | Where-Object { $_.Name -match '^(VITE_|PUBLIC_)' })
+        foreach ($item in $publicEnv) { [Environment]::SetEnvironmentVariable($item.Name, $null, 'Process') }
+        $env:VITE_REACT_APP_VERSION = $version
+        $junction = Join-Path $stage 'web\node_modules'
+        Push-Location (Join-Path $stage 'web')
         try {
-            & node .\node_modules\@rsbuild\core\bin\rsbuild.js build
+            New-Item -ItemType Junction -Path $junction -Target (Join-Path $root 'web\node_modules') -ErrorAction Stop | Out-Null
+            & node .\node_modules\@rsbuild\core\bin\rsbuild.js build --no-env
             if ($LASTEXITCODE -ne 0) { throw 'Web build failed' }
         } finally {
             Pop-Location
+            if ([IO.Directory]::Exists($junction)) { [IO.Directory]::Delete($junction) }
+            [Environment]::SetEnvironmentVariable('VITE_REACT_APP_VERSION', $null, 'Process')
+            foreach ($item in $publicEnv) { [Environment]::SetEnvironmentVariable($item.Name, $item.Value, 'Process') }
+            foreach ($key in $buildEnvDefaults.Keys) {
+                [Environment]::SetEnvironmentVariable($key, $previousBuildEnv[$key], 'Process')
+            }
         }
 
         $manifest = [ordered]@{
@@ -108,21 +137,27 @@ try {
             branch       = $branch
             builtAt      = (Get-Date).ToUniversalTime().ToString('o')
         } | ConvertTo-Json
-        $distDir = Join-Path $root 'web\dist'
-        if (Test-Path $distDir) {
-            [System.IO.File]::WriteAllText((Join-Path $distDir 'version.json'), $manifest, (New-Object System.Text.UTF8Encoding($false)))
-            Write-Host "Wrote web/dist/version.json" -ForegroundColor DarkGray
-        }
+        $distDir = Join-Path $stage 'web\dist'
+        [System.IO.File]::WriteAllText((Join-Path $distDir 'version.json'), $manifest, (New-Object System.Text.UTF8Encoding($false)))
+        New-Item -ItemType Directory -Path (Split-Path -Parent $releaseOutput) -Force | Out-Null
+        [IO.Directory]::Move($distDir, $releaseOutput)
+        Write-Host "Web release output: $releaseOutput" -ForegroundColor DarkGray
     }
 
     if ($Image) {
-        Write-Host "Building image ${Image}:$version ..." -ForegroundColor Cyan
-        & docker build -t "${Image}:$version" -t "${Image}:latest" $root
+        Write-Host "Building image ${Image}:$imageTag ..." -ForegroundColor Cyan
+        & docker build `
+            --build-arg BUILD_CONCURRENCY=4 `
+            --build-arg GO_BUILD_PARALLEL=4 `
+            --build-arg GO_BUILD_MEMLIMIT=2GiB `
+            -t "${Image}:$imageTag" `
+            -t "${Image}:latest" `
+            $stage
         if ($LASTEXITCODE -ne 0) { throw 'docker build failed' }
 
         if ($PushImage) {
-            Write-Host "Pushing ${Image}:$version ..." -ForegroundColor Cyan
-            & docker push "${Image}:$version"
+            Write-Host "Pushing ${Image}:$imageTag ..." -ForegroundColor Cyan
+            & docker push "${Image}:$imageTag"
             if ($LASTEXITCODE -ne 0) { throw 'docker push failed' }
             & docker push "${Image}:latest"
             if ($LASTEXITCODE -ne 0) { throw 'docker push failed' }
@@ -130,7 +165,12 @@ try {
     }
 }
 finally {
-    [System.IO.File]::WriteAllText($versionFile, $originalVersion, [System.Text.Encoding]::ASCII)
+    if (Test-Path -LiteralPath $stage) {
+        $resolvedStage = (Resolve-Path -LiteralPath $stage).Path
+        if ((Split-Path -Parent $resolvedStage) -ne $root -or (Split-Path -Leaf $resolvedStage) -notmatch '^\.release-work-[a-f0-9]{32}$') { throw 'Unexpected staging path' }
+        if (Test-Path -LiteralPath (Join-Path $resolvedStage 'web\node_modules')) { throw 'Cannot clean staging while dependency junction exists' }
+        Remove-Item -LiteralPath $resolvedStage -Recurse -Force
+    }
 }
 
 Write-Host ''

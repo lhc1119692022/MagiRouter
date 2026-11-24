@@ -368,6 +368,20 @@ export function getCurrencyDisplay() {
   return { config, meta }
 }
 
+export function formatQuotedAmount(
+  amount: number,
+  currencyCode: 'USD' | 'CNY',
+  options?: CurrencyFormatOptions
+): string {
+  if (!Number.isFinite(amount) || amount < 0) return '—'
+  return formatCurrencyValue(amount, mergeOptions(options), {
+    kind: 'currency',
+    currencyCode,
+    symbol: currencyCode === 'CNY' ? '¥' : '$',
+    exchangeRate: 1,
+  })
+}
+
 /**
  * Format a USD amount according to the admin-configured display settings.
  *

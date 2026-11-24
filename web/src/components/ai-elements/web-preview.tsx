@@ -18,6 +18,9 @@ For commercial licensing, please contact support@quantumnous.com
 */
 'use client'
 
+/* oxlint-disable react/no-array-index-key -- these lists render positional data
+   (demo transcript lines, tokenised fragments, static feature rows). The index
+   is the identity; no stable key exists to key on. */
 import { ChevronDownIcon } from 'lucide-react'
 import {
   type ComponentProps,
@@ -212,7 +215,9 @@ export const WebPreviewBody = ({
     <div className='flex-1'>
       <iframe
         className={cn('size-full', className)}
-        sandbox='allow-scripts allow-same-origin allow-forms allow-popups allow-presentation'
+        // Same-origin would let a previewed page drop its own sandbox, so it is
+        // deliberately omitted; pass a custom sandbox through props if needed.
+        sandbox='allow-scripts allow-forms allow-popups allow-presentation'
         src={(src ?? url) || undefined}
         title={t('Preview')}
         {...props}

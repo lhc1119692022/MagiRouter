@@ -24,6 +24,7 @@ import { useSidebarView } from '@/hooks/use-sidebar-view'
 import { MOTION_TRANSITION, MOTION_VARIANTS } from '@/lib/motion'
 
 import { NavGroup } from './nav-group'
+import { SidebarPlaygroundCard } from './sidebar-playground-card'
 import { SidebarViewHeader } from './sidebar-view-header'
 
 /**
@@ -47,12 +48,23 @@ export function AppSidebar() {
   const { collapsible, variant } = useLayout()
   const { key, view, navGroups } = useSidebarView()
   const shouldReduce = useReducedMotion()
+  const playground = !view
+    ? navGroups
+        .find((group) => group.id === 'workspace-footer')
+        ?.items.find(
+          (item) => item.url === '/playground' && !item.hidden && !item.disabled
+        )
+    : undefined
 
   return (
-    <Sidebar collapsible={collapsible} variant={variant}>
+    <Sidebar
+      id='console-navigation'
+      collapsible={collapsible}
+      variant={variant}
+    >
       {view && <SidebarViewHeader view={view} />}
 
-      <SidebarContent className='py-2'>
+      <SidebarContent>
         <AnimatePresence mode='wait' initial={false}>
           <motion.div
             key={key}
@@ -62,14 +74,29 @@ export function AppSidebar() {
             animate={MOTION_VARIANTS.sidebarSlide.animate}
             exit={shouldReduce ? undefined : MOTION_VARIANTS.sidebarSlide.exit}
             transition={MOTION_TRANSITION.fast}
-            className='flex flex-col'
+            className='console-sidebar-groups flex flex-col'
           >
-            {navGroups.map((props) => (
-              <NavGroup key={props.id || props.title} {...props} />
-            ))}
+            {navGroups
+              .filter((group) => group.id !== 'workspace-footer')
+              .map((group) =>
+                group.id === 'more' ? (
+                  <details className='console-sidebar-more' key={group.id}>
+                    <summary title={group.title}>{group.title}</summary>
+                    <NavGroup {...group} title='' />
+                  </details>
+                ) : (
+                  <NavGroup key={group.id || group.title} {...group} />
+                )
+              )}
           </motion.div>
         </AnimatePresence>
       </SidebarContent>
+
+      {playground && (
+        <div className='sidebar-footer'>
+          <SidebarPlaygroundCard title={playground.title} />
+        </div>
+      )}
 
       <SidebarRail />
     </Sidebar>

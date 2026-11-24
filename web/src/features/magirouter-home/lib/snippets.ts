@@ -308,7 +308,7 @@ export function buildToolConfigs(
             gemini: `${root}/v1beta`,
           },
           api_key: 'sk-magi-你的密钥',
-          default_group: defaultGroup || 'GPT Pro',
+          ...(defaultGroup ? { default_group: defaultGroup } : {}),
         },
         null,
         2

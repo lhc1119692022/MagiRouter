@@ -13,14 +13,20 @@ const (
 	MsgTokenNotProvided       = "token.not_provided"
 	MsgTokenStatusUnavailable = "token.status_unavailable"
 
-	MsgAuthClientIPUnresolved     = "auth.client_ip_unresolved"
-	MsgAuthTokenIPNotAllowed      = "auth.token_ip_not_allowed"
-	MsgAuthTokenGroupForbidden    = "auth.token_group_forbidden"
-	MsgAuthTokenGroupDeprecated   = "auth.token_group_deprecated"
-	MsgAuthChannelSelectForbidden = "auth.channel_select_forbidden"
+	MsgAuthClientIPUnresolved           = "auth.client_ip_unresolved"
+	MsgAuthTokenIPNotAllowed            = "auth.token_ip_not_allowed"
+	MsgAuthTokenGroupForbidden          = "auth.token_group_forbidden"
+	MsgAuthTokenGroupDeprecated         = "auth.token_group_deprecated"
+	MsgAuthTokenBillingGroupRequired    = "auth.token_billing_group_required"
+	MsgAuthTokenGroupUserManagementOnly = "auth.token_group_user_management_only"
+	MsgAuthChannelSelectForbidden       = "auth.channel_select_forbidden"
 
 	MsgRateLimitReached      = "rate_limit.reached"
 	MsgRateLimitTotalReached = "rate_limit.total_reached"
+
+	MsgConcurrencyLimitReached = "concurrency_limit.reached"
+	MsgConcurrencyQueueFull    = "concurrency_limit.queue_full"
+	MsgConcurrencyWaitTimeout  = "concurrency_limit.wait_timeout"
 
 	MsgDistributorInvalidRequest               = "distributor.invalid_request"
 	MsgDistributorInvalidChannelId             = "distributor.invalid_channel_id"

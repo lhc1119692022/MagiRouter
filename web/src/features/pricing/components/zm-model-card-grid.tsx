@@ -5,8 +5,16 @@ import { memo, useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { getPerfMetricsSummary } from '@/features/performance-metrics/api'
+import { formatUptimePct } from '@/features/performance-metrics/lib/format'
+import type { PerfModelSummary } from '@/features/performance-metrics/types'
+import { formatTimestampToDate } from '@/lib/format'
 import { getLobeIcon } from '@/lib/lobe-icon'
+import {
+  getModelCategories,
+  CATEGORY_LABEL_KEYS,
+} from '@/lib/model-task-capabilities'
 import { requireServerSuccess } from '@/lib/server-error-message'
+import { useAuthStore } from '@/stores/auth-store'
 import { useSystemConfigStore } from '@/stores/system-config-store'
 
 import {
@@ -21,94 +29,30 @@ import {
   getDynamicPricingSummary,
   isUnconfiguredTaskUsageModel,
 } from '../lib/dynamic-price'
-import { getModelQuotaType, parseTags } from '../lib/filters'
+import {
+  getModelQuotaType,
+  getModelPlaygroundModes,
+  parseTags,
+} from '../lib/filters'
 import { isTokenBasedModel } from '../lib/model-helpers'
+import {
+  buildHourlyMonitorSlots,
+  type HourlyMonitorSlotState,
+  isMeasuredRate,
+  monitoringWindowLabel,
+  type MonitoringWindow,
+  observedRequestSamples,
+} from '../lib/monitored-requests'
 import { withBasePricing } from '../lib/plugin-pricing'
 import { formatPrice, formatRequestPrice } from '../lib/price'
 import { taskUsageUnitLabel } from '../lib/task-price-display'
 import type { PricingModel, TokenUnit } from '../types'
-import type { ModelPerfBadgeData } from './model-perf-badge'
 
-export type TaskCapabilityFilter = 'all' | 'text' | 'image' | 'video' | 'audio'
-
-export function inferModelTaskCapabilities(
-  model: PricingModel
-): Exclude<TaskCapabilityFilter, 'all'>[] {
-  const capabilities = new Set<Exclude<TaskCapabilityFilter, 'all'>>()
-  const endpoints = (model.supported_endpoint_types || []).map((item) =>
-    item.toLowerCase()
-  )
-  const outputs = (model.output_modalities || []).map((item) =>
-    item.toLowerCase()
-  )
-  const loweredName = (model.model_name || '').toLowerCase()
-  const loweredTags = (model.tags || '').toLowerCase()
-
-  if (
-    outputs.includes('video') ||
-    endpoints.some((item) => item.includes('video')) ||
-    /(seedance|kling|veo|sora|hailuo|minimax-video|runway|vidu|wan2|luma)/i.test(
-      loweredName
-    ) ||
-    loweredTags.includes('video') ||
-    loweredTags.includes('视频')
-  ) {
-    capabilities.add('video')
-  }
-
-  if (
-    outputs.includes('image') ||
-    endpoints.some((item) => item.includes('image')) ||
-    /(gpt-image|dall-e|flux|seedream|imagen|nano-banana|midjourney|ideogram|recraft|sd3|stable-diffusion)/i.test(
-      loweredName
-    ) ||
-    loweredTags.includes('image') ||
-    loweredTags.includes('图像') ||
-    loweredTags.includes('文生图')
-  ) {
-    capabilities.add('image')
-  }
-
-  if (
-    outputs.includes('audio') ||
-    endpoints.some((item) => item.includes('audio') || item.includes('speech')) ||
-    /(audio|tts|whisper|speech|voice|eleven|music|suno)/i.test(loweredName) ||
-    loweredTags.includes('audio') ||
-    loweredTags.includes('语音') ||
-    loweredTags.includes('音频')
-  ) {
-    capabilities.add('audio')
-  }
-
-  if (
-    outputs.includes('text') ||
-    capabilities.size === 0 ||
-    endpoints.some(
-      (item) =>
-        item.includes('openai') ||
-        item.includes('anthropic') ||
-        item.includes('gemini')
-    )
-  ) {
-    if (
-      capabilities.size === 0 ||
-      outputs.includes('text') ||
-      endpoints.includes('openai') ||
-      endpoints.includes('openai-response') ||
-      endpoints.includes('anthropic')
-    ) {
-      capabilities.add('text')
-    }
-  }
-
-  return Array.from(capabilities)
-}
-
-const TASK_LABELS: Record<Exclude<TaskCapabilityFilter, 'all'>, string> = {
-  text: '语言模型',
-  image: '图片生成',
-  video: '视频生成',
-  audio: '音频生成',
+const MONITOR_TICK_CLASS: Record<HourlyMonitorSlotState, string> = {
+  empty: 'zm-uptime-tick',
+  ok: 'zm-uptime-tick is-ok',
+  warn: 'zm-uptime-tick is-warn',
+  err: 'zm-uptime-tick is-err',
 }
 
 export interface ZmModelCardGridProps {
@@ -122,91 +66,6 @@ export interface ZmModelCardGridProps {
   onResetFilters?: () => void
 }
 
-function formatWindowTime(timestamp?: number): string {
-  const date = timestamp ? new Date(timestamp * 1000) : new Date()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  const hours = String(date.getHours()).padStart(2, '0')
-  const minutes = String(date.getMinutes()).padStart(2, '0')
-  return `${month}-${day} ${hours}:${minutes}`
-}
-
-function buildUptimeTicks(
-  modelName: string,
-  perf?: ModelPerfBadgeData
-): { ticks: ('ok' | 'warn' | 'idle')[]; rateLabel: string; timeLabel: string } {
-  const series = perf?.recent_success_series
-  const hasRate =
-    perf != null &&
-    typeof perf.success_rate === 'number' &&
-    Number.isFinite(perf.success_rate)
-  const normalizedRate = hasRate
-    ? perf.success_rate > 1
-      ? perf.success_rate
-      : perf.success_rate * 100
-    : null
-  const timeLabel = formatWindowTime(perf?.window_end)
-
-  if (Array.isArray(series) && series.length > 0) {
-    const sliced = series.slice(-24)
-    const padCount = Math.max(0, 24 - sliced.length)
-    const ticks: ('ok' | 'warn' | 'idle')[] = Array.from(
-      { length: padCount },
-      () => 'idle'
-    )
-    for (const point of sliced) {
-      if (typeof point === 'number') {
-        if (point < 0) ticks.push('idle')
-        else if (point >= 0.95) ticks.push('ok')
-        else ticks.push('warn')
-      } else if (point && typeof point === 'object') {
-        const total =
-          Number((point as { total?: number }).total ?? 0) ||
-          Number((point as { count?: number }).count ?? 0)
-        const rateVal = Number(
-          (point as { success_rate?: number; rate?: number }).success_rate ??
-            (point as { rate?: number }).rate ??
-            -1
-        )
-        if (total === 0 && rateVal < 0) ticks.push('idle')
-        else if (rateVal >= 0.95 || rateVal >= 95) ticks.push('ok')
-        else ticks.push('warn')
-      } else {
-        ticks.push('idle')
-      }
-    }
-    return {
-      ticks: ticks.slice(-24),
-      rateLabel:
-        normalizedRate !== null ? `${normalizedRate.toFixed(1)}%` : '在线',
-      timeLabel,
-    }
-  }
-
-  let hashSeed = 0
-  for (let index = 0; index < modelName.length; index++) {
-    hashSeed = (hashSeed * 31 + modelName.charCodeAt(index)) % 997
-  }
-  const ticks: ('ok' | 'warn' | 'idle')[] = []
-  for (let index = 0; index < 24; index++) {
-    const value = (hashSeed + index * 37 + index * index * 7) % 23
-    if (normalizedRate !== null && normalizedRate < 95 && index === 17) {
-      ticks.push('warn')
-    } else if (value % 3 !== 0 || index === 23) {
-      ticks.push('ok')
-    } else {
-      ticks.push('idle')
-    }
-  }
-
-  return {
-    ticks,
-    rateLabel:
-      normalizedRate !== null ? `${normalizedRate.toFixed(1)}%` : '99.9%',
-    timeLabel,
-  }
-}
-
 interface ZmModelCardItemProps {
   model: PricingModel
   onModelClick: (modelName: string) => void
@@ -215,7 +74,10 @@ interface ZmModelCardItemProps {
   tokenUnit: TokenUnit
   showRechargePrice: boolean
   selectedGroup?: string
-  perf?: ModelPerfBadgeData
+  perf?: PerfModelSummary
+  monitoringWindow?: MonitoringWindow
+  windowLabel: string
+  monitoringStatus: 'pending' | 'success' | 'error'
 }
 
 const ZmModelCardItem = memo(function ZmModelCardItem(
@@ -224,15 +86,15 @@ const ZmModelCardItem = memo(function ZmModelCardItem(
   const { t, i18n } = useTranslation()
   const navigate = useNavigate()
   const [copied, setCopied] = useState(false)
-  const currency = useSystemConfigStore((state) => state.currency)
-  const billingTime = useBillingTime()
+  const currency = useSystemConfigStore((state) => state.config.currency)
+  const billingTime = useBillingTime(props.model.billing_expr)
 
   const baseModel = useMemo(() => withBasePricing(props.model), [props.model])
   const isTokenBased = isTokenBasedModel(baseModel)
   const tokenUnitLabel = props.tokenUnit === 'K' ? '1K' : '1M'
   const tags = useMemo(() => parseTags(props.model.tags), [props.model.tags])
   const capabilities = useMemo(
-    () => inferModelTaskCapabilities(props.model),
+    () => getModelCategories(props.model),
     [props.model]
   )
   const quotaCategory = useMemo(
@@ -242,15 +104,18 @@ const ZmModelCardItem = memo(function ZmModelCardItem(
 
   const iconKey = props.model.icon || props.model.vendor_icon
   const vendorIcon = iconKey ? getLobeIcon(iconKey, 18) : null
-  const initialLetter =
-    (props.model.vendor_name || props.model.model_name || '?')
-      .charAt(0)
-      .toUpperCase()
+  const initialLetter = (
+    props.model.vendor_name ||
+    props.model.model_name ||
+    '?'
+  )
+    .charAt(0)
+    .toUpperCase()
 
   const dynamicPriceOptions = useMemo(
     () => ({
       groupRatio: getDynamicDisplayGroupRatio(baseModel, props.selectedGroup),
-      now: billingTime,
+      now: billingTime === undefined ? undefined : new Date(billingTime),
       tokenUnit: props.tokenUnit,
       showRechargePrice: props.showRechargePrice,
       priceRate: props.priceRate,
@@ -273,7 +138,7 @@ const ZmModelCardItem = memo(function ZmModelCardItem(
     [baseModel, dynamicPriceOptions, currency]
   )
 
-  const priceDisplay = useMemo(() => {
+  const priceDisplay = (() => {
     if (dynamicSummary && dynamicSummary.primaryEntries.length > 0) {
       const primary = dynamicSummary.primaryEntries[0]
       const secondary = dynamicSummary.primaryEntries[1]
@@ -343,19 +208,7 @@ const ZmModelCardItem = memo(function ZmModelCardItem(
       suffix: `/${t('request')}`,
       tooltip: `${requestPrice} / ${t('request')}`,
     }
-  }, [
-    baseModel,
-    dynamicSummary,
-    i18n.language,
-    isTokenBased,
-    props.priceRate,
-    props.selectedGroup,
-    props.showRechargePrice,
-    props.tokenUnit,
-    props.usdExchangeRate,
-    t,
-    tokenUnitLabel,
-  ])
+  })()
 
   const quotaLabel = useMemo(() => {
     if (quotaCategory === QUOTA_TYPES.TASK) return '按任务'
@@ -363,10 +216,36 @@ const ZmModelCardItem = memo(function ZmModelCardItem(
     return '按 Token'
   }, [quotaCategory])
 
-  const uptime = useMemo(
-    () => buildUptimeTicks(props.model.model_name || '', props.perf),
-    [props.model.model_name, props.perf]
+  const successRate = props.perf?.success_rate
+  const samples = props.perf?.recent_success_series
+  const hasMeasuredRate =
+    props.monitoringStatus === 'success' && isMeasuredRate(successRate)
+  const monitorSlots = useMemo(
+    () =>
+      buildHourlyMonitorSlots(
+        props.monitoringStatus === 'success' ? samples : undefined,
+        props.monitoringStatus === 'success'
+          ? props.monitoringWindow
+          : undefined
+      ),
+    [props.monitoringStatus, props.monitoringWindow, samples]
   )
+  const hasSampledTicks = monitorSlots.some((slot) => slot.state !== 'empty')
+  const hasMetrics = hasMeasuredRate || hasSampledTicks
+  let statusText = t('Not monitored')
+  if (props.monitoringStatus === 'pending') statusText = t('Loading...')
+  if (props.monitoringStatus === 'error') {
+    statusText = t('Monitoring unavailable')
+  }
+  const monitoringHint = [
+    t('All visible groups'),
+    t(
+      'Success rate excludes business rejections and includes the current partial hour.'
+    ),
+    props.windowLabel,
+  ]
+    .filter(Boolean)
+    .join(' · ')
 
   const handleCopyName = useCallback(
     async (event: React.MouseEvent) => {
@@ -385,9 +264,14 @@ const ZmModelCardItem = memo(function ZmModelCardItem(
   const handleOpenPlayground = useCallback(
     (event: React.MouseEvent) => {
       event.stopPropagation()
-      void navigate({ to: '/playground' })
+      const [mode] = getModelPlaygroundModes(props.model)
+      if (!mode) return
+      void navigate({
+        to: '/playground',
+        search: { mode, model: props.model.model_name },
+      })
     },
-    [navigate]
+    [navigate, props.model]
   )
 
   const remarkText =
@@ -408,8 +292,20 @@ const ZmModelCardItem = memo(function ZmModelCardItem(
         aria-hidden='true'
       >
         <circle cx='185' cy='45' r='56' stroke='currentColor' strokeWidth='1' />
-        <circle cx='185' cy='45' r='92' stroke='currentColor' strokeWidth='0.8' />
-        <circle cx='185' cy='45' r='128' stroke='currentColor' strokeWidth='0.6' />
+        <circle
+          cx='185'
+          cy='45'
+          r='92'
+          stroke='currentColor'
+          strokeWidth='0.8'
+        />
+        <circle
+          cx='185'
+          cy='45'
+          r='128'
+          stroke='currentColor'
+          strokeWidth='0.6'
+        />
       </svg>
 
       <div className='zm-card-top'>
@@ -425,27 +321,44 @@ const ZmModelCardItem = memo(function ZmModelCardItem(
           </span>
         </div>
 
-        <div
-          className='zm-uptime-strip'
-          title={`最近监控窗口 · ${uptime.timeLabel} · 可用率 ${uptime.rateLabel}`}
-        >
+        <div className='zm-uptime-strip' title={monitoringHint}>
           <div className='zm-uptime-meta tabular-nums'>
-            <span className='zm-uptime-time'>{uptime.timeLabel}</span>
-            <span className='zm-uptime-pct'>{uptime.rateLabel}</span>
+            <span className='zm-uptime-time'>
+              {hasMetrics ? t('All visible groups') : t('Success rate')}
+            </span>
+            <span
+              className={
+                hasMeasuredRate ? 'zm-uptime-pct' : 'zm-uptime-pct is-muted'
+              }
+            >
+              {hasMeasuredRate && isMeasuredRate(successRate)
+                ? formatUptimePct(successRate)
+                : statusText}
+            </span>
           </div>
-          <div className='zm-uptime-ticks' aria-hidden='true'>
-            {uptime.ticks.map((status, tickIndex) => (
-              <span
-                key={tickIndex}
-                className={
-                  status === 'ok'
-                    ? 'zm-uptime-tick is-ok'
-                    : status === 'warn'
-                      ? 'zm-uptime-tick is-warn'
-                      : 'zm-uptime-tick'
-                }
-              />
-            ))}
+          <div
+            className='zm-uptime-ticks'
+            role={hasSampledTicks ? 'img' : undefined}
+            aria-label={
+              hasSampledTicks ? t('Sampled request success rates') : undefined
+            }
+            aria-hidden={hasSampledTicks ? undefined : true}
+          >
+            {monitorSlots.map((slot) => {
+              const tickTitle =
+                slot.state !== 'empty' && slot.ts != null && slot.rate != null
+                  ? `${formatTimestampToDate(slot.ts)} · ${formatUptimePct(slot.rate)}`
+                  : undefined
+
+              return (
+                <span
+                  key={slot.key}
+                  className={MONITOR_TICK_CLASS[slot.state]}
+                  data-state={slot.state}
+                  title={tickTitle}
+                />
+              )
+            })}
           </div>
         </div>
       </div>
@@ -461,14 +374,18 @@ const ZmModelCardItem = memo(function ZmModelCardItem(
           aria-label={`复制 ${props.model.model_name}`}
           onClick={handleCopyName}
         >
-          {copied ? <Check className='size-3.5' /> : <Copy className='size-3.5' />}
+          {copied ? (
+            <Check className='size-3.5' />
+          ) : (
+            <Copy className='size-3.5' />
+          )}
         </button>
       </div>
 
       <div className='zm-tags-row'>
-        {capabilities.slice(0, 2).map((capability) => (
+        {capabilities.map((capability) => (
           <span key={capability} className='zm-cap-tag'>
-            {TASK_LABELS[capability]}
+            {t(CATEGORY_LABEL_KEYS[capability])}
           </span>
         ))}
         {tags.slice(0, 2).map((tag) => (
@@ -499,18 +416,23 @@ const ZmModelCardItem = memo(function ZmModelCardItem(
           >
             详情
           </button>
-          <button
-            type='button'
-            className='zm-action-btn is-primary'
-            onClick={handleOpenPlayground}
-          >
-            创建
-          </button>
+          {getModelPlaygroundModes(props.model).length > 0 && (
+            <button
+              type='button'
+              className='zm-action-btn is-primary'
+              onClick={handleOpenPlayground}
+            >
+              {t('Create')}
+            </button>
+          )}
         </div>
       </div>
 
       <div className='zm-card-footer'>
-        <span className='zm-card-price tabular-nums' title={priceDisplay.tooltip}>
+        <span
+          className='zm-card-price tabular-nums'
+          title={priceDisplay.tooltip}
+        >
           <strong>{priceDisplay.primary}</strong>
           {priceDisplay.suffix && <span> {priceDisplay.suffix}</span>}
         </span>
@@ -541,42 +463,38 @@ export const ZmModelCardGrid = memo(function ZmModelCardGrid(
     return props.models.slice(startIndex, startIndex + pageSize)
   }, [currentPage, pageSize, props.models])
 
-  const recentModels = useMemo(
-    () => pagedModels.map((model) => model.model_name || ''),
-    [pagedModels]
-  )
-
+  const viewer = useAuthStore((state) => state.auth.user)
   const perfQuery = useQuery({
-    queryKey: ['perf-metrics-summary', 24, recentModels],
-    queryFn: async () =>
-      requireServerSuccess(await getPerfMetricsSummary(24, recentModels)),
-    enabled: recentModels.length > 0,
+    queryKey: ['catalog-monitored-requests', 24, viewer?.id, viewer?.group],
+    queryFn: async () => requireServerSuccess(await getPerfMetricsSummary(24)),
+    enabled: props.models.length > 0,
     staleTime: 60 * 1000,
     retry: false,
   })
 
   const perfMap = useMemo(() => {
-    const map = new Map<string, ModelPerfBadgeData>()
-    for (const model of perfQuery.data?.data?.models ?? []) {
+    const result = perfQuery.data?.data
+    const map = new Map<string, PerfModelSummary>()
+    for (const model of result?.models ?? []) {
       map.set(model.model_name, {
         ...model,
-        window_start: perfQuery.data?.data.window_start,
-        window_end: perfQuery.data?.data.window_end,
-      })
-    }
-    for (const [name, series] of Object.entries(
-      perfQuery.data?.data?.recent_success_series ?? {}
-    )) {
-      map.set(name, {
-        avg_latency_ms: Number.NaN,
-        avg_tps: Number.NaN,
-        success_rate: Number.NaN,
-        ...map.get(name),
-        recent_success_series: series,
+        recent_success_series: observedRequestSamples(
+          model.recent_success_series,
+          result
+        ),
       })
     }
     return map
   }, [perfQuery.data])
+  const monitoringWindow = useMemo<MonitoringWindow | undefined>(() => {
+    const result = perfQuery.data?.data
+    if (!result) return undefined
+    return {
+      window_start: result.window_start,
+      window_end: result.window_end,
+    }
+  }, [perfQuery.data])
+  const windowLabel = monitoringWindowLabel(perfQuery.data?.data)
 
   if (props.models.length === 0) {
     return (
@@ -620,6 +538,9 @@ export const ZmModelCardGrid = memo(function ZmModelCardGrid(
             showRechargePrice={showRechargePrice}
             selectedGroup={props.selectedGroup}
             perf={perfMap.get(model.model_name || '')}
+            monitoringWindow={monitoringWindow}
+            windowLabel={windowLabel}
+            monitoringStatus={perfQuery.status}
             onModelClick={props.onModelClick}
           />
         ))}

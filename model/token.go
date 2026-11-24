@@ -271,6 +271,25 @@ func GetTokenByIds(id int, userId int) (*Token, error) {
 	return &token, err
 }
 
+func GetOwnedTokenModelScope(userID, tokenID int) (*Token, error) {
+	if userID <= 0 || tokenID <= 0 {
+		return nil, ErrTokenInvalid
+	}
+	var token Token
+	err := DB.Select([]string{"id", "group", "auto_groups", "model_limits_enabled", "model_limits", "allow_ips"}).
+		Where("user_id = ? AND id = ? AND status = ?", userID, tokenID, common.TokenStatusEnabled).
+		Where("(expired_time = -1 OR expired_time >= ?)", common.GetTimestamp()).
+		Where("(unlimited_quota = ? OR remain_quota > 0)", true).
+		Take(&token).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrTokenInvalid
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &token, nil
+}
+
 func GetTokenById(id int) (*Token, error) {
 	if id == 0 {
 		return nil, errors.New("token id is empty")

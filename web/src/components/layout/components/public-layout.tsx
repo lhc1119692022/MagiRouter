@@ -30,6 +30,7 @@ function resolveBodyPageKey(pathname: string): string {
     return 'about'
   }
   if (pathname.startsWith('/playground')) return 'create'
+  if (pathname === '/create' || pathname === '/create/') return 'create-hub'
   if (
     pathname.startsWith('/user-agreement') ||
     pathname.startsWith('/privacy-policy')
@@ -85,9 +86,7 @@ export function PublicLayout(props: PublicLayoutProps) {
       />
 
       {props.showMainContainer !== false ? (
-        <main className='el-container py-8'>
-          {props.children}
-        </main>
+        <main className='el-container py-8'>{props.children}</main>
       ) : (
         props.children
       )}

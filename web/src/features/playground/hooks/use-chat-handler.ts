@@ -35,12 +35,13 @@ import {
   isAssistantMessageFinal,
   isAssistantMessagePending,
 } from '../lib'
-import type { Message, PlaygroundConfig, ParameterEnabled } from '../types'
+import type { ChatCompletionRequest, Message, PlaygroundConfig } from '../types'
 import { useStreamRequest } from './use-stream-request'
 
 interface UseChatHandlerOptions {
   config: PlaygroundConfig
-  parameterEnabled: ParameterEnabled
+  billingKeyId?: number | null
+  acceptsChatImages?: boolean
   onMessageUpdate: (updater: (prev: Message[]) => Message[]) => void
 }
 
@@ -69,7 +70,8 @@ function mergePendingStreamChunk(
  */
 export function useChatHandler({
   config,
-  parameterEnabled,
+  billingKeyId,
+  acceptsChatImages,
   onMessageUpdate,
 }: UseChatHandlerOptions) {
   const { t } = useTranslation()
@@ -243,29 +245,24 @@ export function useChatHandler({
 
   // Send streaming chat request
   const sendStreamingChat = useCallback(
-    (messages: Message[]) => {
+    (payload: ChatCompletionRequest) => {
       const generation = requestGenerationRef.current + 1
       requestGenerationRef.current = generation
       abortControllerRef.current?.abort()
       abortControllerRef.current = null
       discardPendingStreamUpdates(generation)
       setIsRequesting(true)
-      const payload = buildChatCompletionPayload(
-        messages,
-        config,
-        parameterEnabled
-      )
       void sendStreamRequest(
         payload,
         (type, chunk) => handleStreamUpdate(generation, type, chunk),
         () => handleStreamComplete(generation),
-        (error, errorCode) => handleStreamError(generation, error, errorCode)
+        (error, errorCode) => handleStreamError(generation, error, errorCode),
+        billingKeyId
       )
     },
     [
-      config,
-      parameterEnabled,
       sendStreamRequest,
+      billingKeyId,
       discardPendingStreamUpdates,
       handleStreamUpdate,
       handleStreamComplete,
@@ -275,12 +272,7 @@ export function useChatHandler({
 
   // Send non-streaming chat request
   const sendNonStreamingChat = useCallback(
-    async (messages: Message[]) => {
-      const payload = buildChatCompletionPayload(
-        messages,
-        config,
-        parameterEnabled
-      )
+    async (payload: ChatCompletionRequest) => {
       const generation = requestGenerationRef.current + 1
       const abortController = new AbortController()
 
@@ -294,7 +286,8 @@ export function useChatHandler({
         setIsRequesting(true)
         const response = await sendChatCompletion(
           payload,
-          abortController.signal
+          abortController.signal,
+          billingKeyId
         )
         if (
           abortController.signal.aborted ||
@@ -337,9 +330,8 @@ export function useChatHandler({
       }
     },
     [
-      config,
-      parameterEnabled,
       stopStream,
+      billingKeyId,
       discardPendingStreamUpdates,
       onMessageUpdate,
       handleStreamError,
@@ -348,14 +340,29 @@ export function useChatHandler({
 
   // Send chat request (stream or non-stream based on config)
   const sendChat = useCallback(
-    (messages: Message[]) => {
-      if (config.stream) {
-        sendStreamingChat(messages)
+    (messages: Message[], imageUrls?: string[]) => {
+      if (billingKeyId == null || !config.model) return
+      if (imageUrls?.length && !acceptsChatImages) return
+      const payload = buildChatCompletionPayload(
+        messages,
+        config,
+        undefined,
+        acceptsChatImages ? imageUrls : undefined
+      )
+      delete payload.group
+      if (payload.stream) {
+        sendStreamingChat(payload)
       } else {
-        sendNonStreamingChat(messages)
+        void sendNonStreamingChat(payload)
       }
     },
-    [config.stream, sendStreamingChat, sendNonStreamingChat]
+    [
+      config,
+      billingKeyId,
+      acceptsChatImages,
+      sendStreamingChat,
+      sendNonStreamingChat,
+    ]
   )
 
   // Stop generation

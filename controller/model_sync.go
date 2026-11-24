@@ -297,7 +297,8 @@ func fetchMetadataCatalog(c *gin.Context, locale string) (metadataSyncSource, ma
 				endpoints = string(item.Endpoints)
 			}
 		}
-		values := model.MetadataValues{Description: item.Description, Icon: item.Icon, Tags: item.Tags, Vendor: strings.TrimSpace(item.VendorName), Endpoints: endpoints, NameRule: item.NameRule, Status: item.Status}
+		tags, _ := model.SplitCatalogTaskTags(item.Tags)
+		values := model.MetadataValues{Description: item.Description, Icon: item.Icon, Tags: tags, Vendor: strings.TrimSpace(item.VendorName), Endpoints: endpoints, NameRule: item.NameRule, Status: item.Status}
 		if err := model.ValidateMetadataValues(values); err != nil {
 			return source, nil, nil, fmt.Errorf("model %s: %w", item.ModelName, err)
 		}
@@ -387,7 +388,8 @@ func SyncUpstreamPreview(c *gin.Context) {
 		localValues := model.MetadataValues{}
 		if local != nil {
 			candidate.Kind = "update"
-			localValues = model.MetadataValues{Description: local.Description, Icon: local.Icon, Tags: local.Tags, Endpoints: local.Endpoints, NameRule: local.NameRule, Status: local.Status}
+			tags, _ := model.SplitCatalogTaskTags(local.Tags)
+			localValues = model.MetadataValues{Description: local.Description, Icon: local.Icon, Tags: tags, Endpoints: local.Endpoints, NameRule: local.NameRule, Status: local.Status}
 			if localVendor != nil {
 				localValues.Vendor = localVendor.Name
 			}

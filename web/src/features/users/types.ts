@@ -32,6 +32,24 @@ export type UserStatus = z.infer<typeof userStatusSchema>
 export const userRoleSchema = z.number()
 export type UserRole = z.infer<typeof userRoleSchema>
 
+export const userConcurrencySourceSchema = z.enum([
+  'disabled',
+  'user',
+  'group',
+  'default',
+])
+export type UserConcurrencySource = z.infer<typeof userConcurrencySourceSchema>
+
+export const userConcurrencySummarySchema = z.object({
+  enabled: z.boolean(),
+  user_override: z.number().int().min(0),
+  effective_limit: z.number().int().min(0),
+  source: userConcurrencySourceSchema,
+})
+export type UserConcurrencySummary = z.infer<
+  typeof userConcurrencySummarySchema
+>
+
 export const userSchema = z.object({
   id: z.number(),
   username: z.string(),
@@ -46,6 +64,8 @@ export const userSchema = z.object({
   used_quota: z.number(),
   request_count: z.number(),
   group: z.string(),
+  max_concurrency: z.number().int().min(0).max(100000).optional(),
+  concurrency_limit: userConcurrencySummarySchema.optional(),
   aff_code: z.string().optional(),
   aff_count: z.number().optional(),
   aff_quota: z.number().optional(),
@@ -124,6 +144,7 @@ export interface UserFormData {
   role?: number // Only used when creating user
   quota?: number // Only used when updating user
   group?: string // Only used when updating user
+  max_concurrency?: number // Only used when updating user
   remark?: string // Only used when updating user
   admin_permissions?: AdminPermissionMatrix
 }
@@ -135,6 +156,7 @@ export type ManageUserAction =
   | 'disable'
   | 'delete'
   | 'add_quota'
+  | 'set_concurrency'
 
 export type QuotaAdjustMode = 'add' | 'subtract' | 'override'
 
@@ -145,8 +167,14 @@ export interface ManageUserQuotaPayload {
   value: number
 }
 
+export interface ManageUserConcurrencyPayload {
+  id: number
+  action: 'set_concurrency'
+  value: number
+}
+
 // ============================================================================
 // Dialog Types
 // ============================================================================
 
-export type UsersDialogType = 'create' | 'update' | 'delete'
+export type UsersDialogType = 'create' | 'update' | 'delete' | 'concurrency'

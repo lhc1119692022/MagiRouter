@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import type { Table } from '@tanstack/react-table'
-import { ChevronDown, Loader2, X as Cross2Icon } from 'lucide-react'
+import { ChevronDown, Loader2, Search, X as Cross2Icon } from 'lucide-react'
 import * as React from 'react'
 import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -250,14 +250,20 @@ export function DataTableToolbar<TData>(props: DataTableToolbarProps<TData>) {
   }
 
   const searchInput = (
-    <Input
-      placeholder={placeholder}
-      value={searchValue}
-      onChange={handleSearchChange}
-      onCompositionStart={handleSearchCompositionStart}
-      onCompositionEnd={handleSearchCompositionEnd}
-      className='w-full sm:w-[200px] lg:w-[240px]'
-    />
+    <span className='relative inline-flex w-full items-center sm:w-[200px] lg:w-[240px]'>
+      <Search
+        className='pointer-events-none absolute start-3 size-4 text-[var(--ink-subtle)]'
+        aria-hidden='true'
+      />
+      <Input
+        placeholder={placeholder}
+        value={searchValue}
+        onChange={handleSearchChange}
+        onCompositionStart={handleSearchCompositionStart}
+        onCompositionEnd={handleSearchCompositionEnd}
+        className='magi-search-pill w-full'
+      />
+    </span>
   )
 
   const filterChips = React.useMemo(

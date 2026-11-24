@@ -173,6 +173,8 @@ export interface ProcessedFlowData {
 export interface UptimeMonitor {
   name: string
   uptime: number
+  uptimeKnown?: boolean
+  latencyMs?: number
   status: number
   group?: string
 }
@@ -217,6 +219,7 @@ export interface UserChartsFilters {
 // ============================================================================
 
 export interface ApiInfoItem {
+  id?: number
   url: string
   route: string
   description: string
@@ -259,6 +262,9 @@ export interface ProcessedUserChartData {
 
 export interface AnnouncementItem {
   id?: number
+  title?: string
+  category?: string
+  kindLabel?: string
   content: string
   publishDate?: string
   type?: 'default' | 'ongoing' | 'success' | 'warning' | 'error'
