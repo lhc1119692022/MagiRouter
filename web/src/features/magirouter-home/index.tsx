@@ -8,24 +8,9 @@ import { Hero } from './components/hero'
 import { IntegrationSection } from './components/integration-section'
 import { ModelsSection } from './components/models-section'
 import { RoutesSection } from './components/routes-section'
-import { findCatalogQuote } from './lib/catalog-quote'
-import { resolveBaseUrl, type SampleModels } from './lib/snippets'
-
-const NON_TEXT_MODEL_PATTERN =
-  /image|flux|dall|midjourney|seedream|banana|video|seedance|kling|veo|sora|minimax|audio|tts|whisper|speech|transcrib|embed|rerank|moderation/i
-
-function isTextSampleCandidate(model: {
-  model_name: string
-  tags?: string
-  supported_endpoint_types?: string[]
-}): boolean {
-  const endpoints = model.supported_endpoint_types ?? []
-  if (!endpoints.includes('openai') && !endpoints.includes('openai-response')) {
-    return false
-  }
-  const combined = `${model.model_name} ${model.tags ?? ''}`
-  return !NON_TEXT_MODEL_PATTERN.test(combined)
-}
+import { buildBillingComparisonData } from './lib/catalog-quote'
+import { parseHomeShowcaseConfig } from './lib/showcase-config'
+import { resolveBaseUrl } from './lib/snippets'
 
 interface MagiRouterHomeProps {
   isAuthenticated: boolean
@@ -44,34 +29,21 @@ export function MagiRouterHome(props: MagiRouterHomeProps) {
     [pricing.error, pricing.models]
   )
 
-  const sampleModels = useMemo<SampleModels>(() => {
-    const openai =
-      models.find((model) => /^gpt-6\.2-sol$/i.test(model.model_name))
-        ?.model_name ??
-      models.find(
-        (model) =>
-          isTextSampleCandidate(model) &&
-          /^(gpt|o[1-9])/i.test(model.model_name)
-      )?.model_name ??
-      models.find((model) => isTextSampleCandidate(model))?.model_name ??
-      'YOUR_OPENAI_MODEL'
+  const showcaseConfig = useMemo(
+    () =>
+      parseHomeShowcaseConfig(
+        status?.home_showcase ?? status?.data?.home_showcase
+      ),
+    [status?.data?.home_showcase, status?.home_showcase]
+  )
 
-    const anthropic =
-      models.find((model) => /^claude/i.test(model.model_name))?.model_name ??
-      'YOUR_ANTHROPIC_MODEL'
-
-    const gemini =
-      models.find(
-        (model) =>
-          /^gemini/i.test(model.model_name) &&
-          !NON_TEXT_MODEL_PATTERN.test(model.model_name)
-      )?.model_name ?? 'YOUR_GEMINI_MODEL'
-
-    return { openai, anthropic, gemini }
-  }, [models])
-
-  const quote = useMemo(
-    () => findCatalogQuote(models, pricing.usableGroup, pricing.groupRatio),
+  const billingComparison = useMemo(
+    () =>
+      buildBillingComparisonData(
+        models,
+        pricing.usableGroup,
+        pricing.groupRatio
+      ),
     [models, pricing.usableGroup, pricing.groupRatio]
   )
 
@@ -81,7 +53,7 @@ export function MagiRouterHome(props: MagiRouterHomeProps) {
         isAuthenticated={props.isAuthenticated}
         baseUrl={baseUrl}
         models={models}
-        quote={quote}
+        showcaseConfig={showcaseConfig}
       />
       <ModelsSection
         models={models}
@@ -90,16 +62,11 @@ export function MagiRouterHome(props: MagiRouterHomeProps) {
         usdExchangeRate={pricing.usdExchangeRate}
       />
       <RoutesSection
-        quote={quote}
+        comparison={billingComparison}
         loading={pricing.isLoading}
         failed={Boolean(pricing.error)}
       />
-      <IntegrationSection
-        baseUrl={baseUrl}
-        isAuthenticated={props.isAuthenticated}
-        sampleModels={sampleModels}
-        defaultGroup={quote?.group ?? ''}
-      />
+      <IntegrationSection isAuthenticated={props.isAuthenticated} />
       <BrandFooter />
     </main>
   )

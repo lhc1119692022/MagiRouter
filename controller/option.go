@@ -210,6 +210,42 @@ func UpdateOption(c *gin.Context) {
 		common.ApiSuccess(c, nil)
 		return
 	}
+	if option.Key == console_setting.HomeShowcaseOption {
+		raw, ok := option.Value.(string)
+		if !ok {
+			common.ApiErrorStatus(c, http.StatusBadRequest, common.NewMessage("Invalid home showcase configuration."))
+			return
+		}
+		if _, err := console_setting.ParseHomeShowcase(raw); err != nil {
+			common.ApiErrorStatus(c, http.StatusBadRequest, err)
+			return
+		}
+		if err := model.UpdateOptionsBulk(map[string]string{option.Key: raw}); err != nil {
+			common.ApiErrorStatus(c, http.StatusInternalServerError, common.NewMessage("Failed to save configuration"))
+			return
+		}
+		recordManageAudit(c, "option.update", map[string]any{"key": option.Key})
+		common.ApiSuccess(c, nil)
+		return
+	}
+	if option.Key == console_setting.PricingBannerOption {
+		raw, ok := option.Value.(string)
+		if !ok {
+			common.ApiErrorStatus(c, http.StatusBadRequest, common.NewMessage("Invalid model square banner configuration."))
+			return
+		}
+		if _, err := console_setting.ParsePricingBanner(raw); err != nil {
+			common.ApiErrorStatus(c, http.StatusBadRequest, err)
+			return
+		}
+		if err := model.UpdateOptionsBulk(map[string]string{option.Key: raw}); err != nil {
+			common.ApiErrorStatus(c, http.StatusInternalServerError, common.NewMessage("Failed to save configuration"))
+			return
+		}
+		recordManageAudit(c, "option.update", map[string]any{"key": option.Key})
+		common.ApiSuccess(c, nil)
+		return
+	}
 	if option.Key == console_setting.CreationPresetsOption {
 		value, ok := option.Value.(string)
 		if !ok {

@@ -1,347 +1,246 @@
-import { Link, useNavigate } from '@tanstack/react-router'
-import { useCallback, useMemo, useState } from 'react'
-import { useTranslation } from 'react-i18next'
+import { Link } from '@tanstack/react-router'
 
-import { useTopNavLinks } from '@/hooks/use-top-nav-links'
-import { copyToClipboard } from '@/lib/copy-to-clipboard'
-
-import {
-  PROTOCOL_OPTIONS,
-  SNIPPET_LANGUAGES,
-  buildSnippet,
-  buildToolConfigs,
-  type ProtocolId,
-  type SampleModels,
-  type SnippetLanguage,
-} from '../lib/snippets'
+import { getLobeIcon } from '@/lib/lobe-icon'
 
 interface IntegrationSectionProps {
-  baseUrl: string
   isAuthenticated: boolean
-  sampleModels: SampleModels
-  defaultGroup: string
 }
 
+const MODEL_BRICK_ROWS = [
+  [
+    { name: 'GPT', icon: 'OpenAI' },
+    { name: 'Claude', icon: 'Claude.Color' },
+    { name: 'Gemini', icon: 'Gemini.Color' },
+  ],
+  [
+    { name: 'DeepSeek', icon: 'DeepSeek.Color' },
+    { name: 'Qwen', icon: 'Qwen.Color' },
+    { name: 'Doubao', icon: 'Doubao.Color' },
+  ],
+  [
+    { name: 'GLM', icon: 'Zhipu.Color' },
+    { name: 'Grok', icon: 'Grok' },
+    { name: 'Kimi', icon: 'Kimi.Color' },
+  ],
+] as const
+
+type AppTile =
+  | { name: string; kind: 'lobe'; icon: string }
+  | { name: string; kind: 'asset'; src: string }
+
+const APP_TILES: readonly AppTile[] = [
+  { name: 'Magpie', kind: 'asset', src: '/magpie-icon.svg' },
+  { name: 'CC Switch', kind: 'asset', src: '/cc-switch-icon.png' },
+  { name: 'Codex', kind: 'lobe', icon: 'Codex.Color' },
+  { name: 'Claude Code', kind: 'lobe', icon: 'ClaudeCode.Color' },
+  { name: 'WorkBuddy', kind: 'lobe', icon: 'CodeBuddy.Color' },
+  { name: '豆包工作', kind: 'lobe', icon: 'Doubao.Color' },
+  { name: 'ZCode', kind: 'lobe', icon: 'ZAI' },
+  { name: 'Qoder', kind: 'lobe', icon: 'Qoder.Color' },
+] as const
+
 export function IntegrationSection(props: IntegrationSectionProps) {
-  const navigate = useNavigate()
-  const { t } = useTranslation()
-  const showStudio = useTopNavLinks().some((link) => link.href === '/create')
-  const [protocol, setProtocol] = useState<ProtocolId>('responses')
-  const [language, setLanguage] = useState<SnippetLanguage>('curl')
-  const [copiedCode, setCopiedCode] = useState(false)
-  const [activeTool, setActiveTool] = useState<'magpie' | 'cc-switch' | null>(
-    null
-  )
-  const [copiedTool, setCopiedTool] = useState(false)
-
-  const currentProtoOption =
-    PROTOCOL_OPTIONS.find((item) => item.value === protocol) ??
-    PROTOCOL_OPTIONS[0]
-
-  const codeText = useMemo(
-    () => buildSnippet(language, props.baseUrl, props.sampleModels, protocol),
-    [language, protocol, props.baseUrl, props.sampleModels]
-  )
-
-  const toolConfigs = useMemo(
-    () =>
-      buildToolConfigs(props.baseUrl, props.sampleModels, props.defaultGroup),
-    [props.baseUrl, props.defaultGroup, props.sampleModels]
-  )
-
-  const activeToolConfig = activeTool ? toolConfigs[activeTool] : null
-
-  const handleCopyCode = useCallback(async () => {
-    const copied = await copyToClipboard(codeText)
-    if (copied) {
-      setCopiedCode(true)
-      window.setTimeout(() => setCopiedCode(false), 1800)
-    }
-  }, [codeText])
-
-  const handleCopyToolCode = useCallback(async () => {
-    if (!activeToolConfig) return
-    const copied = await copyToClipboard(activeToolConfig.code)
-    if (copied) {
-      setCopiedTool(true)
-      window.setTimeout(() => setCopiedTool(false), 1800)
-    }
-  }, [activeToolConfig])
-
   return (
     <section id='home-integration' className='el-breakout-cream el-section-md'>
       <div className='el-container'>
         <div className='section-head'>
           <div>
-            <h2 className='el-h2'>三步快速完成接入</h2>
-            <p className='el-body-sm' style={{ marginTop: 8, maxWidth: 740 }}>
-              无需多平台注册与反复适配，用一把密钥即可快速使用全球顶级语言、图片、视频与音频模型。
+            <div className='section-heading-row'>
+              <h2 className='el-h2'>三步快速上手</h2>
+              <span className='section-title-badge'>工作流程</span>
+            </div>
+            <p className='el-body-sm' style={{ marginTop: 8, maxWidth: 640 }}>
+              一个账号，一把密钥，直接连接全球主流模型与常用 AI 工具。
             </p>
           </div>
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            <Link
-              to={props.isAuthenticated ? '/dashboard' : '/sign-up'}
-              className='el-btn el-btn-lg el-btn-primary'
-            >
-              {props.isAuthenticated ? '进入控制台 →' : '立即开始 →'}
-            </Link>
-            {showStudio && (
-              <Link
-                to={props.isAuthenticated ? '/create' : '/sign-in'}
-                search={
-                  props.isAuthenticated ? undefined : { redirect: '/create' }
-                }
-                className='el-btn el-btn-lg el-btn-white'
-              >
-                {t('AI Studio')} →
-              </Link>
-            )}
-            <Link to='/docs' className='el-btn el-btn-lg el-btn-white'>
-              接入文档
-            </Link>
-          </div>
+          <Link to='/docs' className='el-btn el-btn-lg el-btn-white'>
+            查看完整文档 →
+          </Link>
         </div>
 
-        <div className='integration-grid'>
-          <div className='steps-stack'>
-            <div className='step-row-card'>
-              <span className='step-num-badge tabular-nums'>01</span>
-              <div>
-                <h3 className='el-h3'>注册，创建密钥</h3>
-                <p className='el-body-sm' style={{ marginTop: 5 }}>
-                  注册账号并登录控制台，几秒即可生成专属 API 密钥。
-                </p>
-              </div>
+        <div className='onboarding-grid-3'>
+          <article className='onboarding-card'>
+            <div className='onboarding-card-head'>
+              <span className='onboarding-step-num tabular-nums'>1</span>
+              <h3 className='onboarding-card-title'>注册并充值</h3>
             </div>
-            <div className='step-row-card'>
-              <span className='step-num-badge tabular-nums'>02</span>
-              <div>
-                <h3 className='el-h3'>修改配置</h3>
-                <p className='el-body-sm' style={{ marginTop: 5 }}>
-                  将 API 端点改为平台地址，使用官方 SDK 仅需改一行 Base URL。
-                </p>
-              </div>
-            </div>
-            <div className='step-row-card'>
-              <span className='step-num-badge tabular-nums'>03</span>
-              <div>
-                <h3 className='el-h3'>开始调用模型</h3>
-                <p className='el-body-sm' style={{ marginTop: 5 }}>
-                  通过统一接口访问各种全球顶级模型，即刻开启 AI 之旅。
-                </p>
-              </div>
-            </div>
-          </div>
 
-          <div className='code-panel'>
-            <div
-              className='code-panel-proto-bar'
-              role='tablist'
-              aria-label='接口协议优先级'
-            >
-              {PROTOCOL_OPTIONS.map((option) => (
-                <button
-                  key={option.value}
-                  type='button'
-                  className={`el-btn el-btn-xs ${
-                    protocol === option.value
-                      ? 'el-btn-primary'
-                      : 'el-btn-ghost'
-                  }`}
-                  onClick={() => setProtocol(option.value)}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-            <div className='code-panel-head'>
-              <div
-                style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}
-                role='tablist'
-                aria-label='代码示例语言'
+            <div className='onboarding-stage onboarding-stage-actions'>
+              <Link
+                to={props.isAuthenticated ? '/dashboard' : '/sign-up'}
+                className='el-btn el-btn-lg el-btn-primary onboarding-action-btn'
               >
-                {SNIPPET_LANGUAGES.map((lang) => (
-                  <button
-                    key={lang.value}
-                    type='button'
-                    className={`el-btn el-btn-xs ${
-                      language === lang.value
-                        ? 'el-btn-primary'
-                        : 'el-btn-ghost'
-                    }`}
-                    onClick={() => setLanguage(lang.value)}
+                <svg
+                  width='16'
+                  height='16'
+                  viewBox='0 0 24 24'
+                  fill='none'
+                  stroke='currentColor'
+                  strokeWidth='1.9'
+                  strokeLinecap='round'
+                  strokeLinejoin='round'
+                  aria-hidden='true'
+                >
+                  <path d='M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4' />
+                  <polyline points='10 17 15 12 10 7' />
+                  <line x1='15' y1='12' x2='3' y2='12' />
+                </svg>
+                <span>{props.isAuthenticated ? '前往仪表板' : '注册账号'}</span>
+              </Link>
+              <Link
+                to={props.isAuthenticated ? '/wallet' : '/sign-in'}
+                search={
+                  props.isAuthenticated ? undefined : { redirect: '/wallet' }
+                }
+                className='el-btn el-btn-lg el-btn-white onboarding-action-btn'
+              >
+                <svg
+                  width='16'
+                  height='16'
+                  viewBox='0 0 24 24'
+                  fill='none'
+                  stroke='currentColor'
+                  strokeWidth='1.9'
+                  strokeLinecap='round'
+                  strokeLinejoin='round'
+                  aria-hidden='true'
+                >
+                  <rect x='2' y='5' width='20' height='14' rx='2' />
+                  <path d='M16 12h.01' />
+                  <path d='M2 10h20' />
+                </svg>
+                <span>在线充值</span>
+              </Link>
+            </div>
+
+            <p className='onboarding-card-desc'>
+              登录账号，按需为钱包充值，即可开始调用全站 API。
+            </p>
+          </article>
+
+          <article className='onboarding-card'>
+            <div className='onboarding-card-head'>
+              <span className='onboarding-step-num tabular-nums'>2</span>
+              <h3 className='onboarding-card-title'>选择模型，创建密钥</h3>
+            </div>
+
+            <div className='onboarding-stage onboarding-stage-visual'>
+              <div
+                className='onboarding-model-cloud'
+                aria-label='支持的主流模型品牌'
+              >
+                {MODEL_BRICK_ROWS.map((row, rowIndex) => (
+                  <div
+                    key={row[0].name}
+                    className={`onboarding-model-brick-row${rowIndex === 1 ? ' is-offset' : ''}`}
                   >
-                    {lang.label}
-                  </button>
+                    {row.map((badge) => (
+                      <span key={badge.name} className='onboarding-model-pill'>
+                        <span className='onboarding-model-pill-icon'>
+                          {getLobeIcon(badge.icon, 15)}
+                        </span>
+                        <span>{badge.name}</span>
+                      </span>
+                    ))}
+                  </div>
                 ))}
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span
-                  className='tabular-nums'
-                  style={{
-                    fontFamily: 'var(--font-mono)',
-                    fontSize: '11.5px',
-                    color: 'var(--ink-muted)',
-                  }}
-                >
-                  {currentProtoOption.endpoint}
-                </span>
-                <button
-                  type='button'
-                  className='el-btn el-btn-xs el-btn-white'
-                  onClick={() => void handleCopyCode()}
-                >
-                  {copiedCode ? '已复制 ✓' : '复制代码'}
-                </button>
-              </div>
-            </div>
-            <pre className='code-body' id='code-sample-box'>
-              {codeText}
-            </pre>
-          </div>
-        </div>
 
-        <div className='tools-inline-strip' id='home-tools'>
-          <span className='tools-inline-label'>
-            推荐使用管理供应商配置工具：
-          </span>
-          <div className='tools-inline-links'>
-            <button
-              type='button'
-              className='tool-inline-pill'
-              onClick={() => {
-                setCopiedTool(false)
-                setActiveTool('magpie')
-              }}
-            >
-              <span className='tool-inline-logo' aria-hidden='true'>
-                <img
-                  src='/magpie-icon.svg'
-                  alt='Magpie'
-                  style={{ width: 18, height: 18, display: 'block' }}
-                />
-              </span>
-              <span>Magpie</span>
-            </button>
-            <button
-              type='button'
-              className='tool-inline-pill'
-              onClick={() => {
-                setCopiedTool(false)
-                setActiveTool('cc-switch')
-              }}
-            >
-              <span className='tool-inline-logo' aria-hidden='true'>
-                <img
-                  src='/cc-switch-icon.png'
-                  alt='CC Switch'
-                  style={{ width: 18, height: 18, display: 'block' }}
-                />
-              </span>
-              <span>CC Switch</span>
-            </button>
-          </div>
+              <Link
+                to={props.isAuthenticated ? '/keys' : '/sign-in'}
+                search={
+                  props.isAuthenticated ? undefined : { redirect: '/keys' }
+                }
+                className='el-btn el-btn-md el-btn-white onboarding-stage-cta'
+              >
+                <svg
+                  width='15'
+                  height='15'
+                  viewBox='0 0 24 24'
+                  fill='none'
+                  stroke='currentColor'
+                  strokeWidth='1.9'
+                  strokeLinecap='round'
+                  strokeLinejoin='round'
+                  aria-hidden='true'
+                >
+                  <circle cx='7.5' cy='15.5' r='5.5' />
+                  <path d='m21 2-9.6 9.6' />
+                  <path d='m15.5 7.5 3 3L22 7l-3-3' />
+                </svg>
+                <span>创建 API 密钥</span>
+                <span aria-hidden='true'>↗</span>
+              </Link>
+            </div>
+
+            <p className='onboarding-card-desc'>
+              选择模型大类和线路偏好，用一把密钥统一接入。
+            </p>
+          </article>
+
+          <article className='onboarding-card'>
+            <div className='onboarding-card-head'>
+              <span className='onboarding-step-num tabular-nums'>3</span>
+              <h3 className='onboarding-card-title'>接入常用应用</h3>
+            </div>
+
+            <div className='onboarding-stage onboarding-stage-visual'>
+              <div
+                className='onboarding-app-grid'
+                aria-label='支持的常用 AI 应用'
+              >
+                {APP_TILES.map((app) => (
+                  <span
+                    key={app.name}
+                    className='onboarding-app-tile'
+                    title={app.name}
+                    aria-label={app.name}
+                    data-tooltip={app.name}
+                  >
+                    {app.kind === 'lobe' ? (
+                      getLobeIcon(app.icon, 24)
+                    ) : (
+                      <img
+                        src={app.src}
+                        alt=''
+                        width={24}
+                        height={24}
+                        className='onboarding-app-asset'
+                      />
+                    )}
+                  </span>
+                ))}
+              </div>
+
+              <Link
+                to='/docs'
+                className='el-btn el-btn-md el-btn-white onboarding-stage-cta'
+              >
+                <svg
+                  width='15'
+                  height='15'
+                  viewBox='0 0 24 24'
+                  fill='none'
+                  stroke='currentColor'
+                  strokeWidth='1.9'
+                  strokeLinecap='round'
+                  strokeLinejoin='round'
+                  aria-hidden='true'
+                >
+                  <path d='M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z' />
+                  <path d='M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z' />
+                </svg>
+                <span>查看接入指南</span>
+                <span aria-hidden='true'>↗</span>
+              </Link>
+            </div>
+
+            <p className='onboarding-card-desc'>
+              在兼容应用中填入密钥与接口地址，按指南快速接入。
+            </p>
+          </article>
         </div>
       </div>
-
-      {activeToolConfig && (
-        <div
-          className='el-modal-backdrop'
-          role='dialog'
-          aria-modal='true'
-          aria-label={activeToolConfig.title}
-          onClick={(event) => {
-            if (event.target === event.currentTarget) setActiveTool(null)
-          }}
-        >
-          <div className='el-modal-card' style={{ maxWidth: 560 }}>
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                gap: 12,
-              }}
-            >
-              <div>
-                <div className='el-eyebrow'>{activeToolConfig.eyebrow}</div>
-                <h2
-                  className='el-h3'
-                  style={{ margin: '4px 0 0', fontSize: 21 }}
-                >
-                  {activeToolConfig.title}
-                </h2>
-              </div>
-              <button
-                type='button'
-                className='el-btn el-btn-sm el-btn-white'
-                onClick={() => setActiveTool(null)}
-              >
-                关闭
-              </button>
-            </div>
-            <p className='el-body-sm' style={{ marginTop: 10 }}>
-              {activeToolConfig.desc}
-            </p>
-            <div
-              className='mr-code-card'
-              style={{ marginTop: 14, borderRadius: 12 }}
-            >
-              <div
-                className='mr-code-head'
-                style={{ padding: '9px 14px', fontSize: 12 }}
-              >
-                <span className='el-eyebrow'>{activeToolConfig.protoNote}</span>
-                <button
-                  type='button'
-                  className='el-btn el-btn-xs el-btn-white'
-                  onClick={() => void handleCopyToolCode()}
-                >
-                  {copiedTool ? '已复制 ✓' : '复制配置'}
-                </button>
-              </div>
-              <pre
-                className='code-body'
-                style={{ padding: '14px 16px', fontSize: 12 }}
-              >
-                {activeToolConfig.code}
-              </pre>
-            </div>
-            <div
-              style={{
-                display: 'flex',
-                gap: 10,
-                marginTop: 16,
-                justifyContent: 'flex-end',
-                flexWrap: 'wrap',
-              }}
-            >
-              {activeToolConfig.url && (
-                <a
-                  href={activeToolConfig.url}
-                  target='_blank'
-                  rel='noopener noreferrer'
-                  className='el-btn el-btn-md el-btn-white'
-                >
-                  访问官网 ↗
-                </a>
-              )}
-              <button
-                type='button'
-                className='el-btn el-btn-md el-btn-primary'
-                onClick={() => {
-                  setActiveTool(null)
-                  void navigate({
-                    to: props.isAuthenticated ? '/keys' : '/sign-up',
-                  })
-                }}
-              >
-                {props.isAuthenticated ? '前往密钥管理' : '前往创建密钥'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </section>
   )
 }

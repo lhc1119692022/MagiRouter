@@ -139,6 +139,12 @@ func GetStatus(c *gin.Context) {
 	if cs.FAQEnabled {
 		data["faq"] = console_setting.GetFAQ()
 	}
+	if showcase := console_setting.GetHomeShowcase(); len(showcase) > 0 {
+		data["home_showcase"] = showcase
+	}
+	if banner := console_setting.GetPricingBanner(); len(banner) > 0 {
+		data["pricing_banner"] = banner
+	}
 
 	// Add enabled custom OAuth providers
 	customProviders := oauth.GetEnabledCustomProviders()

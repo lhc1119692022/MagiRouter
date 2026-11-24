@@ -33,6 +33,7 @@ import { useTranslation } from 'react-i18next'
 
 import { PublicLayout } from '@/components/layout'
 import { BrandFooter } from '@/features/magirouter-home/components/brand-footer'
+import { useStatus } from '@/hooks/use-status'
 import { getLobeIcon } from '@/lib/lobe-icon'
 import {
   getModelCategories,
@@ -56,6 +57,11 @@ import {
 import { useFilters } from './hooks/use-filters'
 import { usePricingData } from './hooks/use-pricing-data'
 import {
+  parsePricingBannerConfig,
+  resolveShowcaseMediaKind,
+  type PricingBannerSlideConfig,
+} from './lib/banner-config'
+import {
   getCatalogFacets,
   expandTaskFilters,
   getModelPlaygroundModes,
@@ -65,6 +71,7 @@ export function Pricing() {
   const { t } = useTranslation()
   const navigate = useNavigate({ from: '/pricing/' })
   const { auth } = useAuthStore()
+  const { status } = useStatus()
   const isAuthenticated = Boolean(auth.user)
 
   const [selectedModelName, setSelectedModelName] = useState<string | null>(
@@ -219,7 +226,36 @@ export function Pricing() {
 
   const sortLabels = useMemo(() => getSortLabels(t), [t])
 
+  const configuredBannerSlides = useMemo(
+    () =>
+      parsePricingBannerConfig(
+        status?.pricing_banner ?? status?.data?.pricing_banner
+      ),
+    [status?.data?.pricing_banner, status?.pricing_banner]
+  )
+
   const bannerSlides = useMemo(() => {
+    if (configuredBannerSlides.length > 0) {
+      return configuredBannerSlides.map((slide: PricingBannerSlideConfig) => ({
+        id: `${slide.title}::${slide.media_url ?? ''}::${slide.cta_href ?? ''}`,
+        title: slide.title,
+        subtitle: slide.subtitle ?? '',
+        ctaLabel: slide.cta_label ?? '',
+        mediaUrl: slide.media_url,
+        mediaType: slide.media_type,
+        posterUrl: slide.poster_url,
+        onAction: () => {
+          const href = slide.cta_href
+          if (!href) return
+          if (/^https?:\/\//i.test(href)) {
+            window.open(href, '_blank', 'noopener,noreferrer')
+            return
+          }
+          void navigate({ to: href as '/' })
+        },
+      }))
+    }
+
     const flagshipModel = models?.[0]?.model_name
     const videoModel = models?.find((item) =>
       getModelPlaygroundModes(item).includes('video')
@@ -235,11 +271,15 @@ export function Pricing() {
 
     return [
       {
+        id: 'default-pricing',
         title: flagshipModel
           ? `${flagshipModel} · ${t('Model Pricing')}`
           : t('No models available'),
         subtitle: `一个 API 密钥统一调用 OpenAI Responses、Anthropic Messages 与 Gemini 原生协议，${cheapestLabel}。`,
         ctaLabel: '立即体验',
+        mediaUrl: undefined,
+        mediaType: undefined,
+        posterUrl: undefined,
         onAction: () => {
           if (models?.[0]) {
             setSelectedModelName(models[0].model_name)
@@ -249,12 +289,16 @@ export function Pricing() {
         },
       },
       {
+        id: 'default-playground',
         title: videoModel
           ? `${t('Video Generation')} · ${videoModel}`
           : t('Playground'),
         subtitle:
           '在 Playground 中一站式调试文本推理、图像生成、视频制作与语音合成，实时生成可复用的 cURL 与 JSON 请求。',
         ctaLabel: '打开 Playground',
+        mediaUrl: undefined,
+        mediaType: undefined,
+        posterUrl: undefined,
         onAction: () => {
           void navigate({
             to: '/playground',
@@ -265,17 +309,26 @@ export function Pricing() {
         },
       },
       {
+        id: 'default-docs',
         title: '官方定价 × 分组倍率 · 失败免扣费',
         subtitle: t('Browse model pricing'),
         ctaLabel: '查看文档说明',
+        mediaUrl: undefined,
+        mediaType: undefined,
+        posterUrl: undefined,
         onAction: () => {
           void navigate({ to: '/docs' })
         },
       },
     ]
-  }, [facets.groups, groupRatio, models, navigate, t])
+  }, [configuredBannerSlides, facets.groups, groupRatio, models, navigate, t])
 
-  const activeSlide = bannerSlides[bannerSlide] || bannerSlides[0]
+  const activeSlideIndex = bannerSlide < bannerSlides.length ? bannerSlide : 0
+  const activeSlide = bannerSlides[activeSlideIndex] || bannerSlides[0]
+  const activeBannerMediaKind = resolveShowcaseMediaKind(
+    activeSlide?.mediaUrl,
+    activeSlide?.mediaType
+  )
 
   const sortedVendors = useMemo(() => {
     const visibleIds = new Set(models.map((model) => model.vendor_id))
@@ -393,41 +446,74 @@ export function Pricing() {
           <div className='models-main'>
             <div className='models-main-inner'>
               <div className='compact-banner'>
-                <div>
+                {activeBannerMediaKind && activeSlide.mediaUrl && (
+                  <div
+                    className='compact-banner-media-layer'
+                    aria-hidden='true'
+                  >
+                    {activeBannerMediaKind === 'video' ? (
+                      <video
+                        key={activeSlide.mediaUrl}
+                        className='compact-banner-media-bg'
+                        src={activeSlide.mediaUrl}
+                        poster={activeSlide.posterUrl}
+                        autoPlay
+                        muted
+                        loop
+                        playsInline
+                      />
+                    ) : (
+                      <img
+                        key={activeSlide.mediaUrl}
+                        className='compact-banner-media-bg'
+                        src={activeSlide.mediaUrl}
+                        alt=''
+                      />
+                    )}
+                    <div className='compact-banner-scrim' />
+                  </div>
+                )}
+                <div className='compact-banner-copy'>
                   <h2 className='compact-banner-title'>{activeSlide.title}</h2>
-                  <p className='compact-banner-sub'>{activeSlide.subtitle}</p>
+                  {activeSlide.subtitle && (
+                    <p className='compact-banner-sub'>{activeSlide.subtitle}</p>
+                  )}
                 </div>
-                <button
-                  type='button'
-                  className='el-btn el-btn-md'
-                  style={{
-                    background: '#FFFFFF',
-                    color: '#000000',
-                    flexShrink: 0,
-                  }}
-                  onClick={activeSlide.onAction}
-                >
-                  {activeSlide.ctaLabel}
-                </button>
-                <div
-                  className='compact-banner-dots'
-                  role='tablist'
-                  aria-label='横幅轮播'
-                >
-                  {bannerSlides.map((slide, slideIndex) => (
-                    <button
-                      key={slide.title}
-                      type='button'
-                      className={
-                        slideIndex === bannerSlide
-                          ? 'banner-dot is-active'
-                          : 'banner-dot'
-                      }
-                      aria-label={`第 ${slideIndex + 1} 条`}
-                      onClick={() => setBannerSlide(slideIndex)}
-                    />
-                  ))}
-                </div>
+                {activeSlide.ctaLabel && (
+                  <button
+                    type='button'
+                    className='el-btn el-btn-md compact-banner-cta'
+                    style={{
+                      background: '#FFFFFF',
+                      color: '#000000',
+                      flexShrink: 0,
+                    }}
+                    onClick={activeSlide.onAction}
+                  >
+                    {activeSlide.ctaLabel}
+                  </button>
+                )}
+                {bannerSlides.length > 1 && (
+                  <div
+                    className='compact-banner-dots'
+                    role='tablist'
+                    aria-label='横幅轮播'
+                  >
+                    {bannerSlides.map((slide, slideIndex) => (
+                      <button
+                        key={slide.id}
+                        type='button'
+                        className={
+                          slideIndex === activeSlideIndex
+                            ? 'banner-dot is-active'
+                            : 'banner-dot'
+                        }
+                        aria-label={`第 ${slideIndex + 1} 条`}
+                        onClick={() => setBannerSlide(slideIndex)}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className='catalog-top-bar'>

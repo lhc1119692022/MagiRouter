@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { HomeShowcaseSection } from '../content/home-showcase-section'
 import { SystemInfoSection } from '../general/system-info-section'
 import {
   parseHeaderNavModules,
@@ -28,6 +29,7 @@ import { NoticeSection } from '../maintenance/notice-section'
 import { SidebarModulesSection } from '../maintenance/sidebar-modules-section'
 import type { SiteSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
+import { PricingBannerSection } from './pricing-banner-section'
 
 const SITE_SECTIONS = [
   {
@@ -90,6 +92,22 @@ const SITE_SECTIONS = [
         />
       )
     },
+  },
+  {
+    id: 'home-showcase',
+    titleKey: 'Home Showcase Media',
+    build: (settings: SiteSettings) => (
+      <HomeShowcaseSection value={settings['console_setting.home_showcase']} />
+    ),
+  },
+  {
+    id: 'pricing-banner',
+    titleKey: 'Model Square Banner',
+    build: (settings: SiteSettings) => (
+      <PricingBannerSection
+        value={settings['console_setting.pricing_banner']}
+      />
+    ),
   },
 ] as const
 

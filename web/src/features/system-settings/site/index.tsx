@@ -38,6 +38,8 @@ const defaultSiteSettings: SiteSettings = {
   'legal.privacy_policy': '',
   HeaderNavModules: '',
   SidebarModulesAdmin: '',
+  'console_setting.home_showcase': '{}',
+  'console_setting.pricing_banner': '[]',
 }
 
 export function SiteSettings() {

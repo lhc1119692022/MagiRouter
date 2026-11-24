@@ -1,42 +1,106 @@
 import { Link } from '@tanstack/react-router'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { toIntlLocale } from '@/i18n/languages'
+import { getLobeIcon } from '@/lib/lobe-icon'
 
-import type { CatalogQuote } from '../lib/catalog-quote'
+import type { BillingComparisonData } from '../lib/catalog-quote'
 
 interface RoutesSectionProps {
-  quote?: CatalogQuote
+  comparison: BillingComparisonData
   loading: boolean
   failed: boolean
 }
 
+type PriceViewMode = 'yours' | 'official'
+
+function formatDiscountTag(ratio: number): string {
+  if (ratio === 0) return '免费'
+  if (ratio > 0 && ratio < 1) {
+    const zhe = Math.round(ratio * 100) / 10
+    return `${Number.isInteger(zhe) ? zhe.toFixed(0) : zhe}折`
+  }
+  return `${ratio}×`
+}
+
+function formatRatioText(ratio: number): string {
+  return `倍率 ${ratio}×`
+}
+
 export function RoutesSection(props: RoutesSectionProps) {
   const { t, i18n } = useTranslation()
-  const { quote } = props
-  let message = t(
+  const { groups, rowsByGroup } = props.comparison
+  const [selectedGroupName, setSelectedGroupName] = useState<string>('')
+  const [priceView, setPriceView] = useState<PriceViewMode>('yours')
+
+  const activeGroup = useMemo(() => {
+    if (groups.length === 0) return undefined
+    return groups.find((group) => group.name === selectedGroupName) ?? groups[0]
+  }, [groups, selectedGroupName])
+
+  const rows = useMemo(() => {
+    if (!activeGroup) return []
+    return rowsByGroup[activeGroup.name] ?? []
+  }, [activeGroup, rowsByGroup])
+
+  const hasCacheColumn = useMemo(
+    () =>
+      rows.some(
+        (row) => row.yourCacheUsd !== null || row.officialCacheUsd !== null
+      ),
+    [rows]
+  )
+
+  const hasAnyPublisherOfficial = useMemo(
+    () => rows.some((row) => row.usesPublisherOfficialPrice),
+    [rows]
+  )
+
+  const bestSavingsPercent = useMemo(() => {
+    let best = 0
+    for (const row of rows) {
+      if (row.savingsPercent !== null && row.savingsPercent > best) {
+        best = row.savingsPercent
+      }
+    }
+    return best
+  }, [rows])
+
+  const usd = useMemo(
+    () =>
+      new Intl.NumberFormat(
+        toIntlLocale(i18n.resolvedLanguage || i18n.language),
+        {
+          style: 'currency',
+          currency: 'USD',
+          currencyDisplay: 'narrowSymbol',
+          minimumFractionDigits: 0,
+          maximumSignificantDigits: 8,
+        }
+      ),
+    [i18n.language, i18n.resolvedLanguage]
+  )
+
+  let emptyMessage = t(
     'No current token price is available for an eligible model and group.'
   )
-  if (props.loading) message = t('Loading')
-  if (props.failed) message = t('Failed to load models')
-  const usd = new Intl.NumberFormat(
-    toIntlLocale(i18n.resolvedLanguage || i18n.language),
-    {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 0,
-      maximumSignificantDigits: 8,
-    }
-  )
+  if (props.loading) emptyMessage = t('Loading')
+  if (props.failed) emptyMessage = t('Failed to load models')
+
+  const isYourPrice = priceView === 'yours'
 
   return (
     <section id='home-billing' className='el-section-md'>
       <div className='el-container'>
         <div className='section-head'>
           <div>
-            <h2 className='el-h2'>透明可预测的平台计费体系</h2>
-            <p className='el-body-sm' style={{ marginTop: 8, maxWidth: 720 }}>
-              {t('Pricing')}
+            <div className='section-heading-row'>
+              <h2 className='el-h2'>透明可预测的平台计费体系</h2>
+              <span className='section-title-badge'>计费案例</span>
+            </div>
+            <p className='el-body-sm' style={{ marginTop: 8, maxWidth: 640 }}>
+              以下仅选取代表性模型作为计费案例，点击切换「你的价格」与「官方价格」实时对比折扣差。
             </p>
           </div>
           <Link to='/pricing' className='el-btn el-btn-lg el-btn-white'>
@@ -44,161 +108,272 @@ export function RoutesSection(props: RoutesSectionProps) {
           </Link>
         </div>
 
-        <div className='billing-formula-bar'>
-          <div className='billing-formula-top'>
-            <div className='formula-chain' aria-label='平台计费公式'>
-              <span
-                className='formula-node'
-                style={{
-                  background: 'var(--btn-primary-bg)',
-                  color: 'var(--btn-primary-fg)',
-                }}
+        {activeGroup && rows.length > 0 ? (
+          <section
+            className={`billing-compare-shell${isYourPrice ? ' is-yours' : ' is-official'}`}
+            aria-label={t('Current catalog input price')}
+          >
+            <div className='billing-compare-toolbar'>
+              <div className='billing-compare-summary'>
+                {isYourPrice ? (
+                  <>
+                    <span
+                      className='billing-mode-dot is-savings'
+                      aria-hidden='true'
+                    />
+                    <span className='billing-summary-text'>
+                      当前分组 <strong>{activeGroup.name}</strong>
+                      <span className='billing-summary-sep'>·</span>
+                      <span className='tabular-nums'>
+                        {formatRatioText(activeGroup.ratio)}
+                      </span>
+                      {bestSavingsPercent > 0 && (
+                        <>
+                          <span className='billing-summary-sep'>·</span>
+                          <span className='billing-summary-highlight tabular-nums'>
+                            最高立省 {bestSavingsPercent}%
+                          </span>
+                        </>
+                      )}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span
+                      className='billing-mode-dot is-official'
+                      aria-hidden='true'
+                    />
+                    <span className='billing-summary-text'>
+                      {hasAnyPublisherOfficial
+                        ? '官方标准参考价（未应用平台分组折扣），切回「你的价格」查看折后实付'
+                        : '1× 基准标准价（未应用分组线路折扣），切回「你的价格」查看分组折后价'}
+                    </span>
+                  </>
+                )}
+              </div>
+
+              <div
+                className='billing-price-toggle'
+                role='group'
+                aria-label='价格对比切换'
               >
-                {t('Input price')}
+                <button
+                  type='button'
+                  className={`billing-toggle-btn${isYourPrice ? ' is-active' : ''}`}
+                  aria-pressed={isYourPrice}
+                  onClick={() => setPriceView('yours')}
+                >
+                  <span>你的价格</span>
+                  {bestSavingsPercent > 0 && (
+                    <span className='billing-toggle-chip tabular-nums'>
+                      省{bestSavingsPercent}%
+                    </span>
+                  )}
+                </button>
+                <button
+                  type='button'
+                  className={`billing-toggle-btn${!isYourPrice ? ' is-active' : ''}`}
+                  aria-pressed={!isYourPrice}
+                  onClick={() => setPriceView('official')}
+                >
+                  <span>官方价格</span>
+                </button>
+              </div>
+            </div>
+
+            {groups.length > 1 && (
+              <div
+                className='billing-group-strip'
+                role='group'
+                aria-label='分组线路选择'
+              >
+                {groups.map((group) => {
+                  const selected = group.name === activeGroup.name
+                  const hasDiscount = group.ratio < 1
+                  return (
+                    <button
+                      key={group.name}
+                      type='button'
+                      className={`billing-group-pill${selected ? ' is-selected' : ''}`}
+                      aria-pressed={selected}
+                      onClick={() => {
+                        setSelectedGroupName(group.name)
+                        setPriceView('yours')
+                      }}
+                    >
+                      <div className='billing-group-pill-top'>
+                        <span className='billing-group-name'>{group.name}</span>
+                        <span
+                          className={`billing-group-tag tabular-nums${hasDiscount ? ' is-discount' : ''}`}
+                        >
+                          {formatDiscountTag(group.ratio)}
+                        </span>
+                      </div>
+                      <div className='billing-group-meta tabular-nums'>
+                        {formatRatioText(group.ratio)}
+                        {group.desc ? ` · ${group.desc}` : ''}
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+
+            <div className='billing-table-wrap'>
+              <table className='billing-compare-table'>
+                <thead>
+                  <tr>
+                    <th scope='col'>模型 ID</th>
+                    <th scope='col'>输入价格</th>
+                    <th scope='col'>输出价格</th>
+                    {hasCacheColumn && <th scope='col'>缓存读取</th>}
+                    <th scope='col' className='text-right'>
+                      节省幅度
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row) => {
+                    const displayInput = isYourPrice
+                      ? row.yourInputUsd
+                      : row.officialInputUsd
+                    const displayOutput = isYourPrice
+                      ? row.yourOutputUsd
+                      : row.officialOutputUsd
+                    const displayCache = isYourPrice
+                      ? row.yourCacheUsd
+                      : row.officialCacheUsd
+                    const showInputStrike =
+                      isYourPrice && row.officialInputUsd > row.yourInputUsd
+                    const showOutputStrike =
+                      isYourPrice && row.officialOutputUsd > row.yourOutputUsd
+
+                    let savingsBadge = (
+                      <span className='billing-savings-badge is-official'>
+                        官方价格
+                      </span>
+                    )
+                    if (isYourPrice && row.savingsPercent !== null) {
+                      savingsBadge = (
+                        <span className='billing-savings-badge is-discount'>
+                          省 {row.savingsPercent}%
+                        </span>
+                      )
+                    } else if (isYourPrice) {
+                      savingsBadge = (
+                        <span className='billing-savings-badge'>
+                          {formatDiscountTag(activeGroup.ratio)}
+                        </span>
+                      )
+                    }
+
+                    return (
+                      <tr key={row.modelName}>
+                        <td>
+                          <Link
+                            to='/pricing/$modelId'
+                            params={{ modelId: row.modelName }}
+                            className='billing-model-cell'
+                          >
+                            <span className='billing-model-icon'>
+                              {row.iconKey
+                                ? getLobeIcon(row.iconKey, 18)
+                                : null}
+                            </span>
+                            <span className='billing-model-name'>
+                              {row.modelName}
+                            </span>
+                          </Link>
+                        </td>
+                        <td className='tabular-nums'>
+                          <div className='billing-price-cell'>
+                            <span
+                              className={`billing-price-main${isYourPrice ? ' is-yours' : ''}`}
+                            >
+                              {usd.format(displayInput)}
+                              <small> / 1M</small>
+                            </span>
+                            {showInputStrike && (
+                              <del className='billing-price-strike'>
+                                {usd.format(row.officialInputUsd)}
+                              </del>
+                            )}
+                          </div>
+                        </td>
+                        <td className='tabular-nums'>
+                          <div className='billing-price-cell'>
+                            <span
+                              className={`billing-price-main${isYourPrice ? ' is-yours' : ''}`}
+                            >
+                              {usd.format(displayOutput)}
+                              <small> / 1M</small>
+                            </span>
+                            {showOutputStrike && (
+                              <del className='billing-price-strike'>
+                                {usd.format(row.officialOutputUsd)}
+                              </del>
+                            )}
+                          </div>
+                        </td>
+                        {hasCacheColumn && (
+                          <td className='tabular-nums'>
+                            {displayCache !== null ? (
+                              <span className='billing-price-sub'>
+                                {usd.format(displayCache)}
+                                <small> / 1M</small>
+                              </span>
+                            ) : (
+                              <span className='billing-price-empty'>—</span>
+                            )}
+                          </td>
+                        )}
+                        <td className='text-right tabular-nums'>
+                          {savingsBadge}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div className='billing-compare-footer'>
+              <span className='billing-footer-note tabular-nums'>
+                计费案例展示：当前仅节选 {rows.length} 个代表性模型（
+                {activeGroup.name} 分组共支持 {activeGroup.modelCount} 个模型）
               </span>
-              <span className='formula-op'>=</span>
-              <span className='formula-node'>{t('Base Price')}</span>
-              <span className='formula-op'>×</span>
-              <span className='formula-node'>分组线路倍率</span>
+              <Link to='/pricing' className='billing-footer-link'>
+                查看全部模型报价 →
+              </Link>
             </div>
+          </section>
+        ) : (
+          <div className='billing-empty-shell'>
+            <p role='status' className='billing-empty-status'>
+              {emptyMessage}
+            </p>
+            <Link to='/pricing' className='el-btn el-btn-md el-btn-white'>
+              前往模型广场查看 →
+            </Link>
           </div>
+        )}
 
-          {quote ? (
-            <section
-              className='billing-formula-example tabular-nums'
-              aria-label={t('Current catalog input price')}
-            >
-              <div className='example-head-row'>
-                <span className='example-caption'>
-                  <strong>{t('Current catalog input price')}</strong> ·{' '}
-                  {quote.modelName}
-                </span>
-                <span className='example-caption'>
-                  {t('Group')}: {quote.group}
-                </span>
-              </div>
-              <div className='example-equation-row'>
-                <div className='example-step-card'>
-                  <span className='example-step-label'>{t('Base Price')}</span>
-                  <div className='example-step-val'>
-                    {usd.format(quote.baseUsd)} <small>USD / 1M</small>
-                  </div>
-                </div>
-                <span className='example-op' aria-hidden='true'>
-                  ×
-                </span>
-                <div className='example-step-card'>
-                  <span className='example-step-label'>分组线路倍率</span>
-                  <div className='example-step-val'>{quote.groupRatio}</div>
-                </div>
-                <span className='example-op' aria-hidden='true'>
-                  =
-                </span>
-                <div className='example-step-card'>
-                  <span className='example-step-label'>{t('Input price')}</span>
-                  <div className='example-step-val'>
-                    {usd.format(quote.inputUsd)} <small>USD / 1M</small>
-                  </div>
-                </div>
-              </div>
-            </section>
-          ) : (
-            <p role='status' className='billing-formula-example'>
-              {message}
-            </p>
-          )}
-        </div>
-
-        <div className='billing-grid-3'>
-          <div className='el-card-cream'>
-            <div className='billing-card-head'>
-              <h3 className='el-h3'>语言与推理模型计价</h3>
-              <span className='billing-card-num tabular-nums'>01</span>
-            </div>
-            <p className='el-body-sm' style={{ marginTop: 10 }}>
-              区分输入、输出、推理思考与 Prompt Cache
-              读写。各模型支持的计费项和具体分组价格见模型广场。
-            </p>
+        <div className='billing-trust-strip' aria-label='计费保障'>
+          <div className='billing-trust-item'>
+            <span className='billing-trust-dot' aria-hidden='true' />
+            <span>余额永久有效 · 零月租</span>
           </div>
-
-          <div className='el-card-cream'>
-            <div className='billing-card-head'>
-              <h3 className='el-h3'>图片、视频与多模态灵活计费</h3>
-              <span className='billing-card-num tabular-nums'>02</span>
-            </div>
-            <p className='el-body-sm' style={{ marginTop: 10 }}>
-              提供极其丰富的计费方案，按模型原生形态灵活支持按
-              Token、按张、按秒、按分钟或按次（任务）计费，并细分分辨率、时长与功能档位；调用前清晰可预估，异常失败全额退回。
-            </p>
+          <div className='billing-trust-item'>
+            <span className='billing-trust-dot' aria-hidden='true' />
+            <span>上游异常或超时 · $0 扣费</span>
           </div>
-
-          <div className='el-card-cream'>
-            <div className='billing-card-head'>
-              <h3 className='el-h3'>自选倍率池与自由组合兜底</h3>
-              <span className='billing-card-num tabular-nums'>03</span>
-            </div>
-            <p className='el-body-sm' style={{ marginTop: 10 }}>
-              支持自由组合多条上游线路与优先级权重，主线路遇到限流或异常波动时自动切换至备用路由兜底，兼顾成本控制与高可用。
-            </p>
+          <div className='billing-trust-item'>
+            <span className='billing-trust-dot' aria-hidden='true' />
+            <span>多线路池容灾 · 自动兜底</span>
           </div>
-        </div>
-
-        <div className='billing-pillars-4'>
-          <div className='billing-pillar'>
-            <div
-              style={{
-                fontSize: 15,
-                fontWeight: 600,
-                color: 'var(--ink-strong)',
-              }}
-            >
-              余额永久有效，零月租
-            </div>
-            <p className='el-body-sm' style={{ marginTop: 4 }}>
-              用多少充多少，永不强制清零。
-            </p>
-          </div>
-          <div className='billing-pillar'>
-            <div
-              style={{
-                fontSize: 15,
-                fontWeight: 600,
-                color: 'var(--ink-strong)',
-              }}
-            >
-              一把 Key 调通全球模型
-            </div>
-            <p className='el-body-sm' style={{ marginTop: 4 }}>
-              免多平台开户，统一账单结算。
-            </p>
-          </div>
-          <div className='billing-pillar'>
-            <div
-              style={{
-                fontSize: 15,
-                fontWeight: 600,
-                color: 'var(--ink-strong)',
-              }}
-            >
-              没跑通，不花一分钱
-            </div>
-            <p className='el-body-sm' style={{ marginTop: 4 }}>
-              上游报错或超时，$0 扣费。
-            </p>
-          </div>
-          <div className='billing-pillar'>
-            <div
-              style={{
-                fontSize: 15,
-                fontWeight: 600,
-                color: 'var(--ink-strong)',
-              }}
-            >
-              每一笔扣费清晰可查
-            </div>
-            <p className='el-body-sm' style={{ marginTop: 4 }}>
-              协议、倍率与缓存明细留痕。
-            </p>
+          <div className='billing-trust-item'>
+            <span className='billing-trust-dot' aria-hidden='true' />
+            <span>倍率与缓存明细 · 逐笔可查</span>
           </div>
         </div>
       </div>

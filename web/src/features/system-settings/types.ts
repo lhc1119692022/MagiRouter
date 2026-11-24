@@ -155,6 +155,8 @@ export type SiteSettings = {
   'legal.privacy_policy': string
   HeaderNavModules: string
   SidebarModulesAdmin: string
+  'console_setting.home_showcase': string
+  'console_setting.pricing_banner': string
 }
 
 export type AuthSettings = {

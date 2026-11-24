@@ -4,6 +4,8 @@ import "github.com/QuantumNous/new-api/setting/config"
 
 type ConsoleSetting struct {
 	OfficialModelPrices  string `json:"official_model_prices"`
+	HomeShowcase         string `json:"home_showcase"`
+	PricingBanner        string `json:"pricing_banner"`
 	CreationPresets      string `json:"creation_presets"`
 	ApiInfo              string `json:"api_info"`              // 控制台 API 信息 (JSON 数组字符串)
 	UptimeKumaGroups     string `json:"uptime_kuma_groups"`    // Uptime Kuma 分组配置 (JSON 数组字符串)
@@ -18,6 +20,8 @@ type ConsoleSetting struct {
 // 默认配置
 var defaultConsoleSetting = ConsoleSetting{
 	OfficialModelPrices:  "{}",
+	HomeShowcase:         "{}",
+	PricingBanner:        "[]",
 	CreationPresets:      "[]",
 	ApiInfo:              "",
 	UptimeKumaGroups:     "",

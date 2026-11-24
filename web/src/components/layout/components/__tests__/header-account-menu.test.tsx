@@ -7,7 +7,14 @@ import {
   Outlet,
   RouterProvider,
 } from '@tanstack/react-router'
-import { act, render, screen, waitFor, within } from '@testing-library/react'
+import {
+  act,
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, expect, test, vi } from 'vitest'
 
@@ -43,13 +50,13 @@ afterEach(() => {
   })
 })
 
-async function renderHeader(quota?: number) {
+async function renderHeader(quota?: number, role = 1) {
   useSystemConfigStore
     .getState()
     .setConfig({ currency: DEFAULT_CURRENCY_CONFIG })
   useAuthStore
     .getState()
-    .auth.setUser({ id: 8, username: 'menu-fixture', role: 1, quota })
+    .auth.setUser({ id: 8, username: 'menu-fixture', role, quota })
   const onCommands = vi.fn()
   const root = createRootRoute({
     component: () => (
@@ -157,4 +164,26 @@ test('sign out still opens the confirmation dialog and can be cancelled without 
   await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
   await waitFor(() => expect(dialog).not.toBeInTheDocument())
   expect(useAuthStore.getState().auth.user?.username).toBe('menu-fixture')
+})
+
+test('root administrators see a quick System Settings shortcut in the account menu while regular users do not', async () => {
+  const regular = await renderHeader(1_000_000, 1)
+  await regular.user.click(regular.trigger)
+  const regularMenu = within(
+    await screen.findByRole('menu', { name: 'Account menu' })
+  )
+  expect(
+    regularMenu.queryByRole('menuitem', { name: 'System Settings' })
+  ).toBeNull()
+  await regular.user.keyboard('{Escape}')
+
+  cleanup()
+  const admin = await renderHeader(1_000_000, 100)
+  await admin.user.click(admin.trigger)
+  const adminMenu = within(
+    await screen.findByRole('menu', { name: 'Account menu' })
+  )
+  expect(
+    adminMenu.getByRole('menuitem', { name: 'System Settings' })
+  ).toHaveAttribute('href', '/system-settings/site')
 })

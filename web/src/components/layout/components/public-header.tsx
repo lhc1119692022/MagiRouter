@@ -36,6 +36,7 @@ import { useSystemConfig } from '@/hooks/use-system-config'
 import { useTopNavLinks } from '@/hooks/use-top-nav-links'
 import { useUserDisplay } from '@/hooks/use-user-display'
 import { formatQuotaWithCurrency } from '@/lib/currency'
+import { ROLE } from '@/lib/roles'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -604,6 +605,7 @@ export function PublicHeader(props: PublicHeaderProps) {
                   displayName={displayName}
                   secondaryText={secondaryText}
                   formattedBalance={formattedBalance}
+                  showSystemSettings={user?.role === ROLE.SUPER_ADMIN}
                   onSignOut={() => setSignOutOpen(true)}
                 />
               )}
