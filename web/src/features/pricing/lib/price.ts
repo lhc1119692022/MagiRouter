@@ -16,10 +16,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { formatBillingCurrencyFromUSD } from '@/lib/currency'
+import {
+  formatBillingCurrencyFromUSD,
+  formatQuotedAmount,
+} from '@/lib/currency'
 
 import { QUOTA_TYPE_VALUES, TOKEN_UNIT_DIVISORS } from '../constants'
-import type { PricingModel, TokenUnit, PriceType } from '../types'
+import type { PriceMode, PricingModel, TokenUnit, PriceType } from '../types'
 import { getConfiguredGroupRatio, getDisplayGroupRatio } from './model-helpers'
 
 // ----------------------------------------------------------------------------
@@ -139,6 +142,24 @@ function applyRechargeRate(
   return (price * priceRate) / usdExchangeRate
 }
 
+export function formatPriceByMode(
+  usdAmount: number,
+  priceMode: PriceMode,
+  priceRate = 1,
+  showCurrencySymbol = true,
+  digitsSmall = 6
+): string {
+  if (!Number.isFinite(usdAmount) || usdAmount < 0) return '-'
+  const amount = priceMode === 'yours' ? usdAmount * priceRate : usdAmount
+  const currencyCode = priceMode === 'yours' ? 'CNY' : 'USD'
+  return formatQuotedAmount(amount, currencyCode, {
+    showSymbol: showCurrencySymbol,
+    digitsLarge: 4,
+    digitsSmall,
+    abbreviate: false,
+  })
+}
+
 /**
  * Format token-based price for display
  */
@@ -150,10 +171,24 @@ export function formatPrice(
   priceRate = 1,
   usdExchangeRate = 1,
   selectedGroup?: string,
-  showCurrencySymbol = true
+  showCurrencySymbol = true,
+  priceMode?: PriceMode
 ): string {
   if (model.quota_type === QUOTA_TYPE_VALUES.REQUEST) {
     return '-'
+  }
+
+  if (priceMode) {
+    const ratio =
+      priceMode === 'official' ? 1 : getDisplayGroupRatio(model, selectedGroup)
+    const priceInUSD =
+      calculateTokenPrice(model, type, ratio) / TOKEN_UNIT_DIVISORS[tokenUnit]
+    return formatPriceByMode(
+      priceInUSD,
+      priceMode,
+      priceRate,
+      showCurrencySymbol
+    )
   }
 
   const displayGroupRatio = getDisplayGroupRatio(model, selectedGroup)
@@ -254,13 +289,26 @@ export function formatRequestPrice(
   priceRate = 1,
   usdExchangeRate = 1,
   selectedGroup?: string,
-  showCurrencySymbol = true
+  showCurrencySymbol = true,
+  priceMode?: PriceMode
 ): string {
   if (
     model.quota_type !== QUOTA_TYPE_VALUES.REQUEST ||
     model.model_price == null
   ) {
     return '-'
+  }
+
+  if (priceMode) {
+    const ratio =
+      priceMode === 'official' ? 1 : getDisplayGroupRatio(model, selectedGroup)
+    return formatPriceByMode(
+      model.model_price * ratio,
+      priceMode,
+      priceRate,
+      showCurrencySymbol,
+      6
+    )
   }
 
   const displayGroupRatio = getDisplayGroupRatio(model, selectedGroup)

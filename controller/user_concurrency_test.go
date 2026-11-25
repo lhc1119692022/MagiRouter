@@ -67,6 +67,8 @@ func TestGetSelfAndUsersIncludeConcurrencySummary(t *testing.T) {
 	require.NoError(t, setting.UpdateUserConcurrencyLimitGroupByJSONString(`{"vip":15}`))
 
 	disabledSelf := callSelf()
+	assert.Greater(t, user.CreatedAt, int64(0))
+	assert.Equal(t, float64(user.CreatedAt), disabledSelf["created_at"])
 	disabledSummary := disabledSelf["concurrency_limit"].(map[string]any)
 	assert.Equal(t, false, disabledSummary["enabled"])
 	assert.Equal(t, "disabled", disabledSummary["source"])

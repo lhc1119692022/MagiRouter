@@ -292,3 +292,30 @@ func TestCacheUpdateChannelSyncsAdvancedCustomConfig(t *testing.T) {
 
 	assert.Nil(t, channel2advancedCustomConfig[401])
 }
+
+func TestGetPricingIncludesModelCreatedTime(t *testing.T) {
+	resetPricingEndpointTestTables(t)
+
+	insertPricingEndpointChannel(t, 501, constant.ChannelTypeOpenAI, dto.ChannelOtherSettings{})
+	insertPricingEndpointAbility(t, 501, "model-with-time")
+	require.NoError(t, DB.Create(&Model{
+		ModelName:   "model-with-time",
+		Status:      1,
+		CreatedTime: 1700001234,
+		UpdatedTime: 1700001234,
+	}).Error)
+
+	InitChannelCache()
+	InvalidatePricingCache()
+	pricings := GetPricing()
+
+	var matched *Pricing
+	for idx := range pricings {
+		if pricings[idx].ModelName == "model-with-time" {
+			matched = &pricings[idx]
+			break
+		}
+	}
+	require.NotNil(t, matched)
+	assert.Equal(t, int64(1700001234), matched.CreatedTime)
+}

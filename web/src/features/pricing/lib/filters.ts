@@ -36,7 +36,12 @@ import {
   type QuotaTypeOption,
   type SortOption,
 } from '../constants'
-import type { PricingModel } from '../types'
+import type { PriceMode, PricingModel } from '../types'
+import {
+  getCurrentTimePricingTiers,
+  splitBillingExprAndRequestRules,
+  type ParsedTier,
+} from './billing-expr'
 import { compileBillingExpression } from './billing-expression/parser'
 import { visitExpression } from './billing-expression/types'
 import {
@@ -45,7 +50,7 @@ import {
   hasTaskUsageSchema,
   isUnconfiguredTaskUsageModel,
 } from './dynamic-price'
-import { isTokenBasedModel } from './model-helpers'
+import { getDisplayGroupRatio, isTokenBasedModel } from './model-helpers'
 import { withBasePricing } from './plugin-pricing'
 import { calculateTokenPrice } from './price'
 
@@ -206,14 +211,138 @@ function getSortPrice(
   return calculateTokenPrice(model, kind, 1)
 }
 
+export type SortModelsOptions = {
+  selectedGroup?: string
+  priceMode?: PriceMode
+}
+
+function getEffectiveCardPrice(
+  listedModel: PricingModel,
+  options?: SortModelsOptions
+): number | undefined {
+  const model = withBasePricing(listedModel)
+  const ratio =
+    options?.priceMode === 'official'
+      ? 1
+      : getDisplayGroupRatio(model, options?.selectedGroup)
+  const summary = getDynamicPricingSummary(model, { tokenUnit: 'M' })
+
+  if (summary && summary.primaryEntries.length > 0) {
+    const activeTiers =
+      !summary.isTaskUsage && summary.isTimePricing
+        ? (getCurrentTimePricingTiers(
+            splitBillingExprAndRequestRules(model.billing_expr || '')
+              .billingExpr,
+            new Date()
+          ) ?? summary.tiers)
+        : summary.tiers
+
+    let bestRequest = Number.POSITIVE_INFINITY
+    for (const tier of activeTiers) {
+      if (
+        !('unitPrices' in tier) &&
+        tier.billingUnit === 'request' &&
+        typeof tier.fixedPrice === 'number' &&
+        Number.isFinite(tier.fixedPrice) &&
+        tier.fixedPrice >= 0 &&
+        tier.fixedPrice < bestRequest
+      ) {
+        bestRequest = tier.fixedPrice
+      }
+    }
+    if (!Number.isFinite(bestRequest)) {
+      for (const entry of summary.primaryEntries) {
+        if (entry.unit === 'request' || entry.unit === 'image') {
+          const candidate = entry.minValue ?? entry.value
+          if (
+            Number.isFinite(candidate) &&
+            candidate >= 0 &&
+            candidate < bestRequest
+          ) {
+            bestRequest = candidate
+          }
+        }
+      }
+    }
+    if (Number.isFinite(bestRequest)) {
+      return bestRequest * ratio
+    }
+
+    if (summary.isTaskUsage) {
+      const primary = summary.primaryEntries[0]
+      const minValue = primary.minValue ?? primary.value
+      return Number.isFinite(minValue) && minValue >= 0
+        ? minValue * ratio
+        : undefined
+    }
+
+    let bestInput = Number.POSITIVE_INFINITY
+    for (const tier of activeTiers) {
+      if (!('unitPrices' in tier) && tier.billingUnit !== 'request') {
+        const input = Number((tier as ParsedTier).inputPrice)
+        if (Number.isFinite(input) && input >= 0 && input < bestInput) {
+          bestInput = input
+        }
+      }
+    }
+    if (Number.isFinite(bestInput)) {
+      return bestInput * ratio
+    }
+
+    const primary = summary.primaryEntries[0]
+    const fallbackValue = primary.minValue ?? primary.value
+    return Number.isFinite(fallbackValue) && fallbackValue >= 0
+      ? fallbackValue * ratio
+      : undefined
+  }
+
+  if (isUnconfiguredTaskUsageModel(model) || model.price_unconfigured) {
+    return undefined
+  }
+
+  if (isTokenBasedModel(model)) {
+    const inputPrice = calculateTokenPrice(model, 'input', 1)
+    return Number.isFinite(inputPrice) && inputPrice >= 0
+      ? inputPrice * ratio
+      : undefined
+  }
+
+  return typeof model.model_price === 'number' &&
+    Number.isFinite(model.model_price) &&
+    model.model_price >= 0
+    ? model.model_price * ratio
+    : undefined
+}
+
 /**
  * Sort models by specified option
  */
 export function sortModels(
   models: PricingModel[],
-  sortBy: string
+  sortBy: string,
+  options?: SortModelsOptions
 ): PricingModel[] {
   const sorted = [...models]
+
+  if (sortBy === SORT_OPTIONS.PRICE_ASC || sortBy === SORT_OPTIONS.PRICE_DESC) {
+    const direction = sortBy === SORT_OPTIONS.PRICE_ASC ? 1 : -1
+    const prices = new Map(
+      sorted.map((model) => [model, getEffectiveCardPrice(model, options)])
+    )
+    sorted.sort((first, second) => {
+      const priceA = prices.get(first)
+      const priceB = prices.get(second)
+      if (priceA === undefined || priceB === undefined) {
+        const missingDiff =
+          Number(priceA === undefined) - Number(priceB === undefined)
+        if (missingDiff !== 0) return missingDiff
+      } else if (priceA !== priceB) {
+        return direction * (priceA - priceB)
+      }
+      return (first.model_name || '').localeCompare(second.model_name || '')
+    })
+    return sorted
+  }
 
   const priceSort = PRICE_SORTS[sortBy as SortOption]
   if (priceSort) {
@@ -234,9 +363,27 @@ export function sortModels(
   }
 
   switch (sortBy) {
+    case SORT_OPTIONS.TIME_DESC:
+    case SORT_OPTIONS.TIME_ASC: {
+      const direction = sortBy === SORT_OPTIONS.TIME_ASC ? 1 : -1
+      sorted.sort((first, second) => {
+        const timeDiff =
+          ((first.created_time ?? 0) - (second.created_time ?? 0)) * direction
+        if (timeDiff !== 0) return timeDiff
+        const idDiff = ((first.id ?? 0) - (second.id ?? 0)) * direction
+        if (idDiff !== 0) return idDiff
+        return (first.model_name || '').localeCompare(second.model_name || '')
+      })
+      break
+    }
     case SORT_OPTIONS.NAME:
       sorted.sort((a, b) =>
         (a.model_name || '').localeCompare(b.model_name || '')
+      )
+      break
+    case SORT_OPTIONS.NAME_DESC:
+      sorted.sort((a, b) =>
+        (b.model_name || '').localeCompare(a.model_name || '')
       )
       break
   }
@@ -257,6 +404,7 @@ export function filterAndSortModels(
     endpointType: string
     tag: string
     sortBy: string
+    priceMode?: PriceMode
   }
 ): PricingModel[] {
   let result = filterBySearch(models, filters.search)
@@ -265,7 +413,10 @@ export function filterAndSortModels(
   result = filterByQuotaType(result, filters.quotaType)
   result = filterByEndpointType(result, filters.endpointType)
   result = filterByTag(result, filters.tag)
-  result = sortModels(result, filters.sortBy)
+  result = sortModels(result, filters.sortBy, {
+    selectedGroup: filters.group,
+    priceMode: filters.priceMode,
+  })
 
   return result
 }
@@ -276,9 +427,6 @@ export function filterAndSortModels(
 export function parseTags(tagsString?: string): string[] {
   if (!tagsString) return []
   return getOrdinaryModelTags(tagsString)
-    .flatMap((tag) => tag.split(/[;|\s]+/))
-    .map((t) => t.trim())
-    .filter(Boolean)
 }
 
 /**

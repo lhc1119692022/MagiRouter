@@ -19,7 +19,9 @@ For commercial licensing, please contact support@quantumnous.com
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import {
   ArrowDownAZ,
-  ArrowUpDown,
+  ArrowDownWideNarrow,
+  ArrowUpNarrowWide,
+  ArrowUpZA,
   Check,
   ChevronDown,
   LayoutGrid,
@@ -41,18 +43,19 @@ import {
 } from '@/lib/model-task-capabilities'
 import { useAuthStore } from '@/stores/auth-store'
 
-import { LoadingSkeleton, PricingTable, ModelDetailsDrawer } from './components'
+import { LoadingSkeleton, ModelDetailsDrawer } from './components'
 import { CatalogNavigation } from './components/catalog-navigation'
 import { TaskCapabilityFilters } from './components/task-capability-filters'
 import { ZmModelCardGrid } from './components/zm-model-card-grid'
+import { ZmModelTable } from './components/zm-model-table'
 import {
+  CATALOG_SORT_OPTIONS,
   FILTER_ALL,
+  PRICE_MODES,
   QUOTA_TYPES,
-  SORT_OPTIONS,
   VIEW_MODES,
-  getSortLabels,
   getQuotaTypeLabels,
-  type SortOption,
+  type CatalogSortIconKind,
 } from './constants'
 import { useFilters } from './hooks/use-filters'
 import { usePricingData } from './hooks/use-pricing-data'
@@ -67,6 +70,19 @@ import {
   getModelPlaygroundModes,
 } from './lib/filters'
 
+function renderCatalogSortIcon(icon: CatalogSortIconKind, className: string) {
+  switch (icon) {
+    case 'desc':
+      return <ArrowDownWideNarrow className={className} />
+    case 'asc':
+      return <ArrowUpNarrowWide className={className} />
+    case 'name-asc':
+      return <ArrowDownAZ className={className} />
+    case 'name-desc':
+      return <ArrowUpZA className={className} />
+  }
+}
+
 export function Pricing() {
   const { t } = useTranslation()
   const navigate = useNavigate({ from: '/pricing/' })
@@ -78,7 +94,7 @@ export function Pricing() {
     null
   )
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
-  const [extraFiltersOpen, setExtraFiltersOpen] = useState(false)
+  const [extraFiltersOpen, setExtraFiltersOpen] = useState(true)
   const [sortMenuOpen, setSortMenuOpen] = useState(false)
   const taskFilter = useSearch({
     from: '/pricing/',
@@ -142,22 +158,19 @@ export function Pricing() {
     availableGroups,
     groupFilter,
     quotaTypeFilter,
-    tagFilter,
     tokenUnit,
     viewMode,
     showRechargePrice,
+    priceMode,
     setSearchInput,
     setSortBy,
     toggleVendor,
     setGroupFilter,
     setQuotaTypeFilter,
-    setTagFilter,
-    setTokenUnit,
     setViewMode,
-    setShowRechargePrice,
+    setPriceMode,
     filteredModels,
     hasActiveFilters,
-    availableTags,
     clearFilters,
     clearSearch,
   } = useFilters(models, usableGroup, catalogReady)
@@ -190,16 +203,13 @@ export function Pricing() {
     [models, usableGroup]
   )
   const hasExtraOptions =
-    availableGroups.length > 0 ||
-    facets.quotaTypes.length > 0 ||
-    availableTags.length > 0
+    availableGroups.length > 0 || facets.quotaTypes.length > 0
 
   const extraActiveCount = useMemo(
     () =>
       (groupFilter !== FILTER_ALL ? 1 : 0) +
-      (quotaTypeFilter !== QUOTA_TYPES.ALL ? 1 : 0) +
-      (tagFilter !== FILTER_ALL ? 1 : 0),
-    [groupFilter, quotaTypeFilter, tagFilter]
+      (quotaTypeFilter !== QUOTA_TYPES.ALL ? 1 : 0),
+    [groupFilter, quotaTypeFilter]
   )
 
   const anyFilterActive =
@@ -224,7 +234,12 @@ export function Pricing() {
     })
   }, [clearFilters, clearSearch, navigate])
 
-  const sortLabels = useMemo(() => getSortLabels(t), [t])
+  const activeSortOption = useMemo(
+    () =>
+      CATALOG_SORT_OPTIONS.find((option) => option.value === sortBy) ??
+      CATALOG_SORT_OPTIONS[0],
+    [sortBy]
+  )
 
   const configuredBannerSlides = useMemo(
     () =>
@@ -345,6 +360,7 @@ export function Pricing() {
           usdExchangeRate={usdExchangeRate}
           tokenUnit={tokenUnit}
           showRechargePrice={showRechargePrice}
+          priceMode={priceMode}
           selectedGroup={groupFilter}
           onResetFilters={handleClearAll}
         />
@@ -379,17 +395,16 @@ export function Pricing() {
     }
 
     return (
-      <div className='el-table-wrap p-2'>
-        <PricingTable
-          models={displayedModels}
-          priceRate={priceRate}
-          usdExchangeRate={usdExchangeRate}
-          tokenUnit={tokenUnit}
-          showRechargePrice={showRechargePrice}
-          selectedGroup={groupFilter}
-          onModelClick={handleModelClick}
-        />
-      </div>
+      <ZmModelTable
+        models={displayedModels}
+        priceRate={priceRate}
+        usdExchangeRate={usdExchangeRate}
+        tokenUnit={tokenUnit}
+        showRechargePrice={showRechargePrice}
+        priceMode={priceMode}
+        selectedGroup={groupFilter}
+        onModelClick={handleModelClick}
+      />
     )
   }
 
@@ -546,13 +561,15 @@ export function Pricing() {
                       aria-haspopup='menu'
                       aria-expanded={sortMenuOpen}
                       aria-label='排序方式'
+                      title={t(activeSortOption.tooltipKey)}
                       onClick={() => setSortMenuOpen((previous) => !previous)}
                     >
-                      <ArrowUpDown className='size-3.5 opacity-75' />
-                      <span>
-                        {sortLabels[sortBy as SortOption] || sortLabels.name}
-                      </span>
-                      <ChevronDown className='size-3 opacity-60' />
+                      {renderCatalogSortIcon(
+                        activeSortOption.icon,
+                        'size-3.5 shrink-0 opacity-75'
+                      )}
+                      <span>{t(activeSortOption.labelKey)}</span>
+                      <ChevronDown className='size-3 shrink-0 opacity-60' />
                     </button>
                     {sortMenuOpen && (
                       <div
@@ -560,55 +577,88 @@ export function Pricing() {
                         role='menu'
                         aria-label='模型排序选项'
                       >
-                        {(Object.values(SORT_OPTIONS) as SortOption[]).map(
-                          (option) => {
-                            const active = sortBy === option
-                            return (
-                              <button
-                                key={option}
-                                type='button'
-                                className={
-                                  active
-                                    ? 'sort-option-btn is-active'
-                                    : 'sort-option-btn'
-                                }
-                                role='menuitem'
-                                onClick={() => {
-                                  setSortBy(option)
-                                  setSortMenuOpen(false)
-                                }}
-                              >
-                                <ArrowDownAZ className='size-3.5 opacity-70' />
-                                <span>{sortLabels[option]}</span>
-                                <Check className='sort-option-check size-3.5' />
-                              </button>
-                            )
-                          }
-                        )}
+                        {CATALOG_SORT_OPTIONS.map((option) => {
+                          const active = sortBy === option.value
+                          const tooltip = t(option.tooltipKey)
+                          return (
+                            <button
+                              key={option.value}
+                              type='button'
+                              className={
+                                active
+                                  ? 'sort-option-btn is-active'
+                                  : 'sort-option-btn'
+                              }
+                              role='menuitem'
+                              title={tooltip}
+                              aria-label={tooltip}
+                              onClick={() => {
+                                setSortBy(option.value)
+                                setSortMenuOpen(false)
+                              }}
+                            >
+                              {renderCatalogSortIcon(
+                                option.icon,
+                                'size-3.5 shrink-0 opacity-70'
+                              )}
+                              <span>{t(option.labelKey)}</span>
+                              <Check className='sort-option-check size-3.5' />
+                            </button>
+                          )
+                        })}
                       </div>
                     )}
                   </div>
 
-                  <button
-                    type='button'
-                    className='sort-trigger-btn tabular-nums'
-                    title='切换每百万 / 每千 Token 计价单位'
-                    onClick={() => setTokenUnit(tokenUnit === 'M' ? 'K' : 'M')}
-                  >
-                    <span>{tokenUnit === 'M' ? '/1M' : '/1K'}</span>
-                  </button>
+                  {hasExtraOptions && (
+                    <button
+                      type='button'
+                      className={
+                        extraFiltersOpen || extraActiveCount > 0
+                          ? 'filter-expand-btn is-open'
+                          : 'filter-expand-btn'
+                      }
+                      aria-expanded={extraFiltersOpen}
+                      onClick={() =>
+                        setExtraFiltersOpen((previous) => !previous)
+                      }
+                    >
+                      <SlidersHorizontal className='size-3.5 shrink-0' />
+                      <span>{t('Filters')}</span>
+                      {extraActiveCount > 0 && (
+                        <span className='filter-badge-count'>
+                          {extraActiveCount}
+                        </span>
+                      )}
+                    </button>
+                  )}
 
                   <button
                     type='button'
                     className={
-                      showRechargePrice
-                        ? 'filter-pill is-active'
+                      priceMode === PRICE_MODES.OFFICIAL
+                        ? 'sort-trigger-btn is-active'
                         : 'sort-trigger-btn'
                     }
-                    title='按充值折算价展示'
-                    onClick={() => setShowRechargePrice(!showRechargePrice)}
+                    aria-pressed={priceMode === PRICE_MODES.OFFICIAL}
+                    title={
+                      priceMode === PRICE_MODES.OFFICIAL
+                        ? t('Click to switch to your price')
+                        : t('Click to switch to official price')
+                    }
+                    onClick={() =>
+                      setPriceMode(
+                        priceMode === PRICE_MODES.OFFICIAL
+                          ? PRICE_MODES.YOURS
+                          : PRICE_MODES.OFFICIAL
+                      )
+                    }
                   >
-                    <span>充值价</span>
+                    <span>
+                      {priceMode === PRICE_MODES.OFFICIAL
+                        ? t('Official price')
+                        : t('Your price')}
+                    </span>
                   </button>
 
                   <div
@@ -690,8 +740,8 @@ export function Pricing() {
                         </div>
                       </div>
                     )}
-                    <div className='filter-top-actions'>
-                      {anyFilterActive && (
+                    {anyFilterActive && (
+                      <div className='filter-top-actions'>
                         <button
                           type='button'
                           className='filter-clear-link'
@@ -699,30 +749,8 @@ export function Pricing() {
                         >
                           {t('Reset')}
                         </button>
-                      )}
-                      {hasExtraOptions && (
-                        <button
-                          type='button'
-                          className={
-                            extraFiltersOpen || extraActiveCount > 0
-                              ? 'filter-expand-btn is-open'
-                              : 'filter-expand-btn'
-                          }
-                          aria-expanded={extraFiltersOpen}
-                          onClick={() =>
-                            setExtraFiltersOpen((previous) => !previous)
-                          }
-                        >
-                          <SlidersHorizontal className='size-3.5' />
-                          <span>{t('Filters')}</span>
-                          {extraActiveCount > 0 && (
-                            <span className='filter-badge-count'>
-                              {extraActiveCount}
-                            </span>
-                          )}
-                        </button>
-                      )}
-                    </div>
+                      </div>
+                    )}
                   </div>
 
                   <TaskCapabilityFilters
@@ -798,36 +826,6 @@ export function Pricing() {
                                   }
                                 >
                                   {getQuotaTypeLabels(t)[quota]}
-                                </button>
-                              )
-                            })}
-                          </div>
-                        </div>
-                      )}
-
-                      {availableTags.length > 0 && (
-                        <div className='filter-line'>
-                          <span className='filter-group-label'>
-                            {t('Model Tags')}
-                          </span>
-                          <div className='filter-pills-wrap'>
-                            {availableTags.slice(0, 14).map((tag) => {
-                              const active = tagFilter === tag
-                              return (
-                                <button
-                                  key={tag}
-                                  type='button'
-                                  aria-pressed={active}
-                                  className={
-                                    active
-                                      ? 'filter-pill is-active'
-                                      : 'filter-pill'
-                                  }
-                                  onClick={() =>
-                                    setTagFilter(active ? FILTER_ALL : tag)
-                                  }
-                                >
-                                  {tag}
                                 </button>
                               )
                             })}

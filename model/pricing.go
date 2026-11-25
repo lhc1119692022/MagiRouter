@@ -36,6 +36,7 @@ type Pricing struct {
 	Icon                   string                               `json:"icon,omitempty"`
 	Tags                   string                               `json:"tags,omitempty"`
 	VendorID               int                                  `json:"vendor_id,omitempty"`
+	CreatedTime            int64                                `json:"created_time,omitempty"`
 	QuotaType              int                                  `json:"quota_type"`
 	ModelRatio             float64                              `json:"model_ratio"`
 	ModelPrice             float64                              `json:"model_price"`
@@ -382,6 +383,7 @@ func updatePricing() {
 			pricing.Icon = meta.Icon
 			pricing.Tags = meta.Tags
 			pricing.VendorID = meta.VendorID
+			pricing.CreatedTime = meta.CreatedTime
 		}
 		priceName := model
 		if ordinaryChannelModels[model] {

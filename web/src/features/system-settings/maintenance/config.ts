@@ -97,6 +97,7 @@ export const SIDEBAR_MODULES_DEFAULT: SidebarModulesAdminConfig = {
     system_info: true,
     task_plugins: true,
     request_processing: true,
+    violation_audit: true,
   },
 }
 

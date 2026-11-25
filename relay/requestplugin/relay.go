@@ -487,6 +487,12 @@ func settle(c *gin.Context, outcome Outcome) *types.NewAPIError {
 		}
 	}
 	if rejected := outcome.Rejected; rejected != nil {
+		if outcome.violation != nil {
+			capture := *outcome.violation
+			capture.RequestId = c.GetString(common.RequestIdKey)
+			capture.Ip = c.ClientIP()
+			service.CaptureViolationRejection(capture)
+		}
 		service.RequestPolicy(c).AddEvent(service.PolicyEvent{ErrorCode: string(types.ErrorCodeRequestRejected), ErrorSource: "local", Decision: service.PolicyDecision{Action: "stop", Reason: "local_rejection", Source: "plugin"}, Health: "unchanged"})
 		message := rejected.Message
 		if message == "" {

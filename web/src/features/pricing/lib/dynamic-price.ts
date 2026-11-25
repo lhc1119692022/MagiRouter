@@ -22,6 +22,7 @@ import { TOKEN_UNIT_DIVISORS } from '../constants'
 import type {
   BillingUsageSchema,
   BillingUsageUnit,
+  PriceMode,
   PricingModel,
   TokenUnit,
 } from '../types'
@@ -43,6 +44,7 @@ import {
 } from './cache-pricing'
 import { getDisplayGroupRatio } from './model-helpers'
 import { withPluginPricing } from './plugin-pricing'
+import { formatPriceByMode } from './price'
 import {
   evaluateTaskVisualConfig,
   getTaskNumberFields,
@@ -56,6 +58,7 @@ export type DynamicPriceOptions = {
   tokenUnit: TokenUnit
   showCurrencySymbol?: boolean
   showRechargePrice?: boolean
+  priceMode?: PriceMode
   priceRate?: number
   usdExchangeRate?: number
   groupRatioMultiplier?: number
@@ -212,6 +215,17 @@ export function formatDynamicUnitPrice(
   const groupRatio = options.groupRatioMultiplier ?? 1
   const priceRate = options.priceRate ?? 1
   const usdExchangeRate = options.usdExchangeRate ?? 1
+  if (options.priceMode) {
+    const ratio = options.priceMode === 'official' ? 1 : groupRatio
+    const priceUSD =
+      (valuePerMillionTokens * ratio) / TOKEN_UNIT_DIVISORS[options.tokenUnit]
+    return formatPriceByMode(
+      priceUSD,
+      options.priceMode,
+      priceRate,
+      options.showCurrencySymbol ?? true
+    )
+  }
   const priceUSD =
     (valuePerMillionTokens * groupRatio) /
     TOKEN_UNIT_DIVISORS[options.tokenUnit]
@@ -237,6 +251,15 @@ export function formatTaskUsageUnitPrice(
   const groupRatio = options.groupRatioMultiplier ?? 1
   const priceRate = options.priceRate ?? 1
   const usdExchangeRate = options.usdExchangeRate ?? 1
+  if (options.priceMode) {
+    const ratio = options.priceMode === 'official' ? 1 : groupRatio
+    return formatPriceByMode(
+      valuePerUnit * ratio,
+      options.priceMode,
+      priceRate,
+      options.showCurrencySymbol ?? true
+    )
+  }
   const priceUSD = valuePerUnit * groupRatio
   const displayPrice = applyRechargeRate(
     priceUSD,

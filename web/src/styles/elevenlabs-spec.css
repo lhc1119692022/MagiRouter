@@ -2556,20 +2556,33 @@ body:not([data-current-page='home'])
   color: var(--ink-strong);
   font-size: 13px;
   font-weight: 500;
+  white-space: nowrap;
   box-shadow: inset 0 0 0 var(--hairline) var(--ring-strong);
   transition:
     background-color 140ms var(--ease-default),
+    color 140ms var(--ease-default),
     box-shadow 140ms var(--ease-default);
 }
 .sort-trigger-btn:hover {
   background: var(--bg-cream);
   box-shadow: inset 0 0 0 var(--hairline) var(--ink-strong);
 }
+.sort-trigger-btn.is-active {
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-fg);
+  box-shadow: none;
+}
+.sort-trigger-btn.is-active:hover {
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-fg);
+  box-shadow: none;
+  opacity: 0.92;
+}
 .sort-dropdown-menu {
   position: absolute;
   top: calc(100% + 6px);
   right: 0;
-  min-width: 124px;
+  min-width: 118px;
   padding: 5px;
   border-radius: 12px;
   background: var(--bg-elevated);
@@ -2592,6 +2605,7 @@ body:not([data-current-page='home'])
   font-weight: 400;
   color: var(--ink-body);
   text-align: left;
+  white-space: nowrap;
   transition:
     background-color 120ms var(--ease-default),
     color 120ms var(--ease-default);
@@ -2764,11 +2778,12 @@ html[data-theme='dark'] .filter-rows {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 30px;
+  height: 36px;
   padding: 0 12px;
   border-radius: 9999px;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 500;
+  white-space: nowrap;
   color: var(--ink-strong);
   background: var(--bg-elevated);
   box-shadow: inset 0 0 0 var(--hairline) var(--ring-strong);
@@ -2785,6 +2800,12 @@ html[data-theme='dark'] .filter-rows {
   background: var(--btn-primary-bg);
   color: var(--btn-primary-fg);
   box-shadow: none;
+}
+.filter-expand-btn.is-open:hover {
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-fg);
+  box-shadow: none;
+  opacity: 0.92;
 }
 .filter-badge-count {
   display: inline-flex;
@@ -3131,6 +3152,14 @@ html[data-theme='dark'] .zm-cap-tag {
 .zm-cap-tag.is-configurable {
   color: var(--ink-muted);
   background: transparent;
+  border: 1px dashed var(--ring-strong);
+  box-shadow: none;
+}
+html[data-theme='dark'] .zm-cap-tag.is-configurable {
+  color: var(--ink-muted);
+  background: transparent;
+  border: 1px dashed var(--ring-strong);
+  box-shadow: none;
 }
 .zm-hover-zone {
   position: relative;
@@ -3235,6 +3264,11 @@ html[data-theme='dark'] .zm-action-btn.is-secondary {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.zm-card-price-unit {
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--ink-muted);
+}
 .zm-card-meta-pill {
   font-size: 11.5px;
   font-weight: 400;
@@ -3286,6 +3320,181 @@ html[data-theme='dark'] .zm-action-btn.is-secondary {
 }
 #sr-model-table-wrap .el-table th {
   font-size: 11px;
+}
+.zm-catalog-table th {
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0.01em;
+  color: var(--ink-muted);
+  white-space: nowrap;
+  padding: 11px 12px;
+}
+.zm-catalog-table td {
+  padding: 12px;
+  color: var(--ink-body);
+  vertical-align: middle;
+}
+.zm-catalog-table th:first-child,
+.zm-catalog-table td:first-child {
+  padding-left: 16px;
+}
+.zm-catalog-table th:last-child,
+.zm-catalog-table td:last-child {
+  padding-right: 16px;
+}
+.zm-table-row {
+  cursor: pointer;
+  transition: background-color 120ms var(--ease-default);
+}
+.zm-table-model-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+.zm-table-icon-box {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: var(--bg-subtle);
+  color: var(--ink-strong);
+  box-shadow: inset 0 0 0 var(--hairline) var(--ring-color);
+}
+html[data-theme='dark'] .zm-table-icon-box {
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: inset 0 0 0 var(--hairline) rgba(255, 255, 255, 0.1);
+}
+.zm-table-model-name {
+  font-family: var(--font-mono);
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--ink-strong);
+  letter-spacing: -0.01em;
+}
+.zm-table-copy-btn {
+  width: 22px;
+  height: 22px;
+  opacity: 0;
+}
+.zm-table-row:hover .zm-table-copy-btn,
+.zm-table-row:focus-within .zm-table-copy-btn {
+  opacity: 1;
+}
+.zm-table-uptime {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+.zm-table-uptime .zm-uptime-ticks {
+  width: 96px;
+  flex-shrink: 0;
+}
+.zm-table-uptime-val {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-strong);
+  white-space: nowrap;
+}
+.zm-table-uptime-val.is-muted {
+  font-weight: 400;
+  color: var(--ink-subtle);
+}
+.zm-table-type-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ink-body);
+  background: var(--bg-subtle);
+  box-shadow: inset 0 0 0 var(--hairline) var(--ring-color);
+  white-space: nowrap;
+}
+html[data-theme='dark'] .zm-table-type-pill {
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 0 0 var(--hairline) rgba(255, 255, 255, 0.1);
+}
+.zm-table-price {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  white-space: nowrap;
+}
+.zm-table-price-stack {
+  display: inline-grid;
+  grid-template-columns: auto auto;
+  column-gap: 8px;
+  row-gap: 3px;
+  align-items: baseline;
+  white-space: nowrap;
+}
+.zm-table-price-row {
+  display: contents;
+}
+.zm-table-price-label {
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--ink-subtle);
+}
+.zm-table-price-amount {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+}
+.zm-table-price-main {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-strong);
+  letter-spacing: -0.01em;
+}
+.zm-table-price-sub {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ink-body);
+  letter-spacing: -0.01em;
+}
+.zm-table-price-muted {
+  font-size: 12.5px;
+  font-weight: 400;
+  color: var(--ink-subtle);
+}
+.zm-table-price-unit {
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--ink-muted);
+}
+.zm-table-vendor {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--ink-body);
+  white-space: nowrap;
+}
+.zm-table-vendor-icon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.zm-table-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  min-width: 120px;
+}
+.zm-table-empty-cell {
+  color: var(--ink-subtle);
+  font-size: 12.5px;
 }
 
 /* ── 10. Timeline (公告 · 通知 · 排行榜) ── */
@@ -4328,7 +4537,7 @@ html[data-theme='dark'] .setup-snippet-box {
   }
 }
 .dash-kpi-card {
-  padding: 13px 16px 11px;
+  padding: 18px 20px 16px;
   border-radius: 16px;
   background: var(--bg-elevated);
   box-shadow:
@@ -4337,8 +4546,8 @@ html[data-theme='dark'] .setup-snippet-box {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  gap: 6px;
-  min-height: 116px;
+  gap: 12px;
+  min-height: 124px;
 }
 html[data-theme='dark'] .dash-kpi-card {
   background: #161413;
@@ -4366,19 +4575,19 @@ html[data-theme='dark'] .dash-kpi-card {
   color: var(--ink-subtle);
 }
 .dash-kpi-val {
-  font-size: 24px;
+  font-size: 26px;
   font-weight: 400;
   line-height: 1.15;
   letter-spacing: -0.025em;
   color: var(--ink-strong);
 }
 .dash-kpi-sub {
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--ink-subtle);
-  margin-top: 3px;
+  margin-top: 6px;
 }
 .dash-spark-wrap {
-  height: 24px;
+  height: 28px;
   width: 100%;
 }
 .dash-spark-wrap svg {
@@ -4388,7 +4597,7 @@ html[data-theme='dark'] .dash-kpi-card {
   overflow: visible;
 }
 .dash-balance-card {
-  padding: 14px 18px;
+  padding: 16px 18px;
   border-radius: 16px;
   background: var(--bg-subtle);
   box-shadow:
@@ -4398,6 +4607,8 @@ html[data-theme='dark'] .dash-kpi-card {
   flex-direction: column;
   justify-content: space-between;
   gap: 10px;
+  container-type: inline-size;
+  container-name: balance-card;
 }
 html[data-theme='dark'] .dash-balance-card {
   background: #1b1816;
@@ -4407,6 +4618,42 @@ html[data-theme='dark'] .dash-balance-card {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  flex-wrap: wrap;
+}
+.dash-balance-body {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+.dash-balance-metrics {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.dash-balance-usage {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  margin-left: clamp(12px, 4.2cqi, 22px);
+  padding-left: clamp(12px, 4.2cqi, 22px);
+  border-left: 1px solid color-mix(in srgb, var(--ink-strong) 12%, transparent);
+}
+.dash-balance-usage-label {
+  font-size: 11.5px;
+  line-height: 1.3;
+  color: var(--ink-subtle);
+  white-space: nowrap;
+}
+.dash-balance-usage-val {
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+  color: var(--ink-strong);
+  white-space: nowrap;
 }
 .dash-balance-top-row {
   display: flex;
@@ -4436,17 +4683,70 @@ html[data-theme='dark'] .dash-health-badge {
   background: #10b981;
 }
 .dash-balance-amount {
-  font-size: 30px;
+  font-size: clamp(24px, 7.2cqi, 30px);
   font-weight: 400;
   line-height: 1.1;
   letter-spacing: -0.03em;
   color: var(--ink-strong);
+  flex-shrink: 0;
 }
 .dash-balance-actions {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.dash-balance-actions > a {
+  justify-content: center;
+  white-space: nowrap;
+}
+@container balance-card (min-width: 380px) {
+  .dash-balance-body {
+    gap: 14px;
+  }
+  .dash-balance-usage-val {
+    font-size: 17px;
+  }
+  .dash-balance-actions {
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+}
+@container balance-card (max-width: 280px) {
+  .dash-balance-body {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .dash-balance-metrics {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+  .dash-balance-usage {
+    flex-direction: row;
+    align-items: baseline;
+    gap: 0.4em;
+    margin-left: 0;
+    padding-left: 0;
+    border-left: none;
+  }
+  .dash-balance-usage-label,
+  .dash-balance-usage-val {
+    font-size: 12.5px;
+    font-weight: 400;
+    color: var(--ink-muted);
+  }
+  .dash-balance-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
 }
 .dash-panel {
   border-radius: 16px;

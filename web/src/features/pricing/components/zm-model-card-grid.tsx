@@ -1,59 +1,38 @@
-import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { Check, ChevronLeft, ChevronRight, Copy } from 'lucide-react'
 import { memo, useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { getPerfMetricsSummary } from '@/features/performance-metrics/api'
 import { formatUptimePct } from '@/features/performance-metrics/lib/format'
 import type { PerfModelSummary } from '@/features/performance-metrics/types'
 import { formatTimestampToDate } from '@/lib/format'
 import { getLobeIcon } from '@/lib/lobe-icon'
-import {
-  getModelCategories,
-  CATEGORY_LABEL_KEYS,
-} from '@/lib/model-task-capabilities'
-import { requireServerSuccess } from '@/lib/server-error-message'
-import { useAuthStore } from '@/stores/auth-store'
+import { CATEGORY_LABEL_KEYS } from '@/lib/model-task-capabilities'
 import { useSystemConfigStore } from '@/stores/system-config-store'
 
 import {
   DEFAULT_PRICING_PAGE_SIZE,
   DEFAULT_TOKEN_UNIT,
-  QUOTA_TYPES,
+  PRICE_MODES,
 } from '../constants'
 import { useBillingTime } from '../hooks/use-billing-time'
+import { useCatalogPerfMetrics } from '../hooks/use-catalog-perf-metrics'
 import {
-  getDynamicDisplayGroupRatio,
-  getDynamicPriceUnitLabelKey,
-  getDynamicPricingSummary,
-  isUnconfiguredTaskUsageModel,
-} from '../lib/dynamic-price'
-import {
-  getModelQuotaType,
-  getModelPlaygroundModes,
-  parseTags,
-} from '../lib/filters'
-import { isTokenBasedModel } from '../lib/model-helpers'
+  getCatalogDisplayTags,
+  getCatalogQuotaLabel,
+  MONITOR_TICK_CLASS,
+  resolveCatalogPriceDisplay,
+} from '../lib/catalog-display'
+import { getDynamicPricingSummary } from '../lib/dynamic-price'
+import { getModelPlaygroundModes } from '../lib/filters'
+import { resolveDisplayGroup } from '../lib/model-helpers'
 import {
   buildHourlyMonitorSlots,
-  type HourlyMonitorSlotState,
   isMeasuredRate,
-  monitoringWindowLabel,
   type MonitoringWindow,
-  observedRequestSamples,
 } from '../lib/monitored-requests'
 import { withBasePricing } from '../lib/plugin-pricing'
-import { formatPrice, formatRequestPrice } from '../lib/price'
-import { taskUsageUnitLabel } from '../lib/task-price-display'
-import type { PricingModel, TokenUnit } from '../types'
-
-const MONITOR_TICK_CLASS: Record<HourlyMonitorSlotState, string> = {
-  empty: 'zm-uptime-tick',
-  ok: 'zm-uptime-tick is-ok',
-  warn: 'zm-uptime-tick is-warn',
-  err: 'zm-uptime-tick is-err',
-}
+import type { PriceMode, PricingModel, TokenUnit } from '../types'
 
 export interface ZmModelCardGridProps {
   models: PricingModel[]
@@ -62,6 +41,7 @@ export interface ZmModelCardGridProps {
   usdExchangeRate?: number
   tokenUnit?: TokenUnit
   showRechargePrice?: boolean
+  priceMode?: PriceMode
   selectedGroup?: string
   onResetFilters?: () => void
 }
@@ -73,6 +53,7 @@ interface ZmModelCardItemProps {
   usdExchangeRate: number
   tokenUnit: TokenUnit
   showRechargePrice: boolean
+  priceMode: PriceMode
   selectedGroup?: string
   perf?: PerfModelSummary
   monitoringWindow?: MonitoringWindow
@@ -90,16 +71,9 @@ const ZmModelCardItem = memo(function ZmModelCardItem(
   const billingTime = useBillingTime(props.model.billing_expr)
 
   const baseModel = useMemo(() => withBasePricing(props.model), [props.model])
-  const isTokenBased = isTokenBasedModel(baseModel)
-  const tokenUnitLabel = props.tokenUnit === 'K' ? '1K' : '1M'
-  const tags = useMemo(() => parseTags(props.model.tags), [props.model.tags])
-  const capabilities = useMemo(
-    () => getModelCategories(props.model),
-    [props.model]
-  )
-  const quotaCategory = useMemo(
-    () => getModelQuotaType(props.model),
-    [props.model]
+  const { capabilities, remarkTags } = useMemo(
+    () => getCatalogDisplayTags(props.model, t),
+    [props.model, t]
   )
 
   const iconKey = props.model.icon || props.model.vendor_icon
@@ -112,20 +86,28 @@ const ZmModelCardItem = memo(function ZmModelCardItem(
     .charAt(0)
     .toUpperCase()
 
+  const displayGroup = useMemo(
+    () => resolveDisplayGroup(baseModel, props.selectedGroup),
+    [baseModel, props.selectedGroup]
+  )
+  const isOfficialPrice = props.priceMode === PRICE_MODES.OFFICIAL
+
   const dynamicPriceOptions = useMemo(
     () => ({
-      groupRatio: getDynamicDisplayGroupRatio(baseModel, props.selectedGroup),
+      groupRatioMultiplier: isOfficialPrice ? 1 : displayGroup.ratio,
       now: billingTime === undefined ? undefined : new Date(billingTime),
       tokenUnit: props.tokenUnit,
+      priceMode: props.priceMode,
       showRechargePrice: props.showRechargePrice,
       priceRate: props.priceRate,
       usdExchangeRate: props.usdExchangeRate,
     }),
     [
-      baseModel,
-      props.selectedGroup,
+      isOfficialPrice,
+      displayGroup.ratio,
       billingTime,
       props.tokenUnit,
+      props.priceMode,
       props.showRechargePrice,
       props.priceRate,
       props.usdExchangeRate,
@@ -138,83 +120,42 @@ const ZmModelCardItem = memo(function ZmModelCardItem(
     [baseModel, dynamicPriceOptions, currency]
   )
 
-  const priceDisplay = (() => {
-    if (dynamicSummary && dynamicSummary.primaryEntries.length > 0) {
-      const primary = dynamicSummary.primaryEntries[0]
-      const secondary = dynamicSummary.primaryEntries[1]
-      const unitKey = getDynamicPriceUnitLabelKey(primary)
-      const unitLabel = taskUsageUnitLabel(
-        primary,
-        i18n.language,
-        unitKey ? t(unitKey) : tokenUnitLabel
-      )
-      if (secondary && !dynamicSummary.isTaskUsage) {
-        return {
-          primary: `${primary.formattedRange ?? primary.formatted} / ${secondary.formattedRange ?? secondary.formatted}`,
-          suffix: `/${unitLabel}`,
-          tooltip: `${primary.formatted} 输入 · ${secondary.formatted} 输出 / ${unitLabel}`,
-        }
-      }
-      return {
-        primary: primary.formattedRange ?? primary.formatted,
-        suffix: `/${unitLabel}`,
-        tooltip: `${primary.formattedRange ?? primary.formatted} / ${unitLabel}`,
-      }
-    }
-
-    if (isUnconfiguredTaskUsageModel(baseModel)) {
-      return {
-        primary: t('Usage-based'),
-        suffix: '',
-        tooltip: t('Usage-based billing'),
-      }
-    }
-
-    if (isTokenBased) {
-      const inputPrice = formatPrice(
+  const priceDisplay = useMemo(
+    () =>
+      resolveCatalogPriceDisplay({
         baseModel,
-        'input',
-        props.tokenUnit,
-        props.showRechargePrice,
-        props.priceRate,
-        props.usdExchangeRate,
-        props.selectedGroup
-      )
-      const outputPrice = formatPrice(
-        baseModel,
-        'output',
-        props.tokenUnit,
-        props.showRechargePrice,
-        props.priceRate,
-        props.usdExchangeRate,
-        props.selectedGroup
-      )
-      return {
-        primary: `${inputPrice} / ${outputPrice}`,
-        suffix: `/${tokenUnitLabel}`,
-        tooltip: `输入 ${inputPrice} · 输出 ${outputPrice} / ${tokenUnitLabel} tokens`,
-      }
-    }
-
-    const requestPrice = formatRequestPrice(
+        displayGroup,
+        dynamicSummary,
+        dynamicPriceOptions,
+        tokenUnit: props.tokenUnit,
+        priceMode: props.priceMode,
+        showRechargePrice: props.showRechargePrice,
+        priceRate: props.priceRate,
+        usdExchangeRate: props.usdExchangeRate,
+        selectedGroup: props.selectedGroup,
+        language: i18n.language,
+        t,
+      }),
+    [
       baseModel,
+      displayGroup,
+      dynamicSummary,
+      dynamicPriceOptions,
+      props.tokenUnit,
+      props.priceMode,
       props.showRechargePrice,
       props.priceRate,
       props.usdExchangeRate,
-      props.selectedGroup
-    )
-    return {
-      primary: requestPrice,
-      suffix: `/${t('request')}`,
-      tooltip: `${requestPrice} / ${t('request')}`,
-    }
-  })()
+      props.selectedGroup,
+      i18n.language,
+      t,
+    ]
+  )
 
-  const quotaLabel = useMemo(() => {
-    if (quotaCategory === QUOTA_TYPES.TASK) return '按任务'
-    if (quotaCategory === QUOTA_TYPES.REQUEST) return '按次计费'
-    return '按 Token'
-  }, [quotaCategory])
+  const quotaLabel = useMemo(
+    () => getCatalogQuotaLabel(props.model, dynamicSummary, t),
+    [props.model, dynamicSummary, t]
+  )
 
   const successRate = props.perf?.success_rate
   const samples = props.perf?.recent_success_series
@@ -388,11 +329,11 @@ const ZmModelCardItem = memo(function ZmModelCardItem(
             {t(CATEGORY_LABEL_KEYS[capability])}
           </span>
         ))}
-        {tags.slice(0, 2).map((tag) => (
+        {remarkTags.map((tag) => (
           <span
             key={tag}
             className='zm-cap-tag is-configurable'
-            title='模型标签'
+            title={t('Model Tags')}
           >
             {tag}
           </span>
@@ -434,7 +375,9 @@ const ZmModelCardItem = memo(function ZmModelCardItem(
           title={priceDisplay.tooltip}
         >
           <strong>{priceDisplay.primary}</strong>
-          {priceDisplay.suffix && <span> {priceDisplay.suffix}</span>}
+          {priceDisplay.suffix && (
+            <span className='zm-card-price-unit'>{priceDisplay.suffix}</span>
+          )}
         </span>
         <span className='zm-card-meta-pill' title={`计费方式：${quotaLabel}`}>
           {quotaLabel}
@@ -454,6 +397,7 @@ export const ZmModelCardGrid = memo(function ZmModelCardGrid(
   const priceRate = props.priceRate ?? 1
   const usdExchangeRate = props.usdExchangeRate ?? 1
   const showRechargePrice = props.showRechargePrice ?? false
+  const priceMode = props.priceMode ?? PRICE_MODES.YOURS
 
   const totalPages = Math.max(1, Math.ceil(props.models.length / pageSize))
   const currentPage = Math.min(page, totalPages)
@@ -463,38 +407,8 @@ export const ZmModelCardGrid = memo(function ZmModelCardGrid(
     return props.models.slice(startIndex, startIndex + pageSize)
   }, [currentPage, pageSize, props.models])
 
-  const viewer = useAuthStore((state) => state.auth.user)
-  const perfQuery = useQuery({
-    queryKey: ['catalog-monitored-requests', 24, viewer?.id, viewer?.group],
-    queryFn: async () => requireServerSuccess(await getPerfMetricsSummary(24)),
-    enabled: props.models.length > 0,
-    staleTime: 60 * 1000,
-    retry: false,
-  })
-
-  const perfMap = useMemo(() => {
-    const result = perfQuery.data?.data
-    const map = new Map<string, PerfModelSummary>()
-    for (const model of result?.models ?? []) {
-      map.set(model.model_name, {
-        ...model,
-        recent_success_series: observedRequestSamples(
-          model.recent_success_series,
-          result
-        ),
-      })
-    }
-    return map
-  }, [perfQuery.data])
-  const monitoringWindow = useMemo<MonitoringWindow | undefined>(() => {
-    const result = perfQuery.data?.data
-    if (!result) return undefined
-    return {
-      window_start: result.window_start,
-      window_end: result.window_end,
-    }
-  }, [perfQuery.data])
-  const windowLabel = monitoringWindowLabel(perfQuery.data?.data)
+  const { perfMap, monitoringWindow, windowLabel, monitoringStatus } =
+    useCatalogPerfMetrics(props.models.length > 0)
 
   if (props.models.length === 0) {
     return (
@@ -536,11 +450,12 @@ export const ZmModelCardGrid = memo(function ZmModelCardGrid(
             priceRate={priceRate}
             usdExchangeRate={usdExchangeRate}
             showRechargePrice={showRechargePrice}
+            priceMode={priceMode}
             selectedGroup={props.selectedGroup}
             perf={perfMap.get(model.model_name || '')}
             monitoringWindow={monitoringWindow}
             windowLabel={windowLabel}
-            monitoringStatus={perfQuery.status}
+            monitoringStatus={monitoringStatus}
             onModelClick={props.onModelClick}
           />
         ))}

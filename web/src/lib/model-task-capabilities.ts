@@ -68,6 +68,7 @@ const PREFIX = '@mr:tasks:v1='
 const validCodes = new Set(Object.values(TASK_CODES))
 const CATEGORY_PREFIX = '@mr:catalog:v1='
 const categoryCodes = new Set<string>(MODEL_CAPABILITY_CATEGORIES)
+const TAG_DELIMITER = /[,，]/
 
 export function isModelTaskDeclaration(tag: string): boolean {
   if (!tag.startsWith(PREFIX)) return false
@@ -92,17 +93,22 @@ export function isModelCatalogDeclaration(tag: string): boolean {
 }
 
 export function getOrdinaryModelTags(tags?: string): string[] {
-  return (tags ?? '')
-    .split(',')
-    .map((tag) => tag.trim())
-    .filter((tag) => tag && !isModelCatalogDeclaration(tag))
+  const result: string[] = []
+  const seen = new Set<string>()
+  for (const raw of (tags ?? '').split(TAG_DELIMITER)) {
+    const tag = raw.trim()
+    if (!tag || isModelCatalogDeclaration(tag) || seen.has(tag)) continue
+    seen.add(tag)
+    result.push(tag)
+  }
+  return result
 }
 
 export function getConfiguredTaskCapabilities(
   tags?: string
 ): ModelTaskCapability[] | undefined {
   const declaration = tags
-    ?.split(',')
+    ?.split(TAG_DELIMITER)
     .map((tag) => tag.trim())
     .find(isModelTaskDeclaration)
   if (!declaration) return undefined
@@ -130,7 +136,7 @@ export function getConfiguredModelCategories(
   tags?: string
 ): ModelCapabilityCategory[] | undefined {
   const declaration = tags
-    ?.split(',')
+    ?.split(TAG_DELIMITER)
     .map((tag) => tag.trim())
     .find(isCategoryDeclaration)
   if (declaration) {
@@ -154,10 +160,20 @@ export function encodeModelCategoryTags(
   categories?: readonly ModelCapabilityCategory[],
   previousTags?: string
 ): string {
-  const previous = previousTags?.split(',').map((tag) => tag.trim()) ?? []
+  const previous =
+    previousTags?.split(TAG_DELIMITER).map((tag) => tag.trim()) ?? []
   const legacy = previous.find(isModelTaskDeclaration)
   const hasCategory = previous.some(isCategoryDeclaration)
-  const tags = [...ordinaryTags]
+  const tags: string[] = []
+  const seen = new Set<string>()
+  for (const entry of ordinaryTags) {
+    for (const part of entry.split(TAG_DELIMITER)) {
+      const trimmed = part.trim()
+      if (!trimmed || seen.has(trimmed)) continue
+      seen.add(trimmed)
+      tags.push(trimmed)
+    }
+  }
   if (legacy) tags.push(legacy)
   if (categories === undefined) {
     if (legacy || previous.includes(`${CATEGORY_PREFIX}auto`)) {

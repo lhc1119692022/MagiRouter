@@ -59,6 +59,7 @@ import { Route as AuthenticatedUsageLogsIndexRouteImport } from './routes/_authe
 import { Route as AuthenticatedUsageLogsSectionRouteImport } from './routes/_authenticated/usage-logs/$section'
 import { Route as AuthenticatedUsageLogsAuditRouteImport } from './routes/_authenticated/usage-logs/audit'
 import { Route as AuthenticatedUsersIndexRouteImport } from './routes/_authenticated/users/index'
+import { Route as AuthenticatedViolationAuditIndexRouteImport } from './routes/_authenticated/violation-audit/index'
 import { Route as AuthenticatedWalletIndexRouteImport } from './routes/_authenticated/wallet/index'
 import { Route as PricingModelIdIndexRouteImport } from './routes/pricing/$modelId/index'
 import { Route as AuthenticatedSystemSettingsAuthIndexRouteImport } from './routes/_authenticated/system-settings/auth/index'
@@ -349,6 +350,12 @@ const AuthenticatedUsersIndexRoute = AuthenticatedUsersIndexRouteImport.update({
   path: '/users/',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedViolationAuditIndexRoute =
+  AuthenticatedViolationAuditIndexRouteImport.update({
+    id: '/violation-audit/',
+    path: '/violation-audit/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedWalletIndexRoute =
   AuthenticatedWalletIndexRouteImport.update({
     id: '/wallet/',
@@ -512,6 +519,7 @@ export interface FileRoutesByFullPath {
   '/task-plugins/': typeof AuthenticatedTaskPluginsIndexRoute
   '/usage-logs/': typeof AuthenticatedUsageLogsIndexRoute
   '/users/': typeof AuthenticatedUsersIndexRoute
+  '/violation-audit/': typeof AuthenticatedViolationAuditIndexRoute
   '/wallet/': typeof AuthenticatedWalletIndexRoute
   '/pricing/$modelId/': typeof PricingModelIdIndexRoute
   '/system-settings/auth/$section': typeof AuthenticatedSystemSettingsAuthSectionRoute
@@ -580,6 +588,7 @@ export interface FileRoutesByTo {
   '/task-plugins': typeof AuthenticatedTaskPluginsIndexRoute
   '/usage-logs': typeof AuthenticatedUsageLogsIndexRoute
   '/users': typeof AuthenticatedUsersIndexRoute
+  '/violation-audit': typeof AuthenticatedViolationAuditIndexRoute
   '/wallet': typeof AuthenticatedWalletIndexRoute
   '/pricing/$modelId': typeof PricingModelIdIndexRoute
   '/system-settings/auth/$section': typeof AuthenticatedSystemSettingsAuthSectionRoute
@@ -652,6 +661,7 @@ export interface FileRoutesById {
   '/_authenticated/task-plugins/': typeof AuthenticatedTaskPluginsIndexRoute
   '/_authenticated/usage-logs/': typeof AuthenticatedUsageLogsIndexRoute
   '/_authenticated/users/': typeof AuthenticatedUsersIndexRoute
+  '/_authenticated/violation-audit/': typeof AuthenticatedViolationAuditIndexRoute
   '/_authenticated/wallet/': typeof AuthenticatedWalletIndexRoute
   '/pricing/$modelId/': typeof PricingModelIdIndexRoute
   '/_authenticated/system-settings/auth/$section': typeof AuthenticatedSystemSettingsAuthSectionRoute
@@ -723,6 +733,7 @@ export interface FileRouteTypes {
     | '/task-plugins/'
     | '/usage-logs/'
     | '/users/'
+    | '/violation-audit/'
     | '/wallet/'
     | '/pricing/$modelId/'
     | '/system-settings/auth/$section'
@@ -791,6 +802,7 @@ export interface FileRouteTypes {
     | '/task-plugins'
     | '/usage-logs'
     | '/users'
+    | '/violation-audit'
     | '/wallet'
     | '/pricing/$modelId'
     | '/system-settings/auth/$section'
@@ -862,6 +874,7 @@ export interface FileRouteTypes {
     | '/_authenticated/task-plugins/'
     | '/_authenticated/usage-logs/'
     | '/_authenticated/users/'
+    | '/_authenticated/violation-audit/'
     | '/_authenticated/wallet/'
     | '/pricing/$modelId/'
     | '/_authenticated/system-settings/auth/$section'
@@ -1255,6 +1268,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedUsersIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/violation-audit/': {
+      id: '/_authenticated/violation-audit/'
+      path: '/violation-audit'
+      fullPath: '/violation-audit/'
+      preLoaderRoute: typeof AuthenticatedViolationAuditIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/wallet/': {
       id: '/_authenticated/wallet/'
       path: '/wallet'
@@ -1506,6 +1526,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedTaskPluginsIndexRoute: typeof AuthenticatedTaskPluginsIndexRoute
   AuthenticatedUsageLogsIndexRoute: typeof AuthenticatedUsageLogsIndexRoute
   AuthenticatedUsersIndexRoute: typeof AuthenticatedUsersIndexRoute
+  AuthenticatedViolationAuditIndexRoute: typeof AuthenticatedViolationAuditIndexRoute
   AuthenticatedWalletIndexRoute: typeof AuthenticatedWalletIndexRoute
   AuthenticatedOauthPluginKeyCallbackRoute: typeof AuthenticatedOauthPluginKeyCallbackRoute
 }
@@ -1539,6 +1560,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedTaskPluginsIndexRoute: AuthenticatedTaskPluginsIndexRoute,
   AuthenticatedUsageLogsIndexRoute: AuthenticatedUsageLogsIndexRoute,
   AuthenticatedUsersIndexRoute: AuthenticatedUsersIndexRoute,
+  AuthenticatedViolationAuditIndexRoute: AuthenticatedViolationAuditIndexRoute,
   AuthenticatedWalletIndexRoute: AuthenticatedWalletIndexRoute,
   AuthenticatedOauthPluginKeyCallbackRoute:
     AuthenticatedOauthPluginKeyCallbackRoute,

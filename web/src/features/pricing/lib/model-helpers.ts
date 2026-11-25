@@ -50,6 +50,77 @@ export function getConfiguredGroupRatio(
   return typeof ratio === 'number' && Number.isFinite(ratio) ? ratio : 1
 }
 
+export interface DisplayGroupResolution {
+  group?: string
+  ratio: number
+  isSelectedGroup: boolean
+}
+
+/**
+ * Resolve the active group and multiplier for model square summary prices.
+ *
+ * When no specific group is selected, picks the lowest-multiplier group
+ * available to the viewer. When a group filter is active, uses that group.
+ */
+export function resolveDisplayGroup(
+  model: PricingModel,
+  selectedGroup?: string
+): DisplayGroupResolution {
+  const modelEnableGroups = Array.isArray(model.enable_groups)
+    ? model.enable_groups.filter(
+        (group) => group !== FILTER_ALL && !EXCLUDED_GROUPS.includes(group)
+      )
+    : []
+  const groupRatio = model.group_ratio || {}
+
+  if (
+    selectedGroup &&
+    selectedGroup !== FILTER_ALL &&
+    modelEnableGroups.includes(selectedGroup)
+  ) {
+    return {
+      group: selectedGroup,
+      ratio: getConfiguredGroupRatio(groupRatio, selectedGroup),
+      isSelectedGroup: true,
+    }
+  }
+
+  if (modelEnableGroups.length === 0) {
+    return { group: undefined, ratio: 1, isSelectedGroup: false }
+  }
+
+  let bestGroup: string | undefined
+  let minRatio = Number.POSITIVE_INFINITY
+
+  for (const group of modelEnableGroups) {
+    const ratio = Object.hasOwn(groupRatio, group)
+      ? groupRatio[group]
+      : Number.NaN
+    if (
+      typeof ratio === 'number' &&
+      Number.isFinite(ratio) &&
+      ratio < minRatio
+    ) {
+      minRatio = ratio
+      bestGroup = group
+    }
+  }
+
+  if (minRatio === Number.POSITIVE_INFINITY) {
+    return {
+      group: modelEnableGroups[0],
+      ratio: 1,
+      isSelectedGroup: false,
+    }
+  }
+
+  return {
+    group: bestGroup,
+    ratio: minRatio,
+    isSelectedGroup: false,
+  }
+}
+
 /**
  * Resolve the group ratio used by model square summary prices.
  *
@@ -61,37 +132,7 @@ export function getDisplayGroupRatio(
   model: PricingModel,
   selectedGroup?: string
 ): number {
-  const modelEnableGroups = Array.isArray(model.enable_groups)
-    ? model.enable_groups
-    : []
-  const groupRatio = model.group_ratio || {}
-
-  if (
-    selectedGroup &&
-    selectedGroup !== FILTER_ALL &&
-    modelEnableGroups.includes(selectedGroup)
-  ) {
-    return getConfiguredGroupRatio(groupRatio, selectedGroup)
-  }
-
-  if (modelEnableGroups.length === 0) {
-    return 1
-  }
-
-  let minRatio = Number.POSITIVE_INFINITY
-
-  for (const group of modelEnableGroups) {
-    const ratio = groupRatio[group]
-    if (
-      typeof ratio === 'number' &&
-      Number.isFinite(ratio) &&
-      ratio < minRatio
-    ) {
-      minRatio = ratio
-    }
-  }
-
-  return minRatio === Number.POSITIVE_INFINITY ? 1 : minRatio
+  return resolveDisplayGroup(model, selectedGroup).ratio
 }
 
 /**

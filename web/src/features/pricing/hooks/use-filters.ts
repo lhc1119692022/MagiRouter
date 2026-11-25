@@ -22,8 +22,9 @@ import { useMemo, useCallback, useEffect, useState } from 'react'
 import { useDebounce } from '@/hooks/use-debounce'
 
 import {
+  DEFAULT_CATALOG_SORT,
   FILTER_ALL,
-  SORT_OPTIONS,
+  PRICE_MODES,
   QUOTA_TYPES,
   ENDPOINT_TYPES,
   DEFAULT_TOKEN_UNIT,
@@ -33,20 +34,19 @@ import {
 import {
   filterAndSortModels,
   filterByVendor,
-  extractAllTags,
   getCatalogFacets,
 } from '../lib/filters'
-import type { PricingModel, TokenUnit } from '../types'
+import type { PriceMode, PricingModel, TokenUnit } from '../types'
 
 type FilterState = {
   search?: string
   sort?: string
   quotaType?: string
   endpointType?: string
-  tag?: string
   tokenUnit?: TokenUnit
   view?: ViewMode
   rechargePrice?: boolean
+  priceMode?: PriceMode
 }
 
 function normalizeViewMode(value: unknown): ViewMode {
@@ -68,15 +68,15 @@ export function useFilters(
     sort: search.sort,
     quotaType: search.quotaType,
     endpointType: search.endpointType,
-    tag: search.tag,
     tokenUnit: search.tokenUnit,
     view: search.view,
     rechargePrice: search.rechargePrice,
+    priceMode: search.priceMode,
   }))
 
   const searchInput = filterState.search || ''
   const debouncedSearchInput = useDebounce(searchInput, 200)
-  const sortBy = filterState.sort || SORT_OPTIONS.NAME
+  const sortBy = filterState.sort || DEFAULT_CATALOG_SORT
   const selectedVendors = useMemo(
     () => [
       ...new Set(
@@ -112,11 +112,13 @@ export function useFilters(
   }, [catalogReady, groupFilter, navigate, search.group])
   const quotaTypeFilter = filterState.quotaType || QUOTA_TYPES.ALL
   const endpointTypeFilter = filterState.endpointType || ENDPOINT_TYPES.ALL
-  const tagFilter = filterState.tag || FILTER_ALL
-  const tokenUnit: TokenUnit =
-    filterState.tokenUnit === 'K' ? 'K' : DEFAULT_TOKEN_UNIT
+  const tokenUnit: TokenUnit = DEFAULT_TOKEN_UNIT
   const viewMode = normalizeViewMode(filterState.view)
-  const showRechargePrice = filterState.rechargePrice === true
+  const priceMode: PriceMode =
+    filterState.priceMode === PRICE_MODES.OFFICIAL
+      ? PRICE_MODES.OFFICIAL
+      : PRICE_MODES.YOURS
+  const showRechargePrice = priceMode === PRICE_MODES.YOURS
 
   const updateFilters = useCallback((updates: Record<string, unknown>) => {
     setFilterState((prev) => {
@@ -136,7 +138,7 @@ export function useFilters(
   )
   const setSortBy = useCallback(
     (v: string) =>
-      updateFilters({ sort: v === SORT_OPTIONS.NAME ? undefined : v }),
+      updateFilters({ sort: v === DEFAULT_CATALOG_SORT ? undefined : v }),
     [updateFilters]
   )
   const toggleVendor = useCallback(
@@ -186,10 +188,6 @@ export function useFilters(
       }),
     [updateFilters]
   )
-  const setTagFilter = useCallback(
-    (v: string) => updateFilters({ tag: v === FILTER_ALL ? undefined : v }),
-    [updateFilters]
-  )
   const setTokenUnit = useCallback(
     (v: TokenUnit) =>
       updateFilters({ tokenUnit: v === DEFAULT_TOKEN_UNIT ? undefined : v }),
@@ -201,14 +199,21 @@ export function useFilters(
     [updateFilters]
   )
   const setShowRechargePrice = useCallback(
-    (v: boolean) => updateFilters({ rechargePrice: v || undefined }),
+    (v: boolean) =>
+      updateFilters({
+        priceMode: v ? undefined : PRICE_MODES.OFFICIAL,
+        rechargePrice: undefined,
+      }),
     [updateFilters]
   )
-
-  const availableTags = useMemo(() => {
-    if (!models || models.length === 0) return []
-    return extractAllTags(models)
-  }, [models])
+  const setPriceMode = useCallback(
+    (mode: PriceMode) =>
+      updateFilters({
+        priceMode: mode === PRICE_MODES.YOURS ? undefined : mode,
+        rechargePrice: undefined,
+      }),
+    [updateFilters]
+  )
 
   const filteredModels = useMemo(() => {
     if (!models || models.length === 0) return []
@@ -219,8 +224,9 @@ export function useFilters(
       group: groupFilter,
       quotaType: quotaTypeFilter,
       endpointType: endpointTypeFilter,
-      tag: tagFilter,
+      tag: FILTER_ALL,
       sortBy,
+      priceMode,
     })
   }, [
     models,
@@ -229,8 +235,8 @@ export function useFilters(
     groupFilter,
     quotaTypeFilter,
     endpointTypeFilter,
-    tagFilter,
     sortBy,
+    priceMode,
   ])
 
   const hasActiveFilters = useMemo(
@@ -238,15 +244,8 @@ export function useFilters(
       selectedVendors.length > 0 ||
       groupFilter !== FILTER_ALL ||
       quotaTypeFilter !== QUOTA_TYPES.ALL ||
-      endpointTypeFilter !== ENDPOINT_TYPES.ALL ||
-      tagFilter !== FILTER_ALL,
-    [
-      selectedVendors.length,
-      groupFilter,
-      quotaTypeFilter,
-      endpointTypeFilter,
-      tagFilter,
-    ]
+      endpointTypeFilter !== ENDPOINT_TYPES.ALL,
+    [selectedVendors.length, groupFilter, quotaTypeFilter, endpointTypeFilter]
   )
 
   const activeFilterCount = useMemo(
@@ -254,22 +253,14 @@ export function useFilters(
       selectedVendors.length +
       (groupFilter !== FILTER_ALL ? 1 : 0) +
       (quotaTypeFilter !== QUOTA_TYPES.ALL ? 1 : 0) +
-      (endpointTypeFilter !== ENDPOINT_TYPES.ALL ? 1 : 0) +
-      (tagFilter !== FILTER_ALL ? 1 : 0),
-    [
-      selectedVendors.length,
-      groupFilter,
-      quotaTypeFilter,
-      endpointTypeFilter,
-      tagFilter,
-    ]
+      (endpointTypeFilter !== ENDPOINT_TYPES.ALL ? 1 : 0),
+    [selectedVendors.length, groupFilter, quotaTypeFilter, endpointTypeFilter]
   )
 
   const clearFilters = useCallback(() => {
     updateFilters({
       quotaType: undefined,
       endpointType: undefined,
-      tag: undefined,
     })
   }, [updateFilters])
 
@@ -285,24 +276,23 @@ export function useFilters(
     groupFilter,
     quotaTypeFilter,
     endpointTypeFilter,
-    tagFilter,
     tokenUnit,
     viewMode,
     showRechargePrice,
+    priceMode,
     setSearchInput,
     setSortBy,
     toggleVendor,
     setGroupFilter,
     setQuotaTypeFilter,
     setEndpointTypeFilter,
-    setTagFilter,
     setTokenUnit,
     setViewMode,
     setShowRechargePrice,
+    setPriceMode,
     filteredModels,
     hasActiveFilters,
     activeFilterCount,
-    availableTags,
     clearFilters,
     clearSearch,
   }

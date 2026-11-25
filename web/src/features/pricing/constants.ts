@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import type { TFunction } from 'i18next'
 
-import type { TokenUnit } from './types'
+import type { PriceMode, TokenUnit } from './types'
 
 // ----------------------------------------------------------------------------
 // Pricing Constants
@@ -26,7 +26,12 @@ import type { TokenUnit } from './types'
 
 /** Sort options for pricing models */
 export const SORT_OPTIONS = {
+  TIME_DESC: 'time-desc',
+  TIME_ASC: 'time-asc',
+  PRICE_ASC: 'price-asc',
+  PRICE_DESC: 'price-desc',
   NAME: 'name',
+  NAME_DESC: 'name-desc',
   INPUT_PRICE_LOW: 'input-price-low',
   INPUT_PRICE_HIGH: 'input-price-high',
   OUTPUT_PRICE_LOW: 'output-price-low',
@@ -37,9 +42,75 @@ export const SORT_OPTIONS = {
 
 export type SortOption = (typeof SORT_OPTIONS)[keyof typeof SORT_OPTIONS]
 
+export type CatalogSortIconKind = 'desc' | 'asc' | 'name-asc' | 'name-desc'
+
+export type CatalogSortOptionConfig = {
+  value: SortOption
+  labelKey: 'Time' | 'Price' | 'Name'
+  tooltipKey:
+    | 'Newest first'
+    | 'Oldest first'
+    | 'Price: Low to High'
+    | 'Price: High to Low'
+    | 'Name: A to Z'
+    | 'Name: Z to A'
+  icon: CatalogSortIconKind
+}
+
+export const DEFAULT_CATALOG_SORT: SortOption = SORT_OPTIONS.TIME_DESC
+
+export const CATALOG_SORT_OPTIONS: readonly CatalogSortOptionConfig[] = [
+  {
+    value: SORT_OPTIONS.TIME_DESC,
+    labelKey: 'Time',
+    tooltipKey: 'Newest first',
+    icon: 'desc',
+  },
+  {
+    value: SORT_OPTIONS.TIME_ASC,
+    labelKey: 'Time',
+    tooltipKey: 'Oldest first',
+    icon: 'asc',
+  },
+  {
+    value: SORT_OPTIONS.PRICE_ASC,
+    labelKey: 'Price',
+    tooltipKey: 'Price: Low to High',
+    icon: 'asc',
+  },
+  {
+    value: SORT_OPTIONS.PRICE_DESC,
+    labelKey: 'Price',
+    tooltipKey: 'Price: High to Low',
+    icon: 'desc',
+  },
+  {
+    value: SORT_OPTIONS.NAME,
+    labelKey: 'Name',
+    tooltipKey: 'Name: A to Z',
+    icon: 'name-asc',
+  },
+  {
+    value: SORT_OPTIONS.NAME_DESC,
+    labelKey: 'Name',
+    tooltipKey: 'Name: Z to A',
+    icon: 'name-desc',
+  },
+] as const
+
+export const PRICE_MODES = {
+  YOURS: 'yours',
+  OFFICIAL: 'official',
+} as const satisfies Record<string, PriceMode>
+
 export function getSortLabels(t: TFunction): Record<SortOption, string> {
   return {
+    [SORT_OPTIONS.TIME_DESC]: t('Newest first'),
+    [SORT_OPTIONS.TIME_ASC]: t('Oldest first'),
+    [SORT_OPTIONS.PRICE_ASC]: t('Price: Low to High'),
+    [SORT_OPTIONS.PRICE_DESC]: t('Price: High to Low'),
     [SORT_OPTIONS.NAME]: t('Name'),
+    [SORT_OPTIONS.NAME_DESC]: t('Name: Z to A'),
     [SORT_OPTIONS.INPUT_PRICE_LOW]: t('Input Price: Low to High'),
     [SORT_OPTIONS.INPUT_PRICE_HIGH]: t('Input Price: High to Low'),
     [SORT_OPTIONS.OUTPUT_PRICE_LOW]: t('Output Price: Low to High'),

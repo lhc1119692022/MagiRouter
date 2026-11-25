@@ -376,6 +376,9 @@ func migrateDB() error {
 		&CasbinRule{},
 		&AuthzRole{},
 		&UserAccessToken{},
+		&ViolationEvent{},
+		&ViolationAccountCase{},
+		&ViolationAllowlist{},
 	)
 	if err != nil {
 		return err

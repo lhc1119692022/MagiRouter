@@ -571,6 +571,14 @@ const AUDIT_TEMPLATES: Record<string, string> = {
   // Logs
   'log.clear': 'Cleared historical logs',
   'log.cleanup_start': 'Log cleanup task started.',
+  // Violation audit
+  'violation_audit.verdict':
+    'Submitted violation audit verdict {{decision}} for user {{username}} (ID: {{id}}, case #{{case_id}})',
+  'violation_audit.allowlist_add':
+    'Added user {{username}} (ID: {{id}}) to violation audit allowlist',
+  'violation_audit.allowlist_remove':
+    'Removed user (ID: {{id}}) from violation audit allowlist',
+  'violation_audit.settings_update': 'Updated violation audit settings',
   // Generic middleware fallback
   generic: '{{method}} {{route}}',
 }

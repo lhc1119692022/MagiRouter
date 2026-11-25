@@ -74,6 +74,7 @@ export type PricingModel = {
   vendor_name?: string
   vendor_icon?: string
   vendor_description?: string
+  created_time?: number
   quota_type: number
   model_ratio: number
   completion_ratio: number
@@ -142,6 +143,7 @@ export type PricingData = {
 }
 
 export type TokenUnit = 'M' | 'K'
+export type PriceMode = 'yours' | 'official'
 export type PriceType =
   | 'input'
   | 'output'

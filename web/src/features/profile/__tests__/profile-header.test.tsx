@@ -1,6 +1,8 @@
 import { render, screen, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
+import { formatDateStr } from '@/lib/format'
+
 import { ProfileHeader } from '../components/profile-header'
 import type { UserProfile } from '../types'
 
@@ -202,5 +204,56 @@ describe('ProfileHeader concurrency limit stat', () => {
     expect(
       within(metric).getByText('Simultaneous requests')
     ).toBeInTheDocument()
+  })
+
+  it('shows concurrency before registration date and replaces API Requests', () => {
+    const createdAt = 1795232131
+    const { container } = render(
+      <ProfileHeader
+        loading={false}
+        profile={{
+          ...BASE_PROFILE,
+          created_at: createdAt,
+          created_time: undefined,
+        }}
+      />
+    )
+
+    const labels = [...container.querySelectorAll('.identity-metrics dt')].map(
+      (node) => node.textContent
+    )
+    expect(labels).toEqual([
+      'Current Balance',
+      'Total Usage',
+      'Concurrency Limit',
+      'Registration Date',
+    ])
+    expect(screen.queryByText('API Requests')).not.toBeInTheDocument()
+
+    const regTerm = screen.getByText('Registration Date')
+    const regContainer = regTerm.parentElement as HTMLElement
+    expect(
+      within(regContainer).getByText(formatDateStr(new Date(createdAt * 1000)))
+    ).toBeInTheDocument()
+    expect(
+      within(regContainer).getByText('Account created')
+    ).toBeInTheDocument()
+  })
+
+  it('shows a placeholder when registration timestamp is missing', () => {
+    render(
+      <ProfileHeader
+        loading={false}
+        profile={{
+          ...BASE_PROFILE,
+          created_at: 0,
+          created_time: 0,
+        }}
+      />
+    )
+
+    const regTerm = screen.getByText('Registration Date')
+    const regContainer = regTerm.parentElement as HTMLElement
+    expect(within(regContainer).getByText('—')).toBeInTheDocument()
   })
 })

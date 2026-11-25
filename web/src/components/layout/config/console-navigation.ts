@@ -6,6 +6,7 @@ import {
   MessagesSquare,
   PlugZap,
   ServerCog,
+  ShieldAlert,
   Ticket,
   Workflow,
 } from 'lucide-react'
@@ -180,6 +181,11 @@ export function buildConsoleNavigation(
                       title: t('Subscriptions'),
                       url: '/subscriptions',
                       icon: CreditCard,
+                    },
+                    {
+                      title: t('Violation Audit'),
+                      url: '/violation-audit',
+                      icon: ShieldAlert,
                     },
                   ]
                 : []),

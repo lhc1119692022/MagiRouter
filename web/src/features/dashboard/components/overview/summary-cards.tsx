@@ -23,7 +23,7 @@ import { useTranslation } from 'react-i18next'
 
 import { getUserQuotaDates } from '@/features/dashboard/api'
 import { toIntlLocale } from '@/i18n/languages'
-import { formatNumber, formatQuota } from '@/lib/format'
+import { formatCompactNumber, formatNumber, formatQuota } from '@/lib/format'
 import { requireServerSuccess } from '@/lib/server-error-message'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -68,14 +68,23 @@ export function SummaryCards(props: {
   const summary = useMemo(() => {
     const spent = report.buckets.map((bucket) => bucket.quota)
     const requests = report.buckets.map((bucket) => bucket.count)
+    const tokens = report.buckets.map((bucket) => bucket.token)
     const periodSpend = spent.reduce((total, value) => total + value, 0)
     const periodRequests = requests.reduce((total, value) => total + value, 0)
+    const periodTokens = tokens.reduce((total, value) => total + value, 0)
     let cumulative = (user?.used_quota ?? 0) - periodSpend
     const history = spent.map((value) => {
       cumulative += value
       return Math.max(0, cumulative)
     })
-    return { periodSpend, periodRequests, history, spent, requests }
+    return {
+      periodSpend,
+      periodRequests,
+      periodTokens,
+      history,
+      spent,
+      tokens,
+    }
   }, [report.buckets, user?.used_quota])
   const cards = [
     {
@@ -83,6 +92,7 @@ export function SummaryCards(props: {
       label: t(report.spendLabel),
       tag: report.periodBadge,
       value: report.query.isSuccess ? formatQuota(summary.periodSpend) : '—',
+      valueTitle: undefined as string | undefined,
       sub: t('Total consumed quota'),
       series: summary.spent,
       tone: 'accent-1',
@@ -92,19 +102,23 @@ export function SummaryCards(props: {
       label: t('Lifetime spending'),
       tag: 'TOTAL',
       value: user?.used_quota == null ? '—' : formatQuota(user.used_quota),
+      valueTitle: undefined as string | undefined,
       sub: t('Total consumed'),
       series: user?.used_quota == null ? [] : summary.history,
       tone: 'accent-2',
     },
     {
-      key: 'requests',
-      label: t(report.requestsLabel),
-      tag: 'REQ',
+      key: 'tokens',
+      label: t(report.tokensLabel),
+      tag: 'TOKENS',
       value: report.query.isSuccess
-        ? formatNumber(summary.periodRequests, locale)
+        ? formatCompactNumber(summary.periodTokens, locale)
         : '—',
-      sub: `${t('Total requests made')}: ${user?.request_count == null ? '—' : formatNumber(user.request_count, locale)}`,
-      series: summary.requests,
+      valueTitle: report.query.isSuccess
+        ? formatNumber(summary.periodTokens, locale)
+        : undefined,
+      sub: `${t('Requests')}: ${report.query.isSuccess ? formatNumber(summary.periodRequests, locale) : '—'}`,
+      series: summary.tokens,
       tone: 'accent-3',
     },
   ] as const
@@ -119,7 +133,12 @@ export function SummaryCards(props: {
                 <span className='dash-kpi-label'>{card.label}</span>
                 <span className='dash-kpi-delta'>{card.tag}</span>
               </div>
-              <div className='dash-kpi-val tabular-nums'>{card.value}</div>
+              <div
+                className='dash-kpi-val tabular-nums'
+                title={card.valueTitle}
+              >
+                {card.value}
+              </div>
               <div className='dash-kpi-sub'>{card.sub}</div>
             </div>
             {report.query.isSuccess && card.series.length > 0 && (

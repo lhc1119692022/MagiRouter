@@ -248,6 +248,9 @@ func validateOptionValue(key string, value string) error {
 	if key == legacyAccessTokenRetireAtKey {
 		return errLegacyRetireAtReadOnly
 	}
+	if key == ViolationAuditOptionKey {
+		return common.NewMessage("Violation audit settings must be updated through the violation audit endpoint")
+	}
 	if err := operation_setting.ValidateQuotaOption(key, value); err != nil {
 		return err
 	}

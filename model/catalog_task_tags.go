@@ -4,20 +4,38 @@ import "strings"
 
 func SplitCatalogTaskTags(tags string) (ordinary, declarations string) {
 	var kept, local []string
-	seen := make(map[string]bool)
-	for tag := range strings.SplitSeq(tags, ",") {
+	seenDecl := make(map[string]bool)
+	seenTag := make(map[string]bool)
+	for tag := range strings.SplitSeq(strings.ReplaceAll(tags, "，", ","), ",") {
 		trimmed := strings.TrimSpace(tag)
-		kind, value, _ := strings.Cut(trimmed, "=")
-		if !isCatalogDeclaration(kind, value) {
-			kept = append(kept, tag)
+		if trimmed == "" {
 			continue
 		}
-		if !seen[kind] {
+		kind, value, _ := strings.Cut(trimmed, "=")
+		if !isCatalogDeclaration(kind, value) {
+			if !seenTag[trimmed] {
+				kept = append(kept, trimmed)
+				seenTag[trimmed] = true
+			}
+			continue
+		}
+		if !seenDecl[kind] {
 			local = append(local, trimmed)
-			seen[kind] = true
+			seenDecl[kind] = true
 		}
 	}
 	return strings.Join(kept, ","), strings.Join(local, ",")
+}
+
+func NormalizeModelTags(tags string) string {
+	ordinary, declarations := SplitCatalogTaskTags(tags)
+	if ordinary == "" {
+		return declarations
+	}
+	if declarations == "" {
+		return ordinary
+	}
+	return ordinary + "," + declarations
 }
 
 func isCatalogDeclaration(kind, value string) bool {

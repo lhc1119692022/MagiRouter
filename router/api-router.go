@@ -338,6 +338,28 @@ func SetApiRouter(router *gin.Engine) {
 		}
 		handlePermissionRoute(apiRouter.Group("", middleware.DisableCache(), middleware.AdminAuth()), http.MethodGet, "/audit", authz.AuditRead, controller.GetAuditLogs)
 		apiRouter.GET("/audit/self", middleware.DisableCache(), middleware.UserAuth(), controller.GetAuditLogs)
+		violationAuditRoute := apiRouter.Group("/violation_audit")
+		violationAuditRoute.Use(middleware.DisableCache(), middleware.AdminAuth())
+		{
+			violationAuditRoute.GET("/overview", controller.GetViolationAuditOverview)
+			violationAuditRoute.GET("/cases", controller.ListViolationCases)
+			violationAuditRoute.GET("/cases/:id", controller.GetViolationCaseDetail)
+			violationAuditRoute.POST("/cases/:id/audit", controller.RunSingleViolationCaseAudit)
+			violationAuditRoute.POST("/cases/:id/verdict", controller.SubmitViolationCaseVerdict)
+			violationAuditRoute.GET("/events", controller.ListViolationEvents)
+			violationAuditRoute.GET("/allowlist", controller.ListViolationAllowlist)
+			violationAuditRoute.POST("/allowlist", controller.AddViolationAllowlist)
+			violationAuditRoute.DELETE("/allowlist/:user_id", controller.RemoveViolationAllowlist)
+		}
+		violationAuditRootRoute := apiRouter.Group("/violation_audit")
+		violationAuditRootRoute.Use(middleware.DisableCache(), middleware.RootAuth())
+		{
+			violationAuditRootRoute.DELETE("/events/:id", controller.DeleteViolationEvent)
+			violationAuditRootRoute.GET("/settings", controller.GetViolationAuditSettings)
+			violationAuditRootRoute.PUT("/settings", controller.UpdateViolationAuditSettings)
+			violationAuditRootRoute.POST("/run", controller.RunViolationAuditNow)
+			violationAuditRootRoute.POST("/test_connection", controller.TestViolationAuditSettings)
+		}
 		logRoute := apiRouter.Group("/log")
 		logRoute.GET("/", middleware.AdminAuth(), controller.GetAllLogs)
 		logRoute.GET("/stat", middleware.AdminAuth(), controller.GetLogsStat)

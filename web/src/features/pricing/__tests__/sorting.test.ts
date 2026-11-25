@@ -157,3 +157,89 @@ test('sorts a plugin model by the token price its ordinary requests pay', () => 
     'expr-task',
   ])
 })
+
+describe('catalog sorting (time, unified price, name)', () => {
+  const catalogModels: PricingModel[] = [
+    pricingModel('beta-model', {
+      id: 2,
+      created_time: 1000,
+      model_ratio: 5,
+      enable_groups: ['pro', 'std'],
+      group_ratio: { pro: 0.25, std: 1 },
+    }),
+    pricingModel('alpha-model', {
+      id: 1,
+      created_time: 3000,
+      quota_type: 1,
+      model_price: 0.04,
+      enable_groups: ['pro'],
+      group_ratio: { pro: 0.25, std: 1 },
+    }),
+    pricingModel('gamma-model', {
+      id: 3,
+      created_time: 2000,
+      billing_mode: 'tiered_expr',
+      billing_expr:
+        'len < 1000 ? tier("call", fixed(0.02)) : tier("tokens", p * 10 + c * 30)',
+      enable_groups: ['std'],
+      group_ratio: { pro: 0.25, std: 1 },
+    }),
+    pricingModel('unpriced-model', {
+      id: 4,
+      created_time: 2000,
+      price_unconfigured: true,
+      enable_groups: ['std'],
+      group_ratio: { pro: 0.25, std: 1 },
+    }),
+  ]
+
+  test('sorts by created_time descending (newest first) with id tie-break, and ascending (oldest first)', () => {
+    expect(
+      sortModels(catalogModels, SORT_OPTIONS.TIME_DESC).map(
+        (item) => item.model_name
+      )
+    ).toEqual(['alpha-model', 'unpriced-model', 'gamma-model', 'beta-model'])
+
+    expect(
+      sortModels(catalogModels, SORT_OPTIONS.TIME_ASC).map(
+        (item) => item.model_name
+      )
+    ).toEqual(['beta-model', 'gamma-model', 'unpriced-model', 'alpha-model'])
+  })
+
+  test('sorts by unified effective card price ascending and descending while keeping unpriced models last', () => {
+    // Your-price effective prices: alpha = 0.04 * 0.25 = 0.01, gamma = 0.02 * 1 = 0.02, beta = 10 * 0.25 = 2.5
+    expect(
+      sortModels(catalogModels, SORT_OPTIONS.PRICE_ASC, {
+        priceMode: 'yours',
+      }).map((item) => item.model_name)
+    ).toEqual(['alpha-model', 'gamma-model', 'beta-model', 'unpriced-model'])
+
+    expect(
+      sortModels(catalogModels, SORT_OPTIONS.PRICE_DESC, {
+        priceMode: 'yours',
+      }).map((item) => item.model_name)
+    ).toEqual(['beta-model', 'gamma-model', 'alpha-model', 'unpriced-model'])
+
+    // Official-price 1x prices: gamma = 0.02, alpha = 0.04, beta = 10
+    expect(
+      sortModels(catalogModels, SORT_OPTIONS.PRICE_ASC, {
+        priceMode: 'official',
+      }).map((item) => item.model_name)
+    ).toEqual(['gamma-model', 'alpha-model', 'beta-model', 'unpriced-model'])
+  })
+
+  test('sorts by name ascending and descending', () => {
+    expect(
+      sortModels(catalogModels, SORT_OPTIONS.NAME).map(
+        (item) => item.model_name
+      )
+    ).toEqual(['alpha-model', 'beta-model', 'gamma-model', 'unpriced-model'])
+
+    expect(
+      sortModels(catalogModels, SORT_OPTIONS.NAME_DESC).map(
+        (item) => item.model_name
+      )
+    ).toEqual(['unpriced-model', 'gamma-model', 'beta-model', 'alpha-model'])
+  })
+})

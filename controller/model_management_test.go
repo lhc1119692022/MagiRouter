@@ -756,6 +756,12 @@ export function parseTaskResult() { return {}; }
 					require.NoError(t, db.First(&persisted, entry.Id).Error)
 					require.Equal(t, "new tag,"+declaration, persisted.Tags)
 				}
+				entry.Tags = "推荐，200K 上下文, 低延迟, 推荐,@mr:catalog:v1=text"
+				response := modelManagementRequest(t, UpdateModelMeta, http.MethodPut, "/api/models/", entry, nil)
+				require.Contains(t, response.Body.String(), `"success":true`)
+				var persisted model.Model
+				require.NoError(t, db.First(&persisted, entry.Id).Error)
+				require.Equal(t, "推荐,200K 上下文,低延迟,@mr:catalog:v1=text", persisted.Tags)
 			})
 			t.Run("square_states_follow_catalog_policy", func(t *testing.T) {
 				records := []model.Model{

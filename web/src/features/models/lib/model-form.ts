@@ -58,7 +58,7 @@ export const modelFormSchema = z
     if (
       value.tags
         .join(',')
-        .split(',')
+        .split(/[,，]/)
         .some((tag) => isModelCatalogDeclaration(tag.trim()))
     ) {
       context.addIssue({

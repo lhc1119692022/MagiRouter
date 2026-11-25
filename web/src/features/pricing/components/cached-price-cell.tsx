@@ -44,6 +44,7 @@ export function CachedPriceCell(props: {
     priceRate = 1,
     usdExchangeRate = 1,
     showRechargePrice = false,
+    priceMode,
     selectedGroup,
   } = props.options
 
@@ -58,9 +59,13 @@ export function CachedPriceCell(props: {
         now: billingTime === undefined ? undefined : new Date(billingTime),
         tokenUnit,
         showRechargePrice,
+        priceMode,
         priceRate,
         usdExchangeRate,
-        groupRatioMultiplier: getDynamicDisplayGroupRatio(model, selectedGroup),
+        groupRatioMultiplier:
+          priceMode === 'official'
+            ? 1
+            : getDynamicDisplayGroupRatio(model, selectedGroup),
       }),
     // Currency is read indirectly by the price formatter.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -68,6 +73,7 @@ export function CachedPriceCell(props: {
       model,
       tokenUnit,
       showRechargePrice,
+      priceMode,
       priceRate,
       usdExchangeRate,
       selectedGroup,
@@ -137,7 +143,9 @@ export function CachedPriceCell(props: {
       showRechargePrice,
       priceRate,
       usdExchangeRate,
-      selectedGroup
+      selectedGroup,
+      true,
+      priceMode
     )
   )
 

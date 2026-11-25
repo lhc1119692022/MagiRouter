@@ -82,8 +82,10 @@ export interface UserProfile {
   aff_history_quota: number
   /** Invite user ID */
   invite_user_id?: number
-  /** Account creation timestamp */
-  created_time: number
+  /** Account creation timestamp (Unix seconds) */
+  created_at?: number
+  /** Legacy alias for account creation timestamp */
+  created_time?: number
   /** User settings (JSON string) */
   setting?: string
   /** WeChat ID (OAuth) */

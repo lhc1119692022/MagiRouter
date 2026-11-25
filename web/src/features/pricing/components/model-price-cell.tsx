@@ -34,13 +34,14 @@ import { isTokenBasedModel } from '../lib/model-helpers'
 import { withBasePricing } from '../lib/plugin-pricing'
 import { formatPrice, formatRequestPrice } from '../lib/price'
 import { taskUsageUnitLabel } from '../lib/task-price-display'
-import type { PricingModel, TokenUnit } from '../types'
+import type { PriceMode, PricingModel, TokenUnit } from '../types'
 
 export type ModelPriceCellOptions = {
   tokenUnit?: TokenUnit
   priceRate?: number
   usdExchangeRate?: number
   showRechargePrice?: boolean
+  priceMode?: PriceMode
   selectedGroup?: string
 }
 
@@ -52,9 +53,14 @@ export function ModelPriceCell(props: {
   const { t, i18n } = useTranslation()
   const model = useMemo(() => withBasePricing(props.model), [props.model])
   const currency = useSystemConfigStore((state) => state.config.currency)
-  const currencyLabel =
-    currency.quotaDisplayType === 'TOKENS' ? 'USD' : getCurrencyLabel()
   const options = props.options ?? {}
+  let currencyLabel =
+    currency.quotaDisplayType === 'TOKENS' ? 'USD' : getCurrencyLabel()
+  if (options.priceMode === 'yours') {
+    currencyLabel = 'CNY'
+  } else if (options.priceMode === 'official') {
+    currencyLabel = 'USD'
+  }
   const tokenUnit = options.tokenUnit ?? DEFAULT_TOKEN_UNIT
   const tokenUnitLabel = tokenUnit === 'K' ? '1K' : '1M'
   const billingTime = useBillingTime(model.billing_expr)
@@ -64,13 +70,14 @@ export function ModelPriceCell(props: {
         priceRate: options.priceRate,
         usdExchangeRate: options.usdExchangeRate,
         showRechargePrice: options.showRechargePrice,
+        priceMode: options.priceMode,
         now: billingTime === undefined ? undefined : new Date(billingTime),
         tokenUnit,
         showCurrencySymbol: false,
-        groupRatioMultiplier: getDynamicDisplayGroupRatio(
-          model,
-          options.selectedGroup
-        ),
+        groupRatioMultiplier:
+          options.priceMode === 'official'
+            ? 1
+            : getDynamicDisplayGroupRatio(model, options.selectedGroup),
       }),
     // Currency is read indirectly by the price formatter.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -80,6 +87,7 @@ export function ModelPriceCell(props: {
       options.priceRate,
       options.usdExchangeRate,
       options.showRechargePrice,
+      options.priceMode,
       options.selectedGroup,
       billingTime,
       currency,
@@ -200,7 +208,8 @@ export function ModelPriceCell(props: {
             options.priceRate,
             options.usdExchangeRate,
             options.selectedGroup,
-            false
+            false,
+            options.priceMode
           ),
         },
         {
@@ -213,7 +222,8 @@ export function ModelPriceCell(props: {
             options.priceRate,
             options.usdExchangeRate,
             options.selectedGroup,
-            false
+            false,
+            options.priceMode
           ),
         },
       ]
@@ -227,7 +237,8 @@ export function ModelPriceCell(props: {
             options.priceRate,
             options.usdExchangeRate,
             options.selectedGroup,
-            false
+            false,
+            options.priceMode
           ),
         },
       ]

@@ -118,7 +118,12 @@ func main() {
 
 	// Every node reloads a topic within seconds of a write to it on any node.
 	// The periodic reloads below stay for writes that do not bump a topic.
-	service.RegisterSyncTopic(model.SyncTopicOptions, func(context.Context) error { return model.LoadOptionsFromDatabase() })
+	service.RegisterSyncTopic(model.SyncTopicOptions, func(ctx context.Context) error {
+		if err := model.LoadOptionsFromDatabase(); err != nil {
+			return err
+		}
+		return service.ReloadViolationAuditSettingsFromDB(ctx)
+	})
 	if common.MemoryCacheEnabled || common.IsMasterNode {
 		service.RegisterSyncTopic(model.SyncTopicChannels, func(ctx context.Context) error {
 			if common.MemoryCacheEnabled {
@@ -166,6 +171,11 @@ func main() {
 
 	// Subscription quota reset task (daily/weekly/monthly/custom)
 	service.StartSubscriptionQuotaResetTask()
+
+	// Asynchronous capture of rejected request plugin violations for screening
+	if err := service.StartViolationAuditRecorder(); err != nil {
+		common.SysError(common.LogText("failed to start violation audit recorder: %s", err.Error()))
+	}
 
 	// Report this process as a system instance so the System Info page can show
 	// all currently alive nodes in multi-instance deployments.
@@ -264,6 +274,7 @@ func main() {
 	if err := srv.Shutdown(ctx); err != nil {
 		common.SysError(common.LogText("server forced to shutdown: %v", err))
 	}
+	service.StopViolationAuditRecorder(ctx)
 	// 内存中的看板数据保存入库，避免重启丢失未落库数据 (issue #5679)
 	if common.DataExportEnabled {
 		model.SaveQuotaDataCache()

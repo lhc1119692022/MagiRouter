@@ -17,7 +17,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { X } from 'lucide-react'
-import { useState, useRef, type KeyboardEvent } from 'react'
+import {
+  useState,
+  useRef,
+  type ChangeEvent,
+  type ClipboardEvent,
+  type KeyboardEvent,
+} from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Badge } from '@/components/ui/badge'
@@ -49,23 +55,67 @@ export function TagInput({
   const placeholderText = placeholder ?? t('Add tags...')
   const [inputValue, setInputValue] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
+  const composingRef = useRef(false)
 
-  const addTag = (tag: string) => {
-    const trimmed = tag.trim()
-    if (trimmed && !value.includes(trimmed)) {
-      onChange([...value, trimmed])
+  const addTags = (raw: string) => {
+    const candidates = raw
+      .split(/[,，]/)
+      .map((part) => part.trim())
+      .filter(Boolean)
+    if (candidates.length === 0) {
       setInputValue('')
+      return
     }
+    const next = [...value]
+    let changed = false
+    for (const candidate of candidates) {
+      if (!next.includes(candidate)) {
+        next.push(candidate)
+        changed = true
+      }
+    }
+    if (changed) {
+      onChange(next)
+    }
+    setInputValue('')
   }
 
   const removeTag = (tagToRemove: string) => {
     onChange(value.filter((tag) => tag !== tagToRemove))
   }
 
+  const commitDelimiters = (raw: string) => {
+    if (!/[,，]/.test(raw)) {
+      setInputValue(raw)
+      return
+    }
+    const parts = raw.split(/[,，]/)
+    const trailing = parts.pop() ?? ''
+    addTags(parts.join(','))
+    setInputValue(trailing)
+  }
+
+  const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const nextValue = e.target.value
+    if (composingRef.current) {
+      setInputValue(nextValue)
+      return
+    }
+    commitDelimiters(nextValue)
+  }
+
+  const handlePaste = (e: ClipboardEvent<HTMLInputElement>) => {
+    const pasted = e.clipboardData.getData('text')
+    if (!/[,，]/.test(pasted)) return
+    e.preventDefault()
+    addTags(`${inputValue}${pasted}`)
+  }
+
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' || e.key === ',') {
+    if (e.key === 'Enter' || e.key === ',' || e.key === '，') {
+      if (composingRef.current) return
       e.preventDefault()
-      addTag(inputValue)
+      addTags(inputValue)
     } else if (e.key === 'Backspace' && !inputValue && value.length > 0) {
       const last = value.at(-1)
       if (last !== undefined) removeTag(last)
@@ -74,7 +124,7 @@ export function TagInput({
 
   const handleBlur = () => {
     if (inputValue.trim()) {
-      addTag(inputValue)
+      addTags(inputValue)
     }
   }
 
@@ -113,7 +163,15 @@ export function TagInput({
         ref={inputRef}
         type='text'
         value={inputValue}
-        onChange={(e) => setInputValue(e.target.value)}
+        onChange={handleChange}
+        onPaste={handlePaste}
+        onCompositionStart={() => {
+          composingRef.current = true
+        }}
+        onCompositionEnd={(e) => {
+          composingRef.current = false
+          commitDelimiters(e.currentTarget.value)
+        }}
         onKeyDown={handleKeyDown}
         onBlur={handleBlur}
         placeholder={value.length === 0 ? placeholderText : ''}

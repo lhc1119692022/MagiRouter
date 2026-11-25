@@ -343,6 +343,9 @@ type Outcome struct {
 	Record   []relaycommon.RequestPluginRecord
 	Rejected *Rejection
 	Failed   *Failure
+	// violation holds rejected request metadata for asynchronous violation
+	// audit capture when settled on a live relay request (never on dry runs).
+	violation *service.ViolationCaptureInput
 }
 
 // Run runs call.Stage on the instances in scope. It stops at the first
@@ -411,6 +414,31 @@ func (p *Plan) Run(ctx context.Context, call Call) Outcome {
 			next.record.Rejected = &relaycommon.RequestPluginRejected{Code: next.reject.Code}
 			outcome.Record = append(outcome.Record, next.record)
 			outcome.Rejected = &Rejection{Instance: instance.ID, Code: next.reject.Code, Message: next.reject.Message}
+			tokenID := 0
+			if call.Token != nil {
+				tokenID = call.Token.ID
+			}
+			category := next.reject.RuleID
+			if len(next.findings) > 0 && next.findings[0].Category != "" {
+				category = next.findings[0].Category
+			}
+			outcome.violation = &service.ViolationCaptureInput{
+				UserId:       call.User.ID,
+				Username:     call.User.Username,
+				TokenId:      tokenID,
+				Model:        call.Model,
+				Route:        call.Path,
+				Format:       call.Format,
+				Plugin:       instance.Plugin,
+				Instance:     instance.ID,
+				InstanceName: instance.Name,
+				Stage:        call.Stage,
+				Code:         next.reject.Code,
+				RuleId:       next.reject.RuleID,
+				Category:     category,
+				Message:      next.reject.Message,
+				RawBody:      outcome.Body,
+			}
 			return outcome
 		}
 		step.Action, step.Effects = "continue", next.effects

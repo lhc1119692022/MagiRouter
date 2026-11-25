@@ -35,7 +35,19 @@ async function renderBalance(
     if (url !== '/api/data/self') throw new Error(`Unexpected request: ${url}`)
     if (dailyUsage === null) throw new Error('Usage unavailable')
     return {
-      data: { success: true, data: dailyUsage ? [{ quota: dailyUsage }] : [] },
+      data: {
+        success: true,
+        data: dailyUsage
+          ? [
+              {
+                created_at: Math.floor(Date.now() / 1000),
+                quota: dailyUsage,
+                count: 4,
+                token_used: 12500,
+              },
+            ]
+          : [],
+      },
     }
   })
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -69,21 +81,35 @@ async function renderBalance(
   )
 }
 
-it('puts wallet and key creation after the amount and live usage estimate, leaving the key count as a list link', async () => {
+it('puts wallet and key creation after the amount and 24h usage without runway text, leaving the key count as a list link', async () => {
   const balance = await renderBalance(100000000, 10000000)
   expect(await balance.findByText('Sufficient balance')).toBeVisible()
   const amount = balance.getByText('$200')
-  const estimate = balance.getByText(/~10 days/)
+  const recentUsage = balance.getByText('Last 24h usage')
+  expect(balance.getByText('$20')).toBeVisible()
+  expect(balance.queryByText(/Runway/)).not.toBeInTheDocument()
+  expect(balance.queryByText(/~10 days/)).not.toBeInTheDocument()
   const topUp = balance.getByRole('link', { name: 'Top up balance' })
   const create = balance.getByRole('link', { name: 'Create key' })
-  expect(amount).toAppearBefore(estimate)
-  expect(estimate).toAppearBefore(topUp)
+  expect(amount).toAppearBefore(recentUsage)
+  expect(recentUsage).toAppearBefore(topUp)
   expect(topUp).toAppearBefore(create)
   expect(topUp).toHaveAttribute('href', '/wallet')
   expect(create).toHaveAttribute('href', '/keys?action=create')
   expect(
     screen.getByRole('link', { name: /API Keys.*View all/ })
   ).toHaveAttribute('href', '/keys')
+
+  const tokenCard = document.querySelector('[data-kpi="tokens"]')
+  expect(tokenCard).not.toBeNull()
+  expect(
+    within(tokenCard as HTMLElement).getByText('Today’s token usage')
+  ).toBeVisible()
+  expect(within(tokenCard as HTMLElement).getByText('TOKENS')).toBeVisible()
+  expect(within(tokenCard as HTMLElement).getByText('12.5K')).toBeVisible()
+  expect(
+    within(tokenCard as HTMLElement).getByText('Requests: 4')
+  ).toBeVisible()
 })
 
 it.each([
@@ -91,26 +117,31 @@ it.each([
     quota: 0,
     usage: 0,
     health: 'Insufficient balance',
-    estimate: 'Balance depleted',
+    usageLabel: '$0',
   },
   {
     quota: 1000000,
     usage: 500000,
     health: 'Consider topping up',
-    estimate: '~2 days',
+    usageLabel: '$1',
   },
   {
     quota: 500000,
     usage: 0,
     health: 'Sufficient balance',
-    estimate: 'No recent usage',
+    usageLabel: '$0',
   },
 ])(
-  'keeps the actual balance status when quota=$quota and daily usage=$usage',
-  async ({ quota, usage, health, estimate }) => {
+  'keeps the actual balance status and 24h usage without runway estimate when quota=$quota and daily usage=$usage',
+  async ({ quota, usage, health, usageLabel }) => {
     const balance = await renderBalance(quota, usage)
     expect(await balance.findByText(health)).toBeVisible()
-    expect(await balance.findByText(estimate)).toBeVisible()
+    const recentUsage = balance.getByText('Last 24h usage').parentElement
+    expect(recentUsage).not.toBeNull()
+    expect(
+      await within(recentUsage as HTMLElement).findByText(usageLabel)
+    ).toBeVisible()
+    expect(balance.queryByText(/Runway/)).not.toBeInTheDocument()
   }
 )
 

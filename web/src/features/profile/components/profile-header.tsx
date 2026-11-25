@@ -27,7 +27,12 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { toIntlLocale } from '@/i18n/languages'
 import { getUserAvatarFallback, getUserAvatarStyle } from '@/lib/avatar'
-import { formatCompactNumber, formatNumber, formatQuota } from '@/lib/format'
+import {
+  formatDateStr,
+  formatDateTimeStr,
+  formatNumber,
+  formatQuota,
+} from '@/lib/format'
 import { getRoleLabel } from '@/lib/roles'
 
 import { getDisplayName } from '../lib'
@@ -46,7 +51,7 @@ function getConcurrencyStat(
   profile: UserProfile,
   t: TFunction,
   locale?: string
-): { label: string; value: string; description: string } {
+): { label: string; value: string; description: string; valueTitle?: string } {
   const label = t('Concurrency Limit')
   const summary = profile.concurrency_limit
 
@@ -103,6 +108,20 @@ function getConcurrencyStat(
   }
 }
 
+function getRegistrationStat(
+  profile: UserProfile,
+  t: TFunction
+): { label: string; value: string; description: string; valueTitle?: string } {
+  const timestamp = profile.created_at || profile.created_time || 0
+  const createdDate = timestamp > 0 ? new Date(timestamp * 1000) : null
+  return {
+    label: t('Registration Date'),
+    value: createdDate ? formatDateStr(createdDate) : '—',
+    valueTitle: createdDate ? formatDateTimeStr(createdDate) : undefined,
+    description: t('Account created'),
+  }
+}
+
 export function ProfileHeader({ profile, loading }: ProfileHeaderProps) {
   const { t, i18n } = useTranslation()
   const { copyToClipboard } = useCopyToClipboard()
@@ -113,15 +132,15 @@ export function ProfileHeader({ profile, loading }: ProfileHeaderProps) {
       <Card data-card-hover='false' className='identity-hero' aria-busy='true'>
         <div className='identity-hero-body'>
           <div className='identity-hero-person'>
-            <Skeleton className='size-[54px] shrink-0 rounded-full' />
+            <Skeleton className='size-[64px] shrink-0 rounded-full' />
             <div className='space-y-2'>
-              <Skeleton className='h-5 w-32' />
+              <Skeleton className='h-6 w-36' />
               <Skeleton className='h-4 w-24' />
             </div>
           </div>
           <div className='identity-metrics'>
             {['balance', 'usage', 'requests', 'concurrency'].map((stat) => (
-              <Skeleton key={stat} className='h-8 w-16' />
+              <Skeleton key={stat} className='h-14 w-28' />
             ))}
           </div>
         </div>
@@ -141,27 +160,25 @@ export function ProfileHeader({ profile, loading }: ProfileHeaderProps) {
       label: t('Current Balance'),
       value: formatQuota(profile.quota),
       description: t('Remaining quota'),
+      valueTitle: undefined as string | undefined,
     },
     {
       label: t('Total Usage'),
       value: formatQuota(profile.used_quota),
       description: t('Total consumed quota'),
-    },
-    {
-      label: t('API Requests'),
-      value: formatCompactNumber(profile.request_count),
-      description: t('Total requests made'),
+      valueTitle: undefined as string | undefined,
     },
     getConcurrencyStat(profile, t, locale),
+    getRegistrationStat(profile, t),
   ]
 
   return (
     <Card data-card-hover='false' className='identity-hero'>
       <div className='identity-hero-body'>
         <div className='identity-hero-person'>
-          <Avatar className='size-[54px] shrink-0 rounded-full text-xl'>
+          <Avatar className='size-[64px] shrink-0 rounded-full'>
             <AvatarFallback
-              className='rounded-full font-medium text-white'
+              className='rounded-full text-2xl font-semibold text-white'
               style={avatarFallbackStyle}
             >
               {avatarFallback}
@@ -169,7 +186,7 @@ export function ProfileHeader({ profile, loading }: ProfileHeaderProps) {
           </Avatar>
 
           <div className='min-w-0'>
-            <div className='flex flex-wrap items-center gap-2'>
+            <div className='flex flex-wrap items-center gap-2.5'>
               <h2 className='identity-name'>{displayName}</h2>
               <StatusBadge
                 label={roleLabel}
@@ -195,11 +212,11 @@ export function ProfileHeader({ profile, loading }: ProfileHeaderProps) {
           </div>
         </div>
         <dl className='identity-metrics'>
-          {stats.map(({ label, value, description }) => (
+          {stats.map(({ label, value, description, valueTitle }) => (
             <div key={label}>
               <dt>{label}</dt>
               <dd>
-                <strong>{value}</strong>
+                <strong title={valueTitle}>{value}</strong>
                 <small>{description}</small>
               </dd>
             </div>

@@ -23,6 +23,7 @@ func RegisterScheduledSystemTasks() {
 	service.RegisterSystemTaskHandler(midjourneyPollHandler{})
 	service.RegisterSystemTaskHandler(asyncTaskPollHandler{})
 	service.RegisterSystemTaskHandler(systemTaskCleanupHandler{})
+	service.RegisterSystemTaskHandler(violationAuditHandler{})
 }
 
 // systemTaskCleanupHandler deletes, once a day, the finished system tasks
@@ -209,4 +210,42 @@ func finishSystemTaskHandler(task *model.SystemTask, runnerID string, status mod
 	if err := model.FinishSystemTask(task.TaskID, runnerID, status, result, errorMessage); err != nil {
 		common.SysLog(common.LogText("system task %s failed to persist result: %v", task.TaskID, err))
 	}
+}
+
+// violationAuditHandler periodically screens multi-hit accounts and runs
+// configured LLM account-level audits in the background.
+type violationAuditHandler struct{}
+
+func (violationAuditHandler) Type() string { return model.SystemTaskTypeViolationAudit }
+
+func (violationAuditHandler) Enabled() bool {
+	settings, err := model.LoadViolationAuditSettings(model.DB)
+	if err != nil {
+		return false
+	}
+	return settings.Enabled && settings.AutoAuditEnabled && settings.Endpoint != ""
+}
+
+func (violationAuditHandler) Interval() time.Duration {
+	settings, err := model.LoadViolationAuditSettings(model.DB)
+	if err != nil || settings.IntervalMinutes < 1 {
+		return 30 * time.Minute
+	}
+	return time.Duration(settings.IntervalMinutes) * time.Minute
+}
+
+func (violationAuditHandler) NewPayload() any { return nil }
+
+func (violationAuditHandler) Run(ctx context.Context, task *model.SystemTask, runnerID string) {
+	settings, err := model.LoadViolationAuditSettings(model.DB)
+	if err != nil {
+		finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusFailed, nil, err)
+		return
+	}
+	summary, err := service.RunViolationAuditBatch(ctx, model.DB, settings, service.NewSystemTaskProgressReporter(task, runnerID))
+	status := model.SystemTaskStatusSucceeded
+	if err != nil {
+		status = model.SystemTaskStatusFailed
+	}
+	finishSystemTaskHandler(task, runnerID, status, summary, err)
 }

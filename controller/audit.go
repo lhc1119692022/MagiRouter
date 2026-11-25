@@ -74,6 +74,11 @@ var auditContentTemplates = map[string]string{
 	"subscription.plan_reset":       "Reset active subscriptions for plan ${plan_id}",
 	"subscription.user_plan_reset":  "Reset active plan ${plan_id} subscriptions for user ${target_user_id}",
 	"subscription.user_quota_reset": "Administrator reset the quota of subscription plan ${plan_title} (ID: ${plan_id})",
+
+	"violation_audit.verdict":          "Submitted violation audit verdict ${decision} for user ${username} (ID: ${id}, case #${case_id})",
+	"violation_audit.allowlist_add":    "Added user ${username} (ID: ${id}) to violation audit allowlist",
+	"violation_audit.allowlist_remove": "Removed user (ID: ${id}) from violation audit allowlist",
+	"violation_audit.settings_update":  "Updated violation audit settings",
 }
 
 func recordPasskeyDomainAudit(c *gin.Context, change *model.PasskeyDomainChange, confirmed bool, err error) {

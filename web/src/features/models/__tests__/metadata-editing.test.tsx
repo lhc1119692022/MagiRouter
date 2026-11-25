@@ -157,6 +157,30 @@ it('accepts 255 Unicode characters but refuses overflow or reserved declarations
   ).toBe(false)
 })
 
+it('splits remark tags entered with English or Chinese commas and persists them alongside capability labels', async () => {
+  let saved = { ...model, tags: '' }
+  vi.spyOn(api, 'get').mockImplementation(async (url) => ({
+    data: {
+      success: true,
+      data: url === '/api/models/7' ? saved : { items: [] },
+    },
+  }))
+  const put = vi.spyOn(api, 'put').mockImplementation(async (_url, data) => {
+    saved = { ...saved, ...(data as Partial<Model>) }
+    return { data: { success: true, data: saved } }
+  })
+  const client = renderModelActions(saved, 10)
+  const user = userEvent.setup()
+  await user.click(screen.getByRole('button', { name: 'Edit' }))
+  const tagInput = await screen.findByPlaceholderText('Add tags...')
+  await user.type(tagInput, '推荐，200K 上下文,低延迟{Enter}')
+  await user.click(screen.getByRole('checkbox', { name: 'Text generation' }))
+  await user.click(screen.getByRole('button', { name: 'Save metadata' }))
+  await waitFor(() => expect(put).toHaveBeenCalledTimes(1))
+  expect(saved.tags).toBe('推荐,200K 上下文,低延迟,@mr:catalog:v1=text')
+  client.clear()
+})
+
 describe('model pricing entry', () => {
   it('saves pricing and opens connections for a channel model without creating metadata', async () => {
     const channelModel = { ...model, id: 0, model_name: 'channel-only' }

@@ -13,7 +13,7 @@
   }
 }
 .dashboard-overview .dash-kpi-val {
-  margin-top: 8px;
+  margin-top: 12px;
 }
 .dashboard-overview [data-kpi='spend'] .dash-spark-wrap > div {
   color: #10b981;
@@ -21,7 +21,7 @@
 .dashboard-overview [data-kpi='lifetime'] .dash-spark-wrap > div {
   color: var(--ink-muted);
 }
-.dashboard-overview [data-kpi='requests'] .dash-spark-wrap > div {
+.dashboard-overview [data-kpi='tokens'] .dash-spark-wrap > div {
   color: #2b7fff;
 }
 .dashboard-overview .setup-step-row > a {
@@ -34,16 +34,7 @@
   line-height: 17px;
 }
 .dashboard-overview .dash-balance-amount {
-  margin-top: 8px;
-  overflow-wrap: anywhere;
-}
-.dashboard-overview .dash-balance-runway {
-  display: flex;
-  flex-wrap: wrap;
-  column-gap: 0.35em;
-  color: var(--ink-muted);
-  font-size: 13px;
-  line-height: 22px;
+  margin-top: 0;
   overflow-wrap: anywhere;
 }
 .dashboard-overview .dash-balance-actions a:focus-visible {

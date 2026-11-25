@@ -95,17 +95,17 @@ test('catalog card and overview reprice the active billing period at the minute 
   render(pricingView(entry))
   const card = screen.getByRole('article')
   const detail = screen.getByRole('tabpanel')
-  expect(within(card).getByText('$1.5')).toBeVisible()
+  expect(within(card).getByText('¥1.5')).toBeVisible()
   expect(within(detail).getAllByText('$1.5').length).toBeGreaterThan(0)
   act(() => vi.advanceTimersByTime(1000))
-  expect(within(card).getByText('$3')).toBeVisible()
+  expect(within(card).getByText('¥3')).toBeVisible()
   expect(within(detail).getAllByText('$3').length).toBeGreaterThan(0)
 })
 
 test('a display currency change updates a legacy fixed price in both the catalog card and model overview', () => {
   render(pricingView({ ...model, quota_type: 1, model_price: 2 }))
   const card = screen.getByRole('article')
-  expect(within(card).getByText('$2')).toBeVisible()
+  expect(within(card).getByText('¥2')).toBeVisible()
   act(() =>
     useSystemConfigStore.getState().setConfig({
       currency: {
@@ -115,7 +115,6 @@ test('a display currency change updates a legacy fixed price in both the catalog
       },
     })
   )
-  expect(within(card).getByText('¥14')).toBeVisible()
   expect(
     within(screen.getByRole('tabpanel')).getAllByText('¥14').length
   ).toBeGreaterThan(0)
@@ -141,3 +140,139 @@ test.each([
     })
   }
 )
+
+test('displays the lowest group starting price for token and tiered models, and prefers the lowest per-request price for mixed billing', () => {
+  const tokenEntry: PricingModel = {
+    ...model,
+    id: 11,
+    model_name: 'gpt-5.3-codex-spark',
+    icon: 'Spark',
+    quota_type: 0,
+    model_ratio: 37.5,
+    completion_ratio: 6,
+    enable_groups: ['GPT Fast', 'GPT Pro'],
+    group_ratio: { 'GPT Fast': 0.5, 'GPT Pro': 0.25 },
+  }
+  const tieredTokenEntry: PricingModel = {
+    ...model,
+    id: 12,
+    model_name: 'tiered-token-model',
+    icon: 'OpenAI',
+    quota_type: 0,
+    billing_mode: 'tiered_expr',
+    billing_expr:
+      'len < 128000 ? tier("std", p * 4 + c * 16) : tier("long", p * 8 + c * 32)',
+    enable_groups: ['GPT Fast', 'GPT Pro'],
+    group_ratio: { 'GPT Fast': 0.5, 'GPT Pro': 0.25 },
+  }
+  const mixedEntry: PricingModel = {
+    ...model,
+    id: 13,
+    model_name: 'mixed-billing-model',
+    icon: 'Claude',
+    quota_type: 0,
+    billing_mode: 'tiered_expr',
+    billing_expr:
+      'len < 500 ? tier("small", fixed(0.04)) : len < 1000 ? tier("promo", fixed(0.02)) : tier("tokens", p * 2 + c * 8)',
+    enable_groups: ['GPT Fast', 'GPT Pro'],
+    group_ratio: { 'GPT Fast': 0.5, 'GPT Pro': 0.25 },
+  }
+  const requestEntry: PricingModel = {
+    ...model,
+    id: 14,
+    model_name: 'per-call-model',
+    icon: 'Gemini',
+    quota_type: 1,
+    model_ratio: 0,
+    completion_ratio: 1,
+    model_price: 0.04,
+    enable_groups: ['GPT Fast', 'GPT Pro'],
+    group_ratio: { 'GPT Fast': 0.5, 'GPT Pro': 0.25 },
+  }
+
+  const { rerender } = render(
+    <QueryClientProvider client={client}>
+      <ZmModelCardGrid
+        models={[tokenEntry, tieredTokenEntry, mixedEntry, requestEntry]}
+        onModelClick={vi.fn()}
+        tokenUnit='M'
+        priceRate={1}
+      />
+    </QueryClientProvider>
+  )
+
+  const cards = screen.getAllByRole('article')
+  expect(cards).toHaveLength(4)
+
+  // Your price (default): RMB symbol with starting suffix and lowest group ratio
+  expect(within(cards[0]).getByText('¥18.75')).toBeVisible()
+  expect(within(cards[0]).getByText('/1M+')).toBeVisible()
+
+  expect(within(cards[1]).getByText('¥1')).toBeVisible()
+  expect(within(cards[1]).getByText('/1M+')).toBeVisible()
+
+  expect(within(cards[2]).getByText('¥0.005')).toBeVisible()
+  expect(within(cards[2]).getByText('/call+')).toBeVisible()
+  expect(within(cards[2]).getByText('Per-call / Token')).toBeVisible()
+
+  expect(within(cards[3]).getByText('¥0.01')).toBeVisible()
+  expect(within(cards[3]).getByText('/call+')).toBeVisible()
+
+  // Your price scales by the site recharge rate (status.price)
+  rerender(
+    <QueryClientProvider client={client}>
+      <ZmModelCardGrid
+        models={[tokenEntry, mixedEntry]}
+        onModelClick={vi.fn()}
+        tokenUnit='M'
+        priceRate={2}
+      />
+    </QueryClientProvider>
+  )
+  const scaledCards = screen.getAllByRole('article')
+  expect(within(scaledCards[0]).getByText('¥37.5')).toBeVisible()
+  expect(within(scaledCards[1]).getByText('¥0.01')).toBeVisible()
+
+  // When a specific group filter is active, prices switch to that group's multiplier
+  rerender(
+    <QueryClientProvider client={client}>
+      <ZmModelCardGrid
+        models={[tokenEntry, mixedEntry]}
+        onModelClick={vi.fn()}
+        tokenUnit='M'
+        priceRate={1}
+        selectedGroup='GPT Fast'
+      />
+    </QueryClientProvider>
+  )
+  const filteredCards = screen.getAllByRole('article')
+  expect(within(filteredCards[0]).getByText('¥37.5')).toBeVisible()
+  expect(within(filteredCards[1]).getByText('¥0.01')).toBeVisible()
+
+  // Official price mode: shows backend 1x USD prices without starting suffix
+  rerender(
+    <QueryClientProvider client={client}>
+      <ZmModelCardGrid
+        models={[tokenEntry, tieredTokenEntry, mixedEntry, requestEntry]}
+        onModelClick={vi.fn()}
+        tokenUnit='M'
+        priceRate={7.3}
+        priceMode='official'
+      />
+    </QueryClientProvider>
+  )
+  const officialCards = screen.getAllByRole('article')
+  expect(within(officialCards[0]).getByText('$75 / $450')).toBeVisible()
+  expect(within(officialCards[0]).getByText('/1M')).toBeVisible()
+  expect(within(officialCards[0]).queryByText('/1M+')).toBeNull()
+
+  expect(within(officialCards[1]).getByText('$4 / $16')).toBeVisible()
+  expect(within(officialCards[1]).getByText('/1M')).toBeVisible()
+
+  expect(within(officialCards[2]).getByText('$0.02')).toBeVisible()
+  expect(within(officialCards[2]).getByText('/call')).toBeVisible()
+  expect(within(officialCards[2]).queryByText('/call+')).toBeNull()
+
+  expect(within(officialCards[3]).getByText('$0.04')).toBeVisible()
+  expect(within(officialCards[3]).getByText('/call')).toBeVisible()
+})
