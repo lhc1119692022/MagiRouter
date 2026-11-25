@@ -8921,6 +8921,10 @@
     "Completed top-up orders and credit details will appear here automatically.": "Завершённые заказы на пополнение и детали зачисления будут автоматически отображаться здесь.",
     "No matching order records": "Подходящих заказов не найдено",
     "Configure Payment Gateway": "Настроить платёжный шлюз",
-    "Order Number": "Номер заказа"
+    "Order Number": "Номер заказа",
+    "The default group cannot be deleted": "Группу по умолчанию нельзя удалить",
+    "The default group cannot be renamed": "Группу по умолчанию нельзя переименовать",
+    "At least one billing group must be kept": "Необходимо сохранить хотя бы одну группу тарификации",
+    "Restore default group": "Восстановить группу по умолчанию"
   }
 }

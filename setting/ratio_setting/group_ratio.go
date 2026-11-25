@@ -1,8 +1,8 @@
 package ratio_setting
 
 import (
-	"encoding/json"
 	"errors"
+	"maps"
 	"slices"
 	"strings"
 
@@ -11,10 +11,12 @@ import (
 	"github.com/QuantumNous/new-api/types"
 )
 
+const DefaultGroupName = "default"
+
 var defaultGroupRatio = map[string]float64{
-	"default": 1,
-	"vip":     1,
-	"svip":    1,
+	DefaultGroupName: 1,
+	"vip":            1,
+	"svip":           1,
 }
 
 var groupRatioMap = types.NewRWMap[string, float64]()
@@ -76,6 +78,10 @@ func GetGroupRatioCopy() map[string]float64 {
 	return groupRatioMap.ReadAll()
 }
 
+func DefaultGroupRatioCopy() map[string]float64 {
+	return maps.Clone(defaultGroupRatio)
+}
+
 func ContainsGroupRatio(name string) bool {
 	_, ok := groupRatioMap.Get(name)
 	return ok
@@ -119,15 +125,49 @@ func UpdateGroupGroupRatioByJSONString(jsonStr string) error {
 }
 
 func CheckGroupRatio(jsonStr string) error {
-	checkGroupRatio := make(map[string]float64)
-	err := json.Unmarshal([]byte(jsonStr), &checkGroupRatio)
-	if err != nil {
-		return err
+	_, err := ParseGroupRatio(jsonStr)
+	return err
+}
+
+func ParseGroupRatio(jsonStr string) (map[string]float64, error) {
+	trimmed := strings.TrimSpace(jsonStr)
+	var parsed map[string]float64
+	if err := common.UnmarshalJsonStr(trimmed, &parsed); err != nil {
+		return nil, err
 	}
-	for name, ratio := range checkGroupRatio {
-		if ratio < 0 {
-			return errors.New("group ratio must be not less than 0: " + name)
+	if parsed == nil {
+		return nil, errors.New("group ratio must be a JSON object")
+	}
+	for name, ratio := range parsed {
+		if strings.TrimSpace(name) == "" {
+			return nil, errors.New("group name cannot be empty")
 		}
+		if ratio < 0 {
+			return nil, errors.New("group ratio must be not less than 0: " + name)
+		}
+	}
+	return parsed, nil
+}
+
+func ValidateGroupSettings(groupRatio map[string]float64, userManagementGroups map[string]string) error {
+	_, inBilling := groupRatio[DefaultGroupName]
+	_, inUserManaged := userManagementGroups[DefaultGroupName]
+	if !inBilling && !inUserManaged {
+		return common.NewMessage("The default group cannot be deleted")
+	}
+	billingCount := 0
+	for name := range groupRatio {
+		trimmed := strings.TrimSpace(name)
+		if trimmed == "" || trimmed == "auto" {
+			continue
+		}
+		if _, userManaged := userManagementGroups[name]; userManaged {
+			continue
+		}
+		billingCount++
+	}
+	if billingCount == 0 {
+		return common.NewMessage("At least one billing group must be kept")
 	}
 	return nil
 }
@@ -160,7 +200,7 @@ func UserManagementGroups2JSONString() string {
 }
 
 func UpdateUserManagementGroupsByJSONString(jsonStr string) error {
-	parsed, err := parseUserManagementGroups(jsonStr)
+	parsed, err := ParseUserManagementGroups(jsonStr)
 	if err != nil {
 		return err
 	}
@@ -170,17 +210,17 @@ func UpdateUserManagementGroupsByJSONString(jsonStr string) error {
 }
 
 func CheckUserManagementGroups(jsonStr string) error {
-	_, err := parseUserManagementGroups(jsonStr)
+	_, err := ParseUserManagementGroups(jsonStr)
 	return err
 }
 
-func parseUserManagementGroups(jsonStr string) (map[string]string, error) {
+func ParseUserManagementGroups(jsonStr string) (map[string]string, error) {
 	trimmed := strings.TrimSpace(jsonStr)
 	if trimmed == "" {
 		return map[string]string{}, nil
 	}
 	var parsed map[string]string
-	if err := json.Unmarshal([]byte(trimmed), &parsed); err != nil {
+	if err := common.UnmarshalJsonStr(trimmed, &parsed); err != nil {
 		return nil, err
 	}
 	if parsed == nil {

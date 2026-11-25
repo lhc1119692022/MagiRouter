@@ -23,8 +23,16 @@ import { toast } from 'sonner'
 import { handleServerError } from '@/lib/handle-server-error'
 import { requireServerSuccess } from '@/lib/server-error-message'
 
-import { updatePasskeyDomains, updateSystemOption } from '../api'
-import type { UpdateOptionRequest, UpdatePasskeyDomainsRequest } from '../types'
+import {
+  updateGroupSettings,
+  updatePasskeyDomains,
+  updateSystemOption,
+} from '../api'
+import type {
+  UpdateGroupSettingsRequest,
+  UpdateOptionRequest,
+  UpdatePasskeyDomainsRequest,
+} from '../types'
 
 // Configuration keys that require status refresh
 const STATUS_RELATED_KEYS = new Set([
@@ -132,5 +140,26 @@ export function useUpdatePasskeyDomains() {
     },
     onError: (error: Error) =>
       handleServerError(error, i18next.t('Failed to update setting')),
+  })
+}
+
+export function useUpdateGroupSettings() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (request: UpdateGroupSettingsRequest) =>
+      requireServerSuccess(await updateGroupSettings(request)),
+    onSuccess: (data) => {
+      if (data.success) {
+        void queryClient.invalidateQueries({ queryKey: ['system-options'] })
+        void queryClient.invalidateQueries({ queryKey: ['groups'] })
+        void queryClient.invalidateQueries({ queryKey: ['user-groups'] })
+        toast.success(i18next.t('Setting updated successfully'))
+      } else {
+        handleServerError(data, i18next.t('Failed to update setting'))
+      }
+    },
+    onError: (error: Error) => {
+      handleServerError(error, i18next.t('Failed to update setting'))
+    },
   })
 }

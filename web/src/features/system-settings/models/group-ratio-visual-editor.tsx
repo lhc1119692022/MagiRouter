@@ -47,6 +47,7 @@ import {
 } from '@/components/drawer-layout'
 import { EmptyState } from '@/components/empty-state'
 import { StatusBadge } from '@/components/status-badge'
+import { Alert, AlertAction, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -94,6 +95,7 @@ export type GroupSettingsSection =
 type GroupRatioVisualEditorProps = {
   section: GroupSettingsSection
   onSectionChange: (section: GroupSettingsSection) => void
+  pricingError?: string
   defaultUseAutoGroupField: ReactNode
   groupRatio: string
   topupGroupRatio: string
@@ -114,7 +116,11 @@ type GroupPricingRow = {
   selectable: boolean
   userManagementOnly: boolean
   description: string
+  isProtectedDefault?: boolean
 }
+
+const DEFAULT_GROUP_NAME = 'default'
+const DEFAULT_GROUP_DESCRIPTION = 'Default group'
 
 type RegistryEntry = {
   name: string
@@ -190,6 +196,7 @@ function buildGroupPricingRows(
       selectable: Object.hasOwn(usableMap, name),
       userManagementOnly,
       description,
+      isProtectedDefault: name === DEFAULT_GROUP_NAME,
     }
   })
 }
@@ -436,6 +443,7 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor(
           userUsableGroups={props.userUsableGroups}
           topupGroupRatio={props.topupGroupRatio}
           userManagementGroups={props.userManagementGroups}
+          pricingError={props.pricingError}
           onChange={onChange}
           onShowDetail={setDetailGroup}
         />
@@ -548,6 +556,7 @@ type GroupPricingTableProps = {
   userUsableGroups: string
   topupGroupRatio: string
   userManagementGroups: string
+  pricingError?: string
   onChange: (field: string, value: string) => void
   onShowDetail: (name: string) => void
 }
@@ -608,6 +617,27 @@ function GroupPricingTable(props: GroupPricingTableProps) {
       field: Exclude<keyof GroupPricingRow, '_id'>,
       value: string | number | boolean
     ) => {
+      const target = rows.find((row) => row._id === id)
+      if (!target) return
+      if (field === 'name' && target.isProtectedDefault) {
+        return
+      }
+      if (
+        field === 'userManagementOnly' &&
+        value === true &&
+        !target.userManagementOnly
+      ) {
+        const remainingBillingCount = rows.filter(
+          (row) =>
+            row._id !== id &&
+            !row.userManagementOnly &&
+            row.name.trim() !== '' &&
+            row.name.trim() !== 'auto'
+        ).length
+        if (remainingBillingCount === 0) {
+          return
+        }
+      }
       emitRows(
         rows.map((row) => (row._id === id ? { ...row, [field]: value } : row))
       )
@@ -638,12 +668,86 @@ function GroupPricingTable(props: GroupPricingTableProps) {
     ])
   }, [emitRows, rows])
 
+  const restoreDefaultGroup = useCallback(() => {
+    setSearch('')
+    const existingIndex = rows.findIndex(
+      (row) => row.name.trim() === DEFAULT_GROUP_NAME
+    )
+    if (existingIndex >= 0) {
+      emitRows(
+        rows.map((row, index) =>
+          index === existingIndex
+            ? {
+                ...row,
+                userManagementOnly: false,
+                isProtectedDefault: true,
+              }
+            : row
+        )
+      )
+      return
+    }
+    emitRows([
+      {
+        _id: createGroupPricingId(),
+        name: DEFAULT_GROUP_NAME,
+        ratio: '1',
+        topupRatio: '',
+        selectable: true,
+        userManagementOnly: false,
+        description: DEFAULT_GROUP_DESCRIPTION,
+        isProtectedDefault: true,
+      },
+      ...rows,
+    ])
+  }, [emitRows, rows])
+
   const removeRow = useCallback(
     (id: string) => {
+      const target = rows.find((row) => row._id === id)
+      if (!target || target.isProtectedDefault) {
+        return
+      }
+      const isTargetBilling =
+        !target.userManagementOnly &&
+        target.name.trim() !== '' &&
+        target.name.trim() !== 'auto'
+      if (isTargetBilling) {
+        const remainingBillingCount = rows.filter(
+          (row) =>
+            row._id !== id &&
+            !row.userManagementOnly &&
+            row.name.trim() !== '' &&
+            row.name.trim() !== 'auto'
+        ).length
+        if (remainingBillingCount === 0) {
+          return
+        }
+      }
       emitRows(rows.filter((row) => row._id !== id))
     },
     [emitRows, rows]
   )
+
+  const billingRowCount = useMemo(
+    () =>
+      rows.filter(
+        (row) =>
+          !row.userManagementOnly &&
+          row.name.trim() !== '' &&
+          row.name.trim() !== 'auto'
+      ).length,
+    [rows]
+  )
+
+  const hasDefaultGroup = useMemo(() => {
+    const ratioMap = parseRatioMap(props.groupRatio)
+    const userManagementMap = parseUsableMap(props.userManagementGroups)
+    return (
+      Object.hasOwn(ratioMap, DEFAULT_GROUP_NAME) ||
+      Object.hasOwn(userManagementMap, DEFAULT_GROUP_NAME)
+    )
+  }, [props.groupRatio, props.userManagementGroups])
 
   const duplicateNames = useMemo(() => {
     const counts = new Map<string, number>()
@@ -743,6 +847,12 @@ function GroupPricingTable(props: GroupPricingTableProps) {
                   <Input
                     value={row.name}
                     aria-label={t('Group name')}
+                    disabled={row.isProtectedDefault === true}
+                    title={
+                      row.isProtectedDefault
+                        ? t('The default group cannot be renamed')
+                        : undefined
+                    }
                     onChange={(event) =>
                       updateRow(row._id, 'name', event.target.value)
                     }
@@ -754,21 +864,34 @@ function GroupPricingTable(props: GroupPricingTableProps) {
                 id: 'user-management-only',
                 header: t('User management only'),
                 className: 'w-36 text-center',
-                cell: (row) => (
-                  <div className='flex justify-center'>
-                    <Checkbox
-                      checked={row.userManagementOnly}
-                      onCheckedChange={(checked) =>
-                        updateRow(
-                          row._id,
-                          'userManagementOnly',
-                          checked === true
-                        )
-                      }
-                      aria-label={t('User management only')}
-                    />
-                  </div>
-                ),
+                cell: (row) => {
+                  const isOnlyBillingGroup =
+                    !row.userManagementOnly &&
+                    row.name.trim() !== '' &&
+                    row.name.trim() !== 'auto' &&
+                    billingRowCount <= 1
+                  return (
+                    <div className='flex justify-center'>
+                      <Checkbox
+                        checked={row.userManagementOnly}
+                        disabled={isOnlyBillingGroup}
+                        title={
+                          isOnlyBillingGroup
+                            ? t('At least one billing group must be kept')
+                            : undefined
+                        }
+                        onCheckedChange={(checked) =>
+                          updateRow(
+                            row._id,
+                            'userManagementOnly',
+                            checked === true
+                          )
+                        }
+                        aria-label={t('User management only')}
+                      />
+                    </div>
+                  )
+                },
               },
               {
                 id: 'ratio',
@@ -855,30 +978,70 @@ function GroupPricingTable(props: GroupPricingTableProps) {
                 header: t('Actions'),
                 className: 'text-right',
                 cellClassName: 'text-right',
-                cell: (row) => (
-                  <div className='flex justify-end gap-1'>
-                    <Button
-                      variant='ghost'
-                      size='sm'
-                      onClick={() => props.onShowDetail(row.name.trim())}
-                      disabled={!row.name.trim()}
-                      aria-label={t('Details')}
-                    >
-                      <Info className='h-4 w-4' />
-                    </Button>
-                    <Button
-                      variant='ghost'
-                      size='sm'
-                      onClick={() => removeRow(row._id)}
-                      aria-label={t('Delete')}
-                    >
-                      <Trash2 className='h-4 w-4' />
-                    </Button>
-                  </div>
-                ),
+                cell: (row) => {
+                  const isProtectedDefault = row.isProtectedDefault === true
+                  const isOnlyBillingGroup =
+                    !row.userManagementOnly &&
+                    row.name.trim() !== '' &&
+                    row.name.trim() !== 'auto' &&
+                    billingRowCount <= 1
+                  const cannotDelete = isProtectedDefault || isOnlyBillingGroup
+                  let deleteTitle: string | undefined
+                  if (isProtectedDefault) {
+                    deleteTitle = t('The default group cannot be deleted')
+                  } else if (isOnlyBillingGroup) {
+                    deleteTitle = t('At least one billing group must be kept')
+                  }
+                  return (
+                    <div className='flex justify-end gap-1'>
+                      <Button
+                        variant='ghost'
+                        size='sm'
+                        onClick={() => props.onShowDetail(row.name.trim())}
+                        disabled={!row.name.trim()}
+                        aria-label={t('Details')}
+                      >
+                        <Info className='h-4 w-4' />
+                      </Button>
+                      <Button
+                        variant='ghost'
+                        size='sm'
+                        onClick={() => removeRow(row._id)}
+                        disabled={cannotDelete}
+                        title={deleteTitle}
+                        aria-label={t('Delete')}
+                      >
+                        <Trash2 className='h-4 w-4' />
+                      </Button>
+                    </div>
+                  )
+                },
               },
             ]}
           />
+
+          {!hasDefaultGroup && (
+            <Alert variant='destructive' className='items-center'>
+              <AlertTriangle className='h-4 w-4' />
+              <AlertDescription>
+                {t('The default group cannot be deleted')}
+              </AlertDescription>
+              <AlertAction>
+                <Button
+                  type='button'
+                  variant='outline'
+                  size='sm'
+                  onClick={restoreDefaultGroup}
+                >
+                  {t('Restore default group')}
+                </Button>
+              </AlertAction>
+            </Alert>
+          )}
+
+          {props.pricingError && hasDefaultGroup && (
+            <p className='text-destructive text-sm'>{props.pricingError}</p>
+          )}
 
           {duplicateNames.length > 0 && (
             <p className='text-destructive text-sm'>

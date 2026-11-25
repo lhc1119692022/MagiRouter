@@ -169,6 +169,122 @@ func UpdatePasskeyDomains(c *gin.Context) {
 	common.ApiSuccess(c, change)
 }
 
+var groupSettingsAllowedKeys = map[string]bool{
+	model.GroupRatioOptionKey:                        true,
+	"TopupGroupRatio":                                true,
+	model.UserUsableGroupsOptionKey:                  true,
+	"GroupGroupRatio":                                true,
+	"AutoGroups":                                     true,
+	"MaxTokenAutoGroups":                             true,
+	"DefaultUseAutoGroup":                            true,
+	"group_ratio_setting.group_special_usable_group": true,
+	model.UserManagementGroupsOptionKey:              true,
+}
+
+func UpdateGroupSettings(c *gin.Context) {
+	var request struct {
+		Options map[string]any `json:"options"`
+	}
+	if err := common.DecodeJsonBody(c.Request.Body, &request); err != nil || request.Options == nil {
+		common.ApiErrorStatus(c, http.StatusBadRequest, common.NewMessage("Invalid parameters"))
+		return
+	}
+	if len(request.Options) == 0 {
+		common.ApiSuccess(c, nil)
+		return
+	}
+
+	normalized := make(map[string]string, len(request.Options))
+	keys := make([]string, 0, len(request.Options))
+	for key, rawValue := range request.Options {
+		if !groupSettingsAllowedKeys[key] || rawValue == nil {
+			common.ApiErrorStatus(c, http.StatusBadRequest, common.NewMessage("Invalid parameters"))
+			return
+		}
+		var value string
+		switch typed := rawValue.(type) {
+		case string:
+			value = typed
+		case bool:
+			value = common.Interface2String(typed)
+		case float64:
+			value = common.Interface2String(typed)
+		case int:
+			value = common.Interface2String(typed)
+		default:
+			common.ApiErrorStatus(c, http.StatusBadRequest, common.NewMessage("Invalid parameters"))
+			return
+		}
+
+		var validationErr error
+		switch key {
+		case model.GroupRatioOptionKey:
+			validationErr = ratio_setting.CheckGroupRatio(value)
+		case model.UserManagementGroupsOptionKey:
+			validationErr = ratio_setting.CheckUserManagementGroups(value)
+		case "TopupGroupRatio":
+			var topup map[string]float64
+			validationErr = common.UnmarshalJsonStr(value, &topup)
+			if validationErr == nil && topup == nil {
+				validationErr = errors.New("topup group ratio must be a JSON object")
+			}
+			if validationErr == nil {
+				for name, ratio := range topup {
+					if ratio < 0 {
+						validationErr = errors.New("topup group ratio must be not less than 0: " + name)
+						break
+					}
+				}
+			}
+		case model.UserUsableGroupsOptionKey:
+			var usable map[string]string
+			validationErr = common.UnmarshalJsonStr(value, &usable)
+			if validationErr == nil && usable == nil {
+				validationErr = errors.New("user usable groups must be a JSON object")
+			}
+		case "GroupGroupRatio":
+			var nested map[string]map[string]float64
+			validationErr = common.UnmarshalJsonStr(value, &nested)
+			if validationErr == nil && nested == nil {
+				validationErr = errors.New("group group ratio must be a JSON object")
+			}
+		case "AutoGroups":
+			var autoGroups []string
+			validationErr = common.UnmarshalJsonStr(value, &autoGroups)
+			if validationErr == nil && autoGroups == nil {
+				validationErr = errors.New("auto groups must be a JSON array")
+			}
+		case "MaxTokenAutoGroups":
+			validationErr = setting.ValidateMaxTokenAutoGroups(value)
+		case "DefaultUseAutoGroup":
+			if value != "true" && value != "false" {
+				validationErr = common.NewMessage("Invalid parameters")
+			}
+		case "group_ratio_setting.group_special_usable_group":
+			var special map[string]map[string]string
+			validationErr = common.UnmarshalJsonStr(value, &special)
+			if validationErr == nil && special == nil {
+				validationErr = errors.New("group special usable group must be a JSON object")
+			}
+		}
+		if validationErr != nil {
+			common.ApiError(c, validationErr)
+			return
+		}
+		normalized[key] = value
+		keys = append(keys, key)
+	}
+
+	if err := model.UpdateOptionsBulk(normalized); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+
+	slices.Sort(keys)
+	recordManageAudit(c, "option.update", map[string]any{"key": strings.Join(keys, ", ")})
+	common.ApiSuccess(c, nil)
+}
+
 func writePasskeyDomainSettingsError(c *gin.Context, err error) {
 	var removal *model.PasskeyDomainRemovalError
 	if errors.As(err, &removal) {
@@ -379,13 +495,13 @@ func UpdateOption(c *gin.Context) {
 			common.ApiErrorT(c, "The Classic frontend has been removed. The theme can only be set to default")
 			return
 		}
-	case "GroupRatio":
+	case model.GroupRatioOptionKey, model.GroupRatioSettingGroupRatioKey:
 		err = ratio_setting.CheckGroupRatio(option.Value.(string))
 		if err != nil {
 			common.ApiError(c, err)
 			return
 		}
-	case "group_ratio_setting.user_management_groups":
+	case model.UserManagementGroupsOptionKey:
 		err = ratio_setting.CheckUserManagementGroups(option.Value.(string))
 		if err != nil {
 			common.ApiError(c, err)

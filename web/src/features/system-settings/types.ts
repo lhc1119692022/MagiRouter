@@ -35,6 +35,10 @@ export type UpdateOptionRequest = {
   previous_value?: string
 }
 
+export type UpdateGroupSettingsRequest = {
+  options: Record<string, string | boolean | number>
+}
+
 export type UpdateOptionResponse = {
   success: boolean
   message: string

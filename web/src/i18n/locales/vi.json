@@ -8921,6 +8921,10 @@
     "Completed top-up orders and credit details will appear here automatically.": "Các đơn nạp tiền hoàn tất và chi tiết ghi có sẽ tự động hiển thị tại đây.",
     "No matching order records": "Không tìm thấy đơn hàng phù hợp",
     "Configure Payment Gateway": "Cấu hình cổng thanh toán",
-    "Order Number": "Mã đơn hàng"
+    "Order Number": "Mã đơn hàng",
+    "The default group cannot be deleted": "Không thể xóa nhóm mặc định",
+    "The default group cannot be renamed": "Không thể đổi tên nhóm mặc định",
+    "At least one billing group must be kept": "Cần giữ lại ít nhất một nhóm tính phí",
+    "Restore default group": "Khôi phục nhóm mặc định"
   }
 }

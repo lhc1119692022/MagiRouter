@@ -30,6 +30,7 @@ import type {
   SystemTaskResponse,
   UpdateOptionRequest,
   UpdateOptionResponse,
+  UpdateGroupSettingsRequest,
   UpdatePasskeyDomainsRequest,
   UpdatePasskeyDomainsResponse,
   UpstreamChannelsResponse,
@@ -51,6 +52,14 @@ export async function getSiteModuleEnvelope() {
 
 export async function updateSystemOption(request: UpdateOptionRequest) {
   const res = await api.put<UpdateOptionResponse>('/api/option/', request)
+  return res.data
+}
+
+export async function updateGroupSettings(request: UpdateGroupSettingsRequest) {
+  const res = await api.put<UpdateOptionResponse>(
+    '/api/option/group_settings',
+    request
+  )
   return res.data
 }
 

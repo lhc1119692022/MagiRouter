@@ -8921,6 +8921,10 @@
     "Completed top-up orders and credit details will appear here automatically.": "Les commandes de recharge terminées et les détails de crédit apparaîtront ici automatiquement.",
     "No matching order records": "Aucune commande correspondante",
     "Configure Payment Gateway": "Configurer la passerelle de paiement",
-    "Order Number": "Numéro de commande"
+    "Order Number": "Numéro de commande",
+    "The default group cannot be deleted": "Le groupe par défaut ne peut pas être supprimé",
+    "The default group cannot be renamed": "Le groupe par défaut ne peut pas être renommé",
+    "At least one billing group must be kept": "Au moins un groupe de facturation doit être conservé",
+    "Restore default group": "Restaurer le groupe par défaut"
   }
 }

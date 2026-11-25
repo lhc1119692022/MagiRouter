@@ -8939,6 +8939,10 @@
     "Completed top-up orders and credit details will appear here automatically.": "Completed top-up orders and credit details will appear here automatically.",
     "No matching order records": "No matching order records",
     "Configure Payment Gateway": "Configure Payment Gateway",
-    "Order Number": "Order Number"
+    "Order Number": "Order Number",
+    "The default group cannot be deleted": "The default group cannot be deleted",
+    "The default group cannot be renamed": "The default group cannot be renamed",
+    "At least one billing group must be kept": "At least one billing group must be kept",
+    "Restore default group": "Restore default group"
   }
 }

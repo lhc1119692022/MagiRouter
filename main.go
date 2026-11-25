@@ -378,6 +378,9 @@ func InitResources() error {
 		if err := model.MigrateSensitiveWords(); err != nil {
 			common.SysError(common.LogText("failed to migrate sensitive words: %s", err.Error()))
 		}
+		if err := model.EnsureDefaultGroupOptions(); err != nil {
+			common.SysError(common.LogText("failed to ensure default group options: %s", err.Error()))
+		}
 	}
 	model.InitOptionMap()
 

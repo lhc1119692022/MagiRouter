@@ -617,7 +617,7 @@ describe('group settings workspace', () => {
     expect(autoCandidates).not.toContain('member')
   })
 
-  it('persists group_ratio_setting.user_management_groups via diff-only PUT /api/option/ and invalidates group queries', async () => {
+  it('persists group_ratio_setting.user_management_groups via atomic diff-only PUT /api/option/group_settings and invalidates group queries', async () => {
     const user = userEvent.setup()
     const putSpy = vi
       .spyOn(api, 'put')
@@ -644,46 +644,130 @@ describe('group settings workspace', () => {
       screen.getByRole('button', { name: 'Save group settings' })
     )
 
-    await waitFor(() => expect(putSpy).toHaveBeenCalledTimes(3))
-    const sentCalls = putSpy.mock.calls.map(([url, payload]) => ({
-      url,
-      payload: payload as { key: string; value: unknown },
-    }))
-    expect(sentCalls.every((call) => call.url === '/api/option/')).toBe(true)
-    expect(sentCalls.map((call) => call.payload.key)).toEqual([
+    await waitFor(() => expect(putSpy).toHaveBeenCalledTimes(1))
+    const [url, payload] = putSpy.mock.calls[0] as [
+      string,
+      { options: Record<string, unknown> },
+    ]
+    expect(url).toBe('/api/option/group_settings')
+    expect(Object.keys(payload.options)).toEqual([
       'GroupRatio',
       'UserUsableGroups',
       'group_ratio_setting.user_management_groups',
     ])
     expect(
       JSON.parse(
-        String(
-          sentCalls.find(
-            (call) =>
-              call.payload.key === 'group_ratio_setting.user_management_groups'
-          )?.payload.value
-        )
+        String(payload.options['group_ratio_setting.user_management_groups'])
       )
     ).toEqual({ default: 'Standard access' })
-    expect(
-      JSON.parse(
-        String(
-          sentCalls.find((call) => call.payload.key === 'GroupRatio')?.payload
-            .value
-        )
-      )
-    ).toEqual({ vip: 0.8 })
-    expect(
-      JSON.parse(
-        String(
-          sentCalls.find((call) => call.payload.key === 'UserUsableGroups')
-            ?.payload.value
-        )
-      )
-    ).toEqual({ vip: 'Premium access' })
+    expect(JSON.parse(String(payload.options.GroupRatio))).toEqual({ vip: 0.8 })
+    expect(JSON.parse(String(payload.options.UserUsableGroups))).toEqual({
+      vip: 'Premium access',
+    })
 
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['groups'] })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['user-groups'] })
+  })
+
+  it('locks the default group from renaming or deletion and protects the last billing group', async () => {
+    const user = userEvent.setup()
+    render(
+      <Fixture
+        initial={{
+          GroupRatio: '{"default":1}',
+          TopupGroupRatio: '{}',
+          UserUsableGroups: '{"default":"Default group"}',
+        }}
+      />
+    )
+
+    const defaultInput = screen.getByDisplayValue('default')
+    expect(defaultInput).toBeDisabled()
+    const defaultRow = defaultInput.closest('tr') as HTMLTableRowElement
+    expect(
+      within(defaultRow).getByRole('button', { name: 'Delete' })
+    ).toBeDisabled()
+    const defaultUmgCheckbox = within(defaultRow).getByRole('checkbox', {
+      name: 'User management only',
+    })
+    expect(defaultUmgCheckbox).toHaveAttribute('aria-disabled', 'true')
+
+    // Adding a second billing group enables toggling default to user-management-only,
+    // while protecting the remaining billing group from deletion.
+    await user.click(screen.getByRole('button', { name: 'Add group' }))
+    expect(defaultUmgCheckbox).not.toHaveAttribute('aria-disabled', 'true')
+    await user.click(defaultUmgCheckbox)
+
+    const newGroupRow = screen
+      .getByDisplayValue('group_1')
+      .closest('tr') as HTMLTableRowElement
+    expect(
+      within(newGroupRow).getByRole('button', { name: 'Delete' })
+    ).toBeDisabled()
+    expect(
+      within(newGroupRow).getByRole('checkbox', {
+        name: 'User management only',
+      })
+    ).toHaveAttribute('aria-disabled', 'true')
+  })
+
+  it('blocks saving JSON when default is deleted or zero billing groups remain, and allows restoring default', async () => {
+    const user = userEvent.setup()
+    const putSpy = vi
+      .spyOn(api, 'put')
+      .mockResolvedValue({ data: { success: true } })
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    })
+
+    render(<RatioCardFixture queryClient={queryClient} />)
+
+    await user.click(screen.getByRole('button', { name: 'Switch to JSON' }))
+    const groupRatioEditor = screen.getByRole('textbox', {
+      name: 'Group ratios',
+    })
+    fireEvent.input(groupRatioEditor, { target: { value: '{"vip":0.8}' } })
+    await user.click(
+      screen.getByRole('button', { name: 'Save group settings' })
+    )
+
+    await waitFor(() =>
+      expect(
+        screen.getByText('The default group cannot be deleted')
+      ).toBeVisible()
+    )
+    expect(putSpy).not.toHaveBeenCalled()
+
+    // Switching back to visual shows the restore banner and lets the admin restore default.
+    await user.click(screen.getByRole('button', { name: 'Switch to Visual' }))
+    await user.click(
+      screen.getByRole('button', { name: 'Restore default group' })
+    )
+    expect(screen.getByDisplayValue('default')).toBeDisabled()
+
+    // Emptying GroupRatio while default is in UserManagementGroups is also blocked.
+    await user.click(screen.getByRole('button', { name: 'Switch to JSON' }))
+    const umgEditor = screen.getByRole('textbox', {
+      name: 'User management only groups',
+    })
+    fireEvent.input(screen.getByRole('textbox', { name: 'Group ratios' }), {
+      target: { value: '{}' },
+    })
+    fireEvent.input(umgEditor, {
+      target: { value: '{"default":"Standard member"}' },
+    })
+    await user.click(
+      screen.getByRole('button', { name: 'Save group settings' })
+    )
+    await waitFor(() =>
+      expect(
+        screen.getByText('At least one billing group must be kept')
+      ).toBeVisible()
+    )
+    expect(putSpy).not.toHaveBeenCalled()
   })
 
   it('rejects reserved group names in UserManagementGroups JSON and prevents saving', async () => {

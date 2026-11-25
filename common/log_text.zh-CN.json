@@ -868,5 +868,7 @@
   "zhipu_image_missing_url": "智谱图片接口没有返回 URL",
   "¥%.6f quota": "¥%.6f 额度",
   "＄%.6f quota": "＄%.6f 额度",
+  "failed to ensure default group options: %s": "自动修复默认分组配置失败: %s",
+  "restored missing default group in options": "已自动恢复缺失的默认分组（default）配置",
   "plugin scheduled failed: plugin=%s channel_id=%d key_index=%d category=%s": "插件定时任务失败：plugin=%s channel_id=%d key_index=%d category=%s"
 }

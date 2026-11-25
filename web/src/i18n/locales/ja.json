@@ -8921,6 +8921,10 @@
     "Completed top-up orders and credit details will appear here automatically.": "オンラインチャージが完了すると、注文と残高反映の詳細がここに自動表示されます。",
     "No matching order records": "条件に一致する注文履歴がありません",
     "Configure Payment Gateway": "決済ゲートウェイ設定",
-    "Order Number": "注文番号"
+    "Order Number": "注文番号",
+    "The default group cannot be deleted": "デフォルトグループは削除できません",
+    "The default group cannot be renamed": "デフォルトグループの名前は変更できません",
+    "At least one billing group must be kept": "課金グループは少なくとも 1 つ残す必要があります",
+    "Restore default group": "デフォルトグループを復元"
   }
 }

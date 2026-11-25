@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -41,7 +41,10 @@ import { handleServerError } from '@/lib/handle-server-error'
 
 import { SettingsPageTitleStatusPortal } from '../components/settings-page-context'
 import { SettingsSection } from '../components/settings-section'
-import { useUpdateOption } from '../hooks/use-update-option'
+import {
+  useUpdateGroupSettings,
+  useUpdateOption,
+} from '../hooks/use-update-option'
 import { isObjectRecord } from '../utils/json-validators'
 import { positiveIntegerSchema } from '../utils/numeric-field'
 import { GroupRatioForm } from './group-ratio-form'
@@ -133,37 +136,86 @@ const createModelSchema = (t: Translate) =>
   })
 
 const createGroupSchema = (t: Translate) =>
-  z.object({
-    GroupRatio: createJsonStringField(t),
-    TopupGroupRatio: createJsonStringField(t),
-    UserUsableGroups: createJsonStringField(t),
-    GroupGroupRatio: createJsonStringField(t),
-    AutoGroups: createJsonStringField(t, {
-      predicate: (parsed) =>
-        Array.isArray(parsed) &&
-        parsed.every((item) => typeof item === 'string'),
-      predicateMessage: 'Expected a JSON array of group identifiers',
-    }),
-    MaxTokenAutoGroups: positiveIntegerSchema(t('Enter a positive integer')),
-    DefaultUseAutoGroup: z.boolean(),
-    GroupSpecialUsableGroup: createJsonStringField(t),
-    UserManagementGroups: createJsonStringField(t, {
-      predicate: (parsed) => {
-        if (!isObjectRecord(parsed)) return false
-        return Object.entries(parsed).every(([rawName, description]) => {
-          const trimmedName = rawName.trim()
-          return (
-            trimmedName !== '' &&
-            trimmedName !== 'auto' &&
-            trimmedName !== 'all' &&
-            typeof description === 'string'
-          )
+  z
+    .object({
+      GroupRatio: createJsonStringField(t),
+      TopupGroupRatio: createJsonStringField(t),
+      UserUsableGroups: createJsonStringField(t),
+      GroupGroupRatio: createJsonStringField(t),
+      AutoGroups: createJsonStringField(t, {
+        predicate: (parsed) =>
+          Array.isArray(parsed) &&
+          parsed.every((item) => typeof item === 'string'),
+        predicateMessage: 'Expected a JSON array of group identifiers',
+      }),
+      MaxTokenAutoGroups: positiveIntegerSchema(t('Enter a positive integer')),
+      DefaultUseAutoGroup: z.boolean(),
+      GroupSpecialUsableGroup: createJsonStringField(t),
+      UserManagementGroups: createJsonStringField(t, {
+        predicate: (parsed) => {
+          if (!isObjectRecord(parsed)) return false
+          return Object.entries(parsed).every(([rawName, description]) => {
+            const trimmedName = rawName.trim()
+            return (
+              trimmedName !== '' &&
+              trimmedName !== 'auto' &&
+              trimmedName !== 'all' &&
+              typeof description === 'string'
+            )
+          })
+        },
+        predicateMessage:
+          'Expected a JSON object mapping non-reserved group names to description strings',
+      }),
+    })
+    .superRefine((values, ctx) => {
+      const rawGroupRatio = values.GroupRatio.trim()
+      const rawUserManagementGroups = values.UserManagementGroups.trim()
+      let groupRatioMap: Record<string, unknown> = {}
+      let userManagementMap: Record<string, unknown> = {}
+      try {
+        if (rawGroupRatio !== '') {
+          const parsed: unknown = JSON.parse(rawGroupRatio)
+          if (!isObjectRecord(parsed)) return
+          groupRatioMap = parsed
+        }
+        if (rawUserManagementGroups !== '') {
+          const parsed: unknown = JSON.parse(rawUserManagementGroups)
+          if (!isObjectRecord(parsed)) return
+          userManagementMap = parsed
+        }
+      } catch {
+        return
+      }
+
+      const hasDefault =
+        Object.hasOwn(groupRatioMap, 'default') ||
+        Object.hasOwn(userManagementMap, 'default')
+      if (!hasDefault) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['GroupRatio'],
+          message: t('The default group cannot be deleted'),
         })
-      },
-      predicateMessage:
-        'Expected a JSON object mapping non-reserved group names to description strings',
-    }),
-  })
+        return
+      }
+
+      const billingGroupCount = Object.keys(groupRatioMap).filter((name) => {
+        const trimmed = name.trim()
+        return (
+          trimmed !== '' &&
+          trimmed !== 'auto' &&
+          !Object.hasOwn(userManagementMap, name)
+        )
+      }).length
+      if (billingGroupCount === 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['GroupRatio'],
+          message: t('At least one billing group must be kept'),
+        })
+      }
+    })
 
 type ModelFormValues = z.infer<ReturnType<typeof createModelSchema>>
 type GroupFormValues = z.infer<ReturnType<typeof createGroupSchema>>
@@ -190,9 +242,9 @@ export function RatioSettingsCard({
   visibleTabs = ['models', 'groups', 'tool-prices', 'upstream-sync'],
 }: RatioSettingsCardProps) {
   const { t } = useTranslation()
-  const queryClient = useQueryClient()
   const isMobile = useMediaQuery('(max-width: 639px)')
   const updateOption = useUpdateOption()
+  const updateGroupSettings = useUpdateGroupSettings()
   const [confirmOpen, setConfirmOpen] = useState(false)
 
   const pricingQuery = useModelPricing()
@@ -467,21 +519,20 @@ export function RatioSettingsCard({
         (key) => normalized[key] !== groupNormalizedDefaults.current[key]
       )
 
+      if (updates.length === 0) {
+        return
+      }
+
+      const options: Record<string, string | boolean | number> = {}
       for (const key of updates) {
         const apiKey = apiKeyMap[key] || key
-        await updateOption.mutateAsync({ key: apiKey, value: normalized[key] })
+        options[apiKey] = normalized[key]
       }
 
+      await updateGroupSettings.mutateAsync({ options })
       groupNormalizedDefaults.current = normalized
-
-      if (updates.length > 0) {
-        await Promise.all([
-          queryClient.invalidateQueries({ queryKey: ['groups'] }),
-          queryClient.invalidateQueries({ queryKey: ['user-groups'] }),
-        ])
-      }
     },
-    [queryClient, updateOption]
+    [updateGroupSettings]
   )
 
   const handleResetRatios = useCallback(() => {
@@ -553,7 +604,7 @@ export function RatioSettingsCard({
         <GroupRatioForm
           form={groupForm}
           onSave={saveGroupRatios}
-          isSaving={updateOption.isPending}
+          isSaving={updateGroupSettings.isPending}
         />
       )
     }

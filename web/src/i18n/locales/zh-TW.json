@@ -8921,6 +8921,10 @@
     "Completed top-up orders and credit details will appear here automatically.": "完成線上儲值後，訂單與入帳明細將自動顯示於此處。",
     "No matching order records": "沒有符合條件的訂單記錄",
     "Configure Payment Gateway": "設定支付通道",
-    "Order Number": "訂單編號"
+    "Order Number": "訂單編號",
+    "The default group cannot be deleted": "預設分組（default）不可刪除",
+    "The default group cannot be renamed": "預設分組（default）不可重新命名",
+    "At least one billing group must be kept": "至少需要保留一個計費分組",
+    "Restore default group": "還原預設分組"
   }
 }

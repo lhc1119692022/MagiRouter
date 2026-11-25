@@ -210,6 +210,8 @@ func LoadOptionsFromDatabase() error {
 	defer requestPolicyOptionMutex.Unlock()
 	passkeyOptionMutex.Lock()
 	defer passkeyOptionMutex.Unlock()
+	groupSettingsOptionMutex.Lock()
+	defer groupSettingsOptionMutex.Unlock()
 	options, err := AllOption()
 	if err != nil {
 		return err
@@ -313,6 +315,13 @@ func UpdateOption(key string, value string) error {
 	if IsModelPricingOption(key) {
 		return UpdateModelPricingOptions(map[string]string{key: value})
 	}
+	if IsGroupSettingsOption(key) {
+		groupSettingsOptionMutex.Lock()
+		defer groupSettingsOptionMutex.Unlock()
+		if err := validateGroupSettingsOptions(map[string]string{key: value}); err != nil {
+			return err
+		}
+	}
 	if err := validateOptionValue(key, value); err != nil {
 		return err
 	}
@@ -369,6 +378,13 @@ func UpdateOptionsBulk(values map[string]string) error {
 				return err
 			}
 			break
+		}
+	}
+	if hasGroupSettingsOption(values) {
+		groupSettingsOptionMutex.Lock()
+		defer groupSettingsOptionMutex.Unlock()
+		if err := validateGroupSettingsOptions(values); err != nil {
+			return err
 		}
 	}
 

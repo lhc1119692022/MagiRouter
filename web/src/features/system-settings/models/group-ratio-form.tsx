@@ -157,6 +157,11 @@ export const GroupRatioForm = memo(function GroupRatioForm({
                 setEditMode('visual')
                 setSection('auto')
                 requestAnimationFrame(() => form.setFocus('MaxTokenAutoGroups'))
+              } else if (
+                editMode === 'visual' &&
+                (errors.GroupRatio || errors.UserManagementGroups)
+              ) {
+                setSection('pricing')
               }
             })}
             disabled={isSaving}
@@ -168,6 +173,7 @@ export const GroupRatioForm = memo(function GroupRatioForm({
           <GroupRatioVisualEditor
             section={section}
             onSectionChange={setSection}
+            pricingError={form.formState.errors.GroupRatio?.message}
             groupRatio={values.GroupRatio ?? ''}
             topupGroupRatio={values.TopupGroupRatio ?? ''}
             userUsableGroups={values.UserUsableGroups ?? ''}
