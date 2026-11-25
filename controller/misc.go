@@ -145,6 +145,9 @@ func GetStatus(c *gin.Context) {
 	if banner := console_setting.GetPricingBanner(); len(banner) > 0 {
 		data["pricing_banner"] = banner
 	}
+	if popups := console_setting.GetEnabledSitePopups(); len(popups) > 0 {
+		data["site_popups"] = popups
+	}
 
 	// Add enabled custom OAuth providers
 	customProviders := oauth.GetEnabledCustomProviders()

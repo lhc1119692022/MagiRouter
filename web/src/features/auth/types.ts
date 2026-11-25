@@ -137,6 +137,7 @@ export interface SystemStatus {
     custom_oauth_providers?: CustomOAuthProviderInfo[]
     home_showcase?: Record<string, unknown>
     pricing_banner?: unknown[]
+    site_popups?: unknown[]
     [key: string]: unknown
   }
   // Allow direct access to common properties
@@ -186,6 +187,7 @@ export interface SystemStatus {
   custom_oauth_providers?: CustomOAuthProviderInfo[]
   home_showcase?: Record<string, unknown>
   pricing_banner?: unknown[]
+  site_popups?: unknown[]
   log_export_enabled?: boolean
   log_max_range_days?: number
   quota_remind_enabled?: boolean

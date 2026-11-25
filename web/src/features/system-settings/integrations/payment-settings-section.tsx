@@ -72,10 +72,12 @@ import { safeNumberFieldProps } from '../utils/numeric-field'
 import { AmountDiscountVisualEditor } from './amount-discount-visual-editor'
 import { AmountOptionsVisualEditor } from './amount-options-visual-editor'
 import { CreemProductsVisualEditor } from './creem-products-visual-editor'
+import { DailyTopUpExemptUsersField } from './daily-topup-exempt-users-field'
 import { PaymentMethodsVisualEditor } from './payment-methods-visual-editor'
 import {
   formatJsonForEditor,
   getJsonError,
+  isValidWeChatQRCodeValue,
   normalizeJsonForComparison,
   removeTrailingSlash,
 } from './utils'
@@ -90,6 +92,7 @@ import {
   WaffoSettingsSection,
   type WaffoSettingsValues,
 } from './waffo-settings-section'
+import { WeChatQRCodeField } from './wechat-qrcode-field'
 
 function isHttpOriginUrl(value: string) {
   const trimmed = value.trim()
@@ -155,6 +158,28 @@ const paymentSchema = z.object({
       })
     }
   }),
+  DailyTopUpLimit: z.coerce.number().min(0),
+  DailyTopUpExemptUsers: z.string().superRefine((value, ctx) => {
+    const error = getJsonError(
+      value,
+      (parsed) =>
+        Array.isArray(parsed) &&
+        parsed.every((item) => typeof item === 'string')
+    )
+    if (error) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: error,
+      })
+    }
+  }),
+  DailyTopUpContactWeChatQRCode: z
+    .string()
+    .refine(
+      isValidWeChatQRCodeValue,
+      'WeChat QR code must be a valid HTTP(S) URL, site path, or PNG/JPEG/WebP/GIF image'
+    ),
+  DailyTopUpContactNote: z.string().max(500),
   StripeApiSecret: z.string(),
   StripeWebhookSecret: z.string(),
   StripePriceId: z.string(),
@@ -444,6 +469,11 @@ export function PaymentSettingsSection({
       PayMethods: values.PayMethods.trim(),
       AmountOptions: values.AmountOptions.trim(),
       AmountDiscount: values.AmountDiscount.trim(),
+      DailyTopUpLimit: values.DailyTopUpLimit,
+      DailyTopUpExemptUsers: values.DailyTopUpExemptUsers.trim() || '[]',
+      DailyTopUpContactWeChatQRCode:
+        values.DailyTopUpContactWeChatQRCode.trim(),
+      DailyTopUpContactNote: values.DailyTopUpContactNote.trim(),
       StripeApiSecret: values.StripeApiSecret.trim(),
       StripeWebhookSecret: values.StripeWebhookSecret.trim(),
       StripePriceId: values.StripePriceId.trim(),
@@ -491,6 +521,12 @@ export function PaymentSettingsSection({
       PayMethods: initialRef.current.PayMethods.trim(),
       AmountOptions: initialRef.current.AmountOptions.trim(),
       AmountDiscount: initialRef.current.AmountDiscount.trim(),
+      DailyTopUpLimit: initialRef.current.DailyTopUpLimit,
+      DailyTopUpExemptUsers:
+        initialRef.current.DailyTopUpExemptUsers.trim() || '[]',
+      DailyTopUpContactWeChatQRCode:
+        initialRef.current.DailyTopUpContactWeChatQRCode.trim(),
+      DailyTopUpContactNote: initialRef.current.DailyTopUpContactNote.trim(),
       StripeApiSecret: initialRef.current.StripeApiSecret.trim(),
       StripeWebhookSecret: initialRef.current.StripeWebhookSecret.trim(),
       StripePriceId: initialRef.current.StripePriceId.trim(),
@@ -604,6 +640,40 @@ export function PaymentSettingsSection({
       updates.push({
         key: 'payment_setting.amount_discount',
         value: sanitized.AmountDiscount,
+      })
+    }
+
+    if (sanitized.DailyTopUpLimit !== initial.DailyTopUpLimit) {
+      updates.push({
+        key: 'payment_setting.daily_topup_limit',
+        value: sanitized.DailyTopUpLimit,
+      })
+    }
+
+    if (
+      normalizeJsonForComparison(sanitized.DailyTopUpExemptUsers) !==
+      normalizeJsonForComparison(initial.DailyTopUpExemptUsers)
+    ) {
+      updates.push({
+        key: 'payment_setting.daily_topup_exempt_users',
+        value: sanitized.DailyTopUpExemptUsers,
+      })
+    }
+
+    if (
+      sanitized.DailyTopUpContactWeChatQRCode !==
+      initial.DailyTopUpContactWeChatQRCode
+    ) {
+      updates.push({
+        key: 'payment_setting.daily_topup_contact_wechat_qrcode',
+        value: sanitized.DailyTopUpContactWeChatQRCode,
+      })
+    }
+
+    if (sanitized.DailyTopUpContactNote !== initial.DailyTopUpContactNote) {
+      updates.push({
+        key: 'payment_setting.daily_topup_contact_note',
+        value: sanitized.DailyTopUpContactNote,
       })
     }
 
@@ -1173,6 +1243,126 @@ export function PaymentSettingsSection({
                         </FormControl>
                         <FormDescription>
                           {t('Discount map by recharge amount (JSON object)')}
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <div className='space-y-4 rounded-xl border p-4 sm:p-5'>
+                  <div>
+                    <h4 className='text-base font-medium'>
+                      {t('Daily Top-up Limit & Whitelist')}
+                    </h4>
+                    <p className='text-muted-foreground text-sm'>
+                      {t(
+                        'Limit each user’s daily online top-up payment amount to reduce early-stage cashflow risk. Redemption codes and manual admin adjustments are not restricted.'
+                      )}
+                    </p>
+                  </div>
+
+                  <div className='grid gap-6 md:grid-cols-2'>
+                    <FormField
+                      control={form.control}
+                      name='DailyTopUpLimit'
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>
+                            {t('Daily top-up limit per user (payment amount)')}
+                          </FormLabel>
+                          <FormControl>
+                            <Input
+                              type='number'
+                              min={0}
+                              step='0.01'
+                              {...safeNumberFieldProps(field)}
+                            />
+                          </FormControl>
+                          <FormDescription>
+                            {t(
+                              'Maximum cumulative online payment amount per user per day. Set to 0 to disable the limit.'
+                            )}
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name='DailyTopUpContactNote'
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>
+                            {t('Over-limit contact message')}
+                          </FormLabel>
+                          <FormControl>
+                            <Input
+                              {...field}
+                              placeholder={t(
+                                'Scan the WeChat QR code to contact us for larger top-ups or whitelist exemption'
+                              )}
+                            />
+                          </FormControl>
+                          <FormDescription>
+                            {t(
+                              'Optional helper message shown alongside the WeChat QR code when a user exceeds the daily limit.'
+                            )}
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  <FormField
+                    control={form.control}
+                    name='DailyTopUpContactWeChatQRCode'
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('WeChat Contact QR Code')}</FormLabel>
+                        <FormControl>
+                          <WeChatQRCodeField
+                            value={field.value}
+                            onChange={field.onChange}
+                            invalid={Boolean(
+                              form.formState.errors
+                                .DailyTopUpContactWeChatQRCode
+                            )}
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          {t(
+                            'Displayed to users when their online top-up exceeds the daily limit. Supports uploading an image (up to 512 KB) or pasting an image URL.'
+                          )}
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name='DailyTopUpExemptUsers'
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          {t('Daily Limit Exemption Whitelist')}
+                        </FormLabel>
+                        <FormControl>
+                          <DailyTopUpExemptUsersField
+                            value={field.value}
+                            onChange={field.onChange}
+                            invalid={Boolean(
+                              form.formState.errors.DailyTopUpExemptUsers
+                            )}
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          {t(
+                            'Users in this whitelist bypass the daily top-up limit. Supports User ID, username, or email.'
+                          )}
                         </FormDescription>
                         <FormMessage />
                       </FormItem>

@@ -60,7 +60,9 @@ func ShouldRetryRelayError(c *gin.Context, openaiErr *types.NewAPIError, retryTi
 	return DecideRelayRetry(c, openaiErr, retryTimes).Action == "retry"
 }
 
-func ProcessChannelError(c *gin.Context, channelError types.ChannelError, err *types.NewAPIError, relayInfo *relaycommon.RelayInfo) {
+// HandleChannelError logs the upstream failure on the server and triggers
+// channel auto-disable when applicable, without writing a user-visible DB log.
+func HandleChannelError(c *gin.Context, channelError types.ChannelError, err *types.NewAPIError) {
 	if err == nil {
 		return
 	}
@@ -72,7 +74,13 @@ func ProcessChannelError(c *gin.Context, channelError types.ChannelError, err *t
 			DisableChannel(channelError, reason)
 		})
 	}
+}
 
+func ProcessChannelError(c *gin.Context, channelError types.ChannelError, err *types.NewAPIError, relayInfo *relaycommon.RelayInfo) {
+	if err == nil {
+		return
+	}
+	HandleChannelError(c, channelError, err)
 	RecordRelayErrorLog(c, channelError.ChannelId, err, relayInfo)
 }
 
@@ -91,9 +99,20 @@ func RecordRelayErrorLog(c *gin.Context, channelId int, err *types.NewAPIError, 
 	if c.Request != nil && c.Request.URL != nil {
 		other.SetPublic("request_path", c.Request.URL.Path)
 	}
-	other.SetPublic("error_type", err.GetErrorType())
-	other.SetPublic("error_code", err.GetErrorCode())
+	upstreamURLs := common.UpstreamAddresses(c)
+	publicErrorType, publicErrorCode := SanitizeClientErrorPublicMeta(err, upstreamURLs...)
+	other.SetPublic("error_type", publicErrorType)
+	other.SetPublic("error_code", publicErrorCode)
 	other.SetPublic("status_code", err.StatusCode)
+	sanitizedContent := SanitizeClientErrorWithStatusCode(err, upstreamURLs...)
+	rawMaskedContent := err.MaskSensitiveErrorWithStatusCode(upstreamURLs...)
+	if rawMaskedContent != "" && rawMaskedContent != sanitizedContent {
+		other.SetAdmin("upstream_error", rawMaskedContent)
+	}
+	if publicErrorType != string(err.GetErrorType()) || publicErrorCode != string(err.GetErrorCode()) {
+		other.SetAdmin("upstream_error_type", string(err.GetErrorType()))
+		other.SetAdmin("upstream_error_code", string(err.GetErrorCode()))
+	}
 	AppendRelayLogAdminInfo(c, relayInfo, other)
 	appendRequestPluginRecord(relayInfo, other)
 	AppendResponseModelLogInfo(relayInfo, other)
@@ -103,5 +122,5 @@ func RecordRelayErrorLog(c *gin.Context, channelId int, err *types.NewAPIError, 
 		startTime = time.Now()
 	}
 	useTimeSeconds := int(time.Since(startTime).Seconds())
-	model.RecordErrorLog(c, userId, channelId, modelName, tokenName, err.MaskSensitiveErrorWithStatusCode(common.UpstreamAddresses(c)...), tokenId, useTimeSeconds, common.GetContextKeyBool(c, constant.ContextKeyIsStream), userGroup, other)
+	model.RecordErrorLog(c, userId, channelId, modelName, tokenName, sanitizedContent, tokenId, useTimeSeconds, common.GetContextKeyBool(c, constant.ContextKeyIsStream), userGroup, other)
 }

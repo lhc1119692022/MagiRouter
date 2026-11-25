@@ -23,7 +23,11 @@ import { toast } from 'sonner'
 import { handleServerError } from '@/lib/handle-server-error'
 
 import { requestWaffoPancakePayment, isApiSuccess } from '../api'
-import { getPaymentErrorTranslation } from '../lib'
+import {
+  extractDailyTopUpLimitExceeded,
+  getPaymentErrorTranslation,
+} from '../lib'
+import type { DailyTopUpLimitStatus } from '../types'
 
 function getCheckoutUrl(data: unknown): string | null {
   if (!data || typeof data !== 'object') {
@@ -71,8 +75,15 @@ function getErrorMessage(message: string | undefined, data: unknown): string {
  * Same-tab redirect (window.location.href) rather than window.open: the
  * user-gesture context is lost across the await, so popups get blocked.
  */
-export function useWaffoPancakePayment() {
+interface UseWaffoPancakePaymentOptions {
+  onDailyLimitExceeded?: (dailyLimit: DailyTopUpLimitStatus) => void
+}
+
+export function useWaffoPancakePayment(
+  options?: UseWaffoPancakePaymentOptions
+) {
   const [processing, setProcessing] = useState(false)
+  const onDailyLimitExceeded = options?.onDailyLimitExceeded
 
   const processWaffoPancakePayment = useCallback(
     async (topupAmount: number) => {
@@ -97,6 +108,12 @@ export function useWaffoPancakePayment() {
           }
         }
 
+        const limitExceeded = extractDailyTopUpLimitExceeded(response)
+        if (limitExceeded && onDailyLimitExceeded) {
+          onDailyLimitExceeded(limitExceeded)
+          return false
+        }
+
         handleServerError(response, undefined, {
           title:
             getPaymentErrorTranslation(response) ??
@@ -110,7 +127,7 @@ export function useWaffoPancakePayment() {
         setProcessing(false)
       }
     },
-    []
+    [onDailyLimitExceeded]
   )
 
   return { processing, processWaffoPancakePayment }

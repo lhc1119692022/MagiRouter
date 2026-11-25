@@ -1,5 +1,16 @@
 import type { PricingModel } from '@/features/pricing/types'
 
+import {
+  applyDocsPlaceholders,
+  inferCatalogModality,
+  resolveDocsExampleModels,
+  type DocsArticleOverride,
+  type DocsConfig,
+  type DocsEntryEndpoint,
+  type DocsModelOverride,
+  type ResolvedDocsExampleModels,
+} from '../lib/docs-config'
+
 export type DocsGroupName =
   | '快速开始'
   | '接口协议'
@@ -44,6 +55,7 @@ export interface DocsArticle {
   urlValue: string
   endpoints: DocsEndpoint[]
   sections: DocsSection[]
+  markdown?: string
   snippets: DocsSnippets
   responseTitle: string
   responseJson: string
@@ -167,44 +179,7 @@ export function inferDocsModality(model: {
   tags?: string
   supported_endpoint_types?: string[]
 }): DocsModality {
-  const lower = `${model.model_name} ${model.tags ?? ''}`.toLowerCase()
-  if (
-    lower.includes('video') ||
-    lower.includes('seedance') ||
-    lower.includes('kling') ||
-    lower.includes('veo') ||
-    lower.includes('sora') ||
-    lower.includes('hailuo')
-  ) {
-    return 'video'
-  }
-  if (
-    lower.includes('image') ||
-    lower.includes('flux') ||
-    lower.includes('seedream') ||
-    lower.includes('banana') ||
-    lower.includes('midjourney') ||
-    lower.includes('dall')
-  ) {
-    return 'image'
-  }
-  if (
-    lower.includes('tts') ||
-    lower.includes('whisper') ||
-    lower.includes('audio') ||
-    lower.includes('speech')
-  ) {
-    return 'audio'
-  }
-  const endpoints = (model.supported_endpoint_types ?? [])
-    .join(' ')
-    .toLowerCase()
-  if (endpoints.includes('image')) return 'image'
-  if (endpoints.includes('video')) return 'video'
-  if (endpoints.includes('audio') || endpoints.includes('speech')) {
-    return 'audio'
-  }
-  return 'text'
+  return inferCatalogModality(model)
 }
 
 /**
@@ -214,18 +189,27 @@ export function inferDocsModality(model: {
  * were added after this file was written still appear under their vendor.
  */
 export function buildDocsModelFamilies(
-  models: PricingModel[]
+  models: PricingModel[],
+  overrides?: DocsModelOverride[]
 ): DocsModelFamily[] {
   const families = new Map<string, DocsModelFamily>()
   const order: string[] = []
+  const overrideMap = new Map(
+    (overrides ?? []).map((item) => [item.model_id, item])
+  )
 
   for (const model of models) {
+    const override = overrideMap.get(model.model_name)
+    if (override?.hidden) continue
     const rule = DOCS_FAMILY_RULES.find((entry) =>
       entry.test.test(model.model_name)
     )
-    const name = rule?.name ?? `${model.vendor_name || '其他'} 系列`
+    const name =
+      override?.family_name ??
+      rule?.name ??
+      `${model.vendor_name || '其他'} 系列`
     const vendor = rule?.vendor ?? model.vendor_name ?? 'MagiRouter'
-    const cap = rule?.cap ?? inferDocsModality(model)
+    const cap = override?.cap ?? rule?.cap ?? inferDocsModality(model)
     const key = `${cap}:${name}`
 
     if (!families.has(key)) {
@@ -274,19 +258,42 @@ export const OFFICIAL_DOMAINS = [
   },
 ] as const
 
-export function buildStaticDocs(baseUrl: string): DocsArticle[] {
+export interface BuildStaticDocsOptions {
+  apiEntries?: DocsEntryEndpoint[]
+  exampleModels?: ResolvedDocsExampleModels
+  config?: DocsConfig
+}
+
+export function buildStaticDocs(
+  baseUrl: string,
+  options?: BuildStaticDocsOptions
+): DocsArticle[] {
   const root = baseUrl.replace(/\/+$/, '')
   const v1 = `${root}/v1`
+  const models = options?.exampleModels ?? resolveDocsExampleModels([])
+  const apiEntries: DocsEntryEndpoint[] =
+    options?.apiEntries && options.apiEntries.length > 0
+      ? options.apiEntries
+      : [
+          {
+            label: '主站入口',
+            url: v1,
+            scene: '默认主力入口，全协议兼容',
+          },
+        ]
+  const primaryEntryUrl = apiEntries[0]?.url ?? v1
+  const secondaryEntry = apiEntries[1]
+  const vars = { baseUrl: root, v1Url: v1, model: models.openai }
 
-  return [
+  const defaults: DocsArticle[] = [
     {
       id: 'quickstart',
       group: '快速开始',
       title: '快速开始',
       summary:
-        '了解四条官方接入域名、鉴权请求头与四大原生协议，5 分钟完成首条生产级 API 调用。',
+        '了解官方接入地址、鉴权请求头与四大原生协议，5 分钟完成首条生产级 API 调用。',
       urlLabel: 'Base URL',
-      urlValue: v1,
+      urlValue: primaryEntryUrl,
       endpoints: [
         { method: 'POST', path: '/v1/responses' },
         { method: 'POST', path: '/v1/chat/completions' },
@@ -298,31 +305,18 @@ export function buildStaticDocs(baseUrl: string): DocsArticle[] {
           id: 'qs-endpoint',
           title: '1. 官方入口域名与鉴权头',
           paragraphs: [
-            '四条官方域名共用同一套账户、密钥、余额与计费体系。在任意 SDK、CLI 或 Agent 工具中将 Base URL 替换为以下入口并填入控制台签发的 sk-... 密钥即可直接调用。',
+            apiEntries.length > 1
+              ? '以下入口共用同一套账户、密钥、余额与计费体系。在任意 SDK、CLI 或 Agent 工具中将 Base URL 替换为任一入口并填入控制台签发的 sk-... 密钥即可直接调用。'
+              : '在任意 SDK、CLI 或 Agent 工具中将 Base URL 指向下方官方入口，并填入控制台签发的 sk-... 密钥即可直接调用。',
           ],
           table: {
             headers: ['入口 / 鉴权方式', '地址或请求头格式', '适用场景'],
             rows: [
-              [
-                '主站直连',
-                'https://magirouter.com/v1',
-                '默认主力入口，全协议兼容',
-              ],
-              [
-                '国内优化',
-                'https://cn.magirouter.com/v1',
-                '国内网络与桌面客户端低延迟直连',
-              ],
-              [
-                '全球加速',
-                'https://cf.magirouter.com/v1',
-                '海外服务器与云端 Agent 边缘接入',
-              ],
-              [
-                '美国备用',
-                'https://us.magirouter.com/v1',
-                '高并发容灾与美西节点直连',
-              ],
+              ...apiEntries.map((entry) => [
+                entry.label,
+                entry.url,
+                entry.scene,
+              ]),
               [
                 '鉴权请求头',
                 'Authorization: Bearer sk-... / x-api-key / x-goog-api-key',
@@ -347,13 +341,13 @@ export function buildStaticDocs(baseUrl: string): DocsArticle[] {
         },
       ],
       snippets: {
-        curl: `curl ${v1}/chat/completions \\\n  -H "Authorization: Bearer $MAGIROUTER_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "model": "gpt-5.6",\n    "messages": [{"role": "user", "content": "用一句话介绍 MagiRouter"}]\n  }'`,
-        python: `import os\nfrom openai import OpenAI\n\nclient = OpenAI(\n    base_url="${v1}",\n    api_key=os.environ["MAGIROUTER_API_KEY"],\n)\n\nres = client.chat.completions.create(\n    model="gpt-5.6",\n    messages=[{"role": "user", "content": "用一句话介绍 MagiRouter"}],\n)\nprint(res.choices[0].message.content)`,
-        node: `import OpenAI from 'openai'\n\nconst client = new OpenAI({\n  baseURL: '${v1}',\n  apiKey: process.env.MAGIROUTER_API_KEY,\n})\n\nconst res = await client.chat.completions.create({\n  model: 'gpt-5.6',\n  messages: [{ role: 'user', content: '用一句话介绍 MagiRouter' }],\n})\nconsole.log(res.choices[0].message.content)`,
-        json: `{\n  "model": "gpt-5.6",\n  "messages": [\n    { "role": "user", "content": "用一句话介绍 MagiRouter" }\n  ],\n  "stream": false\n}`,
+        curl: `curl ${primaryEntryUrl}/chat/completions \\\n  -H "Authorization: Bearer $MAGIROUTER_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "model": "${models.openai}",\n    "messages": [{"role": "user", "content": "用一句话介绍 MagiRouter"}]\n  }'`,
+        python: `import os\nfrom openai import OpenAI\n\nclient = OpenAI(\n    base_url="${primaryEntryUrl}",\n    api_key=os.environ["MAGIROUTER_API_KEY"],\n)\n\nres = client.chat.completions.create(\n    model="${models.openai}",\n    messages=[{"role": "user", "content": "用一句话介绍 MagiRouter"}],\n)\nprint(res.choices[0].message.content)`,
+        node: `import OpenAI from 'openai'\n\nconst client = new OpenAI({\n  baseURL: '${primaryEntryUrl}',\n  apiKey: process.env.MAGIROUTER_API_KEY,\n})\n\nconst res = await client.chat.completions.create({\n  model: '${models.openai}',\n  messages: [{ role: 'user', content: '用一句话介绍 MagiRouter' }],\n})\nconsole.log(res.choices[0].message.content)`,
+        json: `{\n  "model": "${models.openai}",\n  "messages": [\n    { "role": "user", "content": "用一句话介绍 MagiRouter" }\n  ],\n  "stream": false\n}`,
       },
       responseTitle: 'Response · 200 OK',
-      responseJson: `{\n  "id": "chatcmpl-mr01",\n  "object": "chat.completion",\n  "model": "gpt-5.6",\n  "choices": [\n    {\n      "index": 0,\n      "message": {\n        "role": "assistant",\n        "content": "MagiRouter 是统一多协议 AI 模型网关，一个密钥即可按需调度全球主流模型。"\n      },\n      "finish_reason": "stop"\n    }\n  ],\n  "usage": { "prompt_tokens": 18, "completion_tokens": 26, "total_tokens": 44 }\n}`,
+      responseJson: `{\n  "id": "chatcmpl-mr01",\n  "object": "chat.completion",\n  "model": "${models.openai}",\n  "choices": [\n    {\n      "index": 0,\n      "message": {\n        "role": "assistant",\n        "content": "MagiRouter 是统一多协议 AI 模型网关，一个密钥即可按需调度全球主流模型。"\n      },\n      "finish_reason": "stop"\n    }\n  ],\n  "usage": { "prompt_tokens": 18, "completion_tokens": 26, "total_tokens": 44 }\n}`,
     },
     {
       id: 'overview',
@@ -421,7 +415,7 @@ export function buildStaticDocs(baseUrl: string): DocsArticle[] {
         json: `{\n  "endpoint": "/v1/models",\n  "method": "GET"\n}`,
       },
       responseTitle: 'Response · Model List',
-      responseJson: `{\n  "object": "list",\n  "data": [\n    { "id": "gpt-5.6", "object": "model", "owned_by": "openai" },\n    { "id": "claude-sonnet-4-6", "object": "model", "owned_by": "anthropic" },\n    { "id": "gemini-2.5-pro", "object": "model", "owned_by": "google" }\n  ]\n}`,
+      responseJson: `{\n  "object": "list",\n  "data": [\n    { "id": "${models.openai}", "object": "model", "owned_by": "openai" },\n    { "id": "${models.anthropic}", "object": "model", "owned_by": "anthropic" },\n    { "id": "${models.gemini}", "object": "model", "owned_by": "google" }\n  ]\n}`,
     },
     {
       id: 'proto-responses',
@@ -442,7 +436,7 @@ export function buildStaticDocs(baseUrl: string): DocsArticle[] {
           table: {
             headers: ['字段', '类型', '说明'],
             rows: [
-              ['model', 'string', '目标模型名称，例如 gpt-5.6 或 o4-mini'],
+              ['model', 'string', `目标模型名称，例如 ${models.openai}`],
               ['input', 'string | array', '用户输入文本或多模态消息数组'],
               [
                 'reasoning',
@@ -455,13 +449,13 @@ export function buildStaticDocs(baseUrl: string): DocsArticle[] {
         },
       ],
       snippets: {
-        curl: `curl ${v1}/responses \\\n  -H "Authorization: Bearer $MAGIROUTER_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "model": "gpt-5.6",\n    "input": "设计一个高可用 API 网关的重试策略",\n    "reasoning": { "effort": "medium" }\n  }'`,
-        python: `import os\nfrom openai import OpenAI\n\nclient = OpenAI(base_url="${v1}", api_key=os.environ["MAGIROUTER_API_KEY"])\nresp = client.responses.create(\n    model="gpt-5.6",\n    input="设计一个高可用 API 网关的重试策略",\n    reasoning={"effort": "medium"},\n)\nprint(resp.output_text)`,
-        node: `import OpenAI from 'openai'\n\nconst client = new OpenAI({ baseURL: '${v1}', apiKey: process.env.MAGIROUTER_API_KEY })\nconst resp = await client.responses.create({\n  model: 'gpt-5.6',\n  input: '设计一个高可用 API 网关的重试策略',\n  reasoning: { effort: 'medium' },\n})\nconsole.log(resp.output_text)`,
-        json: `{\n  "model": "gpt-5.6",\n  "input": "设计一个高可用 API 网关的重试策略",\n  "reasoning": { "effort": "medium" }\n}`,
+        curl: `curl ${v1}/responses \\\n  -H "Authorization: Bearer $MAGIROUTER_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "model": "${models.openai}",\n    "input": "设计一个高可用 API 网关的重试策略",\n    "reasoning": { "effort": "medium" }\n  }'`,
+        python: `import os\nfrom openai import OpenAI\n\nclient = OpenAI(base_url="${v1}", api_key=os.environ["MAGIROUTER_API_KEY"])\nresp = client.responses.create(\n    model="${models.openai}",\n    input="设计一个高可用 API 网关的重试策略",\n    reasoning={"effort": "medium"},\n)\nprint(resp.output_text)`,
+        node: `import OpenAI from 'openai'\n\nconst client = new OpenAI({ baseURL: '${v1}', apiKey: process.env.MAGIROUTER_API_KEY })\nconst resp = await client.responses.create({\n  model: '${models.openai}',\n  input: '设计一个高可用 API 网关的重试策略',\n  reasoning: { effort: 'medium' },\n})\nconsole.log(resp.output_text)`,
+        json: `{\n  "model": "${models.openai}",\n  "input": "设计一个高可用 API 网关的重试策略",\n  "reasoning": { "effort": "medium" }\n}`,
       },
       responseTitle: 'Response · /v1/responses',
-      responseJson: `{\n  "id": "resp_01magirouter",\n  "status": "completed",\n  "model": "gpt-5.6",\n  "output_text": "建议采用指数退避 + 熔断隔离 + 幂等键组合策略。",\n  "usage": { "input_tokens": 22, "output_tokens": 118 }\n}`,
+      responseJson: `{\n  "id": "resp_01magirouter",\n  "status": "completed",\n  "model": "${models.openai}",\n  "output_text": "建议采用指数退避 + 熔断隔离 + 幂等键组合策略。",\n  "usage": { "input_tokens": 22, "output_tokens": 118 }\n}`,
     },
     {
       id: 'proto-chat',
@@ -482,13 +476,13 @@ export function buildStaticDocs(baseUrl: string): DocsArticle[] {
         },
       ],
       snippets: {
-        curl: `curl ${v1}/chat/completions \\\n  -H "Authorization: Bearer $MAGIROUTER_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "model": "claude-sonnet-4-6",\n    "stream": true,\n    "messages": [\n      {"role": "system", "content": "你是资深架构师"},\n      {"role": "user", "content": "给出 3 条数据库分表建议"}\n    ]\n  }'`,
-        python: `import os\nfrom openai import OpenAI\n\nclient = OpenAI(base_url="${v1}", api_key=os.environ["MAGIROUTER_API_KEY"])\nstream = client.chat.completions.create(\n    model="claude-sonnet-4-6",\n    stream=True,\n    messages=[{"role": "user", "content": "给出 3 条数据库分表建议"}],\n)\nfor chunk in stream:\n    print(chunk.choices[0].delta.content or "", end="")`,
-        node: `import OpenAI from 'openai'\n\nconst client = new OpenAI({ baseURL: '${v1}', apiKey: process.env.MAGIROUTER_API_KEY })\nconst res = await client.chat.completions.create({\n  model: 'claude-sonnet-4-6',\n  messages: [{ role: 'user', content: '给出 3 条数据库分表建议' }],\n})\nconsole.log(res.choices[0].message.content)`,
-        json: `{\n  "model": "claude-sonnet-4-6",\n  "stream": true,\n  "messages": [{ "role": "user", "content": "给出 3 条数据库分表建议" }]\n}`,
+        curl: `curl ${v1}/chat/completions \\\n  -H "Authorization: Bearer $MAGIROUTER_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "model": "${models.anthropic}",\n    "stream": true,\n    "messages": [\n      {"role": "system", "content": "你是资深架构师"},\n      {"role": "user", "content": "给出 3 条数据库分表建议"}\n    ]\n  }'`,
+        python: `import os\nfrom openai import OpenAI\n\nclient = OpenAI(base_url="${v1}", api_key=os.environ["MAGIROUTER_API_KEY"])\nstream = client.chat.completions.create(\n    model="${models.anthropic}",\n    stream=True,\n    messages=[{"role": "user", "content": "给出 3 条数据库分表建议"}],\n)\nfor chunk in stream:\n    print(chunk.choices[0].delta.content or "", end="")`,
+        node: `import OpenAI from 'openai'\n\nconst client = new OpenAI({ baseURL: '${v1}', apiKey: process.env.MAGIROUTER_API_KEY })\nconst res = await client.chat.completions.create({\n  model: '${models.anthropic}',\n  messages: [{ role: 'user', content: '给出 3 条数据库分表建议' }],\n})\nconsole.log(res.choices[0].message.content)`,
+        json: `{\n  "model": "${models.anthropic}",\n  "stream": true,\n  "messages": [{ "role": "user", "content": "给出 3 条数据库分表建议" }]\n}`,
       },
       responseTitle: 'Response · /v1/chat/completions',
-      responseJson: `{\n  "id": "chatcmpl-01",\n  "model": "claude-sonnet-4-6",\n  "choices": [{ "index": 0, "message": { "role": "assistant", "content": "1. 按业务主键范围或哈希拆分..." }, "finish_reason": "stop" }]\n}`,
+      responseJson: `{\n  "id": "chatcmpl-01",\n  "model": "${models.anthropic}",\n  "choices": [{ "index": 0, "message": { "role": "assistant", "content": "1. 按业务主键范围或哈希拆分..." }, "finish_reason": "stop" }]\n}`,
     },
     {
       id: 'proto-anthropic',
@@ -509,13 +503,13 @@ export function buildStaticDocs(baseUrl: string): DocsArticle[] {
         },
       ],
       snippets: {
-        curl: `curl ${v1}/messages \\\n  -H "x-api-key: $MAGIROUTER_API_KEY" \\\n  -H "anthropic-version: 2023-06-01" \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "model": "claude-sonnet-4-6",\n    "max_tokens": 1024,\n    "messages": [{"role": "user", "content": "解释一下 Prompt Caching 的收益"}]\n  }'`,
-        python: `import os\nimport anthropic\n\nclient = anthropic.Anthropic(\n    base_url="${root}",\n    api_key=os.environ["MAGIROUTER_API_KEY"],\n)\nmsg = client.messages.create(\n    model="claude-sonnet-4-6",\n    max_tokens=1024,\n    messages=[{"role": "user", "content": "解释一下 Prompt Caching 的收益"}],\n)\nprint(msg.content[0].text)`,
-        node: `import Anthropic from '@anthropic-ai/sdk'\n\nconst client = new Anthropic({\n  baseURL: '${root}',\n  apiKey: process.env.MAGIROUTER_API_KEY,\n})\nconst msg = await client.messages.create({\n  model: 'claude-sonnet-4-6',\n  max_tokens: 1024,\n  messages: [{ role: 'user', content: '解释一下 Prompt Caching 的收益' }],\n})\nconsole.log(msg.content)`,
-        json: `{\n  "model": "claude-sonnet-4-6",\n  "max_tokens": 1024,\n  "messages": [{ "role": "user", "content": "解释一下 Prompt Caching 的收益" }]\n}`,
+        curl: `curl ${v1}/messages \\\n  -H "x-api-key: $MAGIROUTER_API_KEY" \\\n  -H "anthropic-version: 2023-06-01" \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "model": "${models.anthropic}",\n    "max_tokens": 1024,\n    "messages": [{"role": "user", "content": "解释一下 Prompt Caching 的收益"}]\n  }'`,
+        python: `import os\nimport anthropic\n\nclient = anthropic.Anthropic(\n    base_url="${root}",\n    api_key=os.environ["MAGIROUTER_API_KEY"],\n)\nmsg = client.messages.create(\n    model="${models.anthropic}",\n    max_tokens=1024,\n    messages=[{"role": "user", "content": "解释一下 Prompt Caching 的收益"}],\n)\nprint(msg.content[0].text)`,
+        node: `import Anthropic from '@anthropic-ai/sdk'\n\nconst client = new Anthropic({\n  baseURL: '${root}',\n  apiKey: process.env.MAGIROUTER_API_KEY,\n})\nconst msg = await client.messages.create({\n  model: '${models.anthropic}',\n  max_tokens: 1024,\n  messages: [{ role: 'user', content: '解释一下 Prompt Caching 的收益' }],\n})\nconsole.log(msg.content)`,
+        json: `{\n  "model": "${models.anthropic}",\n  "max_tokens": 1024,\n  "messages": [{ "role": "user", "content": "解释一下 Prompt Caching 的收益" }]\n}`,
       },
       responseTitle: 'Response · /v1/messages',
-      responseJson: `{\n  "id": "msg_01magirouter",\n  "type": "message",\n  "role": "assistant",\n  "model": "claude-sonnet-4-6",\n  "content": [{ "type": "text", "text": "Prompt Caching 可显著降低长上下文重复输入的延迟与成本。" }]\n}`,
+      responseJson: `{\n  "id": "msg_01magirouter",\n  "type": "message",\n  "role": "assistant",\n  "model": "${models.anthropic}",\n  "content": [{ "type": "text", "text": "Prompt Caching 可显著降低长上下文重复输入的延迟与成本。" }]\n}`,
     },
     {
       id: 'proto-gemini',
@@ -524,7 +518,7 @@ export function buildStaticDocs(baseUrl: string): DocsArticle[] {
       summary:
         '兼容 Google GenAI SDK 与 /v1beta 原生路径，支持多模态图片/音频/视频理解、联网搜索与思考预算配置。',
       urlLabel: 'Endpoint',
-      urlValue: `${root}/v1beta/models/gemini-2.5-pro:generateContent`,
+      urlValue: `${root}/v1beta/models/${models.gemini}:generateContent`,
       endpoints: [
         { method: 'POST', path: '/v1beta/models/{model}:generateContent' },
         {
@@ -542,9 +536,9 @@ export function buildStaticDocs(baseUrl: string): DocsArticle[] {
         },
       ],
       snippets: {
-        curl: `curl "${root}/v1beta/models/gemini-2.5-pro:generateContent" \\\n  -H "x-goog-api-key: $MAGIROUTER_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "contents": [{ "parts": [{ "text": "总结多模态模型选型要点" }] }]\n  }'`,
-        python: `import os\nfrom google import genai\n\nclient = genai.Client(\n    api_key=os.environ["MAGIROUTER_API_KEY"],\n    http_options={"base_url": "${root}"},\n)\nres = client.models.generate_content(\n    model="gemini-2.5-pro",\n    contents="总结多模态模型选型要点",\n)\nprint(res.text)`,
-        node: `const res = await fetch('${root}/v1beta/models/gemini-2.5-pro:generateContent', {\n  method: 'POST',\n  headers: {\n    'x-goog-api-key': process.env.MAGIROUTER_API_KEY!,\n    'Content-Type': 'application/json',\n  },\n  body: JSON.stringify({\n    contents: [{ parts: [{ text: '总结多模态模型选型要点' }] }],\n  }),\n})\nconsole.log(await res.json())`,
+        curl: `curl "${root}/v1beta/models/${models.gemini}:generateContent" \\\n  -H "x-goog-api-key: $MAGIROUTER_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "contents": [{ "parts": [{ "text": "总结多模态模型选型要点" }] }]\n  }'`,
+        python: `import os\nfrom google import genai\n\nclient = genai.Client(\n    api_key=os.environ["MAGIROUTER_API_KEY"],\n    http_options={"base_url": "${root}"},\n)\nres = client.models.generate_content(\n    model="${models.gemini}",\n    contents="总结多模态模型选型要点",\n)\nprint(res.text)`,
+        node: `const res = await fetch('${root}/v1beta/models/${models.gemini}:generateContent', {\n  method: 'POST',\n  headers: {\n    'x-goog-api-key': process.env.MAGIROUTER_API_KEY!,\n    'Content-Type': 'application/json',\n  },\n  body: JSON.stringify({\n    contents: [{ parts: [{ text: '总结多模态模型选型要点' }] }],\n  }),\n})\nconsole.log(await res.json())`,
         json: `{\n  "contents": [\n    { "parts": [{ "text": "总结多模态模型选型要点" }] }\n  ]\n}`,
       },
       responseTitle: 'Response · Gemini Native',
@@ -579,10 +573,10 @@ export function buildStaticDocs(baseUrl: string): DocsArticle[] {
         },
       ],
       snippets: {
-        curl: `curl -N ${v1}/chat/completions \\\n  -H "Authorization: Bearer $MAGIROUTER_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model":"gpt-5.6","stream":true,"stream_options":{"include_usage":true},"messages":[{"role":"user","content":"Hello"}]}'`,
-        python: `stream = client.chat.completions.create(\n    model="gpt-5.6",\n    stream=True,\n    stream_options={"include_usage": True},\n    messages=[{"role": "user", "content": "Hello"}],\n)`,
-        node: `const stream = await client.chat.completions.create({\n  model: 'gpt-5.6',\n  stream: true,\n  stream_options: { include_usage: true },\n  messages: [{ role: 'user', content: 'Hello' }],\n})`,
-        json: `{\n  "model": "gpt-5.6",\n  "stream": true,\n  "stream_options": { "include_usage": true }\n}`,
+        curl: `curl -N ${v1}/chat/completions \\\n  -H "Authorization: Bearer $MAGIROUTER_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model":"${models.openai}","stream":true,"stream_options":{"include_usage":true},"messages":[{"role":"user","content":"Hello"}]}'`,
+        python: `stream = client.chat.completions.create(\n    model="${models.openai}",\n    stream=True,\n    stream_options={"include_usage": True},\n    messages=[{"role": "user", "content": "Hello"}],\n)`,
+        node: `const stream = await client.chat.completions.create({\n  model: '${models.openai}',\n  stream: true,\n  stream_options: { include_usage: true },\n  messages: [{ role: 'user', content: 'Hello' }],\n})`,
+        json: `{\n  "model": "${models.openai}",\n  "stream": true,\n  "stream_options": { "include_usage": true }\n}`,
       },
       responseTitle: 'SSE Stream Chunk',
       responseJson: `{\n  "id": "chatcmpl-stream",\n  "choices": [{ "delta": { "content": "你好！" }, "finish_reason": null }],\n  "usage": { "prompt_tokens": 9, "completion_tokens": 4, "total_tokens": 13 }\n}`,
@@ -629,13 +623,13 @@ export function buildStaticDocs(baseUrl: string): DocsArticle[] {
         },
       ],
       snippets: {
-        curl: `curl ${v1}/videos \\\n  -H "Authorization: Bearer $MAGIROUTER_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model":"seedance-1-5-pro","prompt":"晨雾中的高山茶园航拍，缓慢推近","seconds":"5"}'`,
-        python: `import requests\n\nres = requests.post(\n    "${v1}/videos",\n    headers={"Authorization": f"Bearer {api_key}"},\n    json={"model": "seedance-1-5-pro", "prompt": "晨雾中的高山茶园航拍，缓慢推近", "seconds": "5"},\n)\nprint(res.json())`,
-        node: `const res = await fetch('${v1}/videos', {\n  method: 'POST',\n  headers: { Authorization: \`Bearer \${process.env.MAGIROUTER_API_KEY}\`, 'Content-Type': 'application/json' },\n  body: JSON.stringify({ model: 'seedance-1-5-pro', prompt: '晨雾中的高山茶园航拍，缓慢推近', seconds: '5' }),\n})\nconsole.log(await res.json())`,
-        json: `{\n  "model": "seedance-1-5-pro",\n  "prompt": "晨雾中的高山茶园航拍，缓慢推近",\n  "seconds": "5"\n}`,
+        curl: `curl ${v1}/videos \\\n  -H "Authorization: Bearer $MAGIROUTER_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model":"${models.video}","prompt":"晨雾中的高山茶园航拍，缓慢推近","seconds":"5"}'`,
+        python: `import requests\n\nres = requests.post(\n    "${v1}/videos",\n    headers={"Authorization": f"Bearer {api_key}"},\n    json={"model": "${models.video}", "prompt": "晨雾中的高山茶园航拍，缓慢推近", "seconds": "5"},\n)\nprint(res.json())`,
+        node: `const res = await fetch('${v1}/videos', {\n  method: 'POST',\n  headers: { Authorization: \`Bearer \${process.env.MAGIROUTER_API_KEY}\`, 'Content-Type': 'application/json' },\n  body: JSON.stringify({ model: '${models.video}', prompt: '晨雾中的高山茶园航拍，缓慢推近', seconds: '5' }),\n})\nconsole.log(await res.json())`,
+        json: `{\n  "model": "${models.video}",\n  "prompt": "晨雾中的高山茶园航拍，缓慢推近",\n  "seconds": "5"\n}`,
       },
       responseTitle: 'Response · Task Accepted',
-      responseJson: `{\n  "id": "video_01mr9x8k",\n  "status": "queued",\n  "model": "seedance-1-5-pro"\n}`,
+      responseJson: `{\n  "id": "video_01mr9x8k",\n  "status": "queued",\n  "model": "${models.video}"\n}`,
     },
     {
       id: 'response-polling',
@@ -694,10 +688,10 @@ export function buildStaticDocs(baseUrl: string): DocsArticle[] {
         },
       ],
       snippets: {
-        curl: `curl ${v1}/images/generations \\\n  -H "Authorization: Bearer $MAGIROUTER_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model":"gpt-image-1","prompt":"极简陶瓷香薰瓶产品摄影，自然窗光","size":"1024x1024"}'`,
-        python: `img = client.images.generate(\n    model="gpt-image-1",\n    prompt="极简陶瓷香薰瓶产品摄影，自然窗光",\n    size="1024x1024",\n)\nprint(img.data[0].url)`,
-        node: `const img = await client.images.generate({\n  model: 'gpt-image-1',\n  prompt: '极简陶瓷香薰瓶产品摄影，自然窗光',\n  size: '1024x1024',\n})\nconsole.log(img.data[0].url)`,
-        json: `{\n  "model": "gpt-image-1",\n  "prompt": "极简陶瓷香薰瓶产品摄影，自然窗光",\n  "size": "1024x1024"\n}`,
+        curl: `curl ${v1}/images/generations \\\n  -H "Authorization: Bearer $MAGIROUTER_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model":"${models.image}","prompt":"极简陶瓷香薰瓶产品摄影，自然窗光","size":"1024x1024"}'`,
+        python: `img = client.images.generate(\n    model="${models.image}",\n    prompt="极简陶瓷香薰瓶产品摄影，自然窗光",\n    size="1024x1024",\n)\nprint(img.data[0].url)`,
+        node: `const img = await client.images.generate({\n  model: '${models.image}',\n  prompt: '极简陶瓷香薰瓶产品摄影，自然窗光',\n  size: '1024x1024',\n})\nconsole.log(img.data[0].url)`,
+        json: `{\n  "model": "${models.image}",\n  "prompt": "极简陶瓷香薰瓶产品摄影，自然窗光",\n  "size": "1024x1024"\n}`,
       },
       responseTitle: 'Response · Image Output',
       responseJson: `{\n  "created": 1794816200,\n  "data": [{ "url": "https://cdn.magirouter.com/media/img_01j9ceramic.png" }]\n}`,
@@ -727,7 +721,7 @@ export function buildStaticDocs(baseUrl: string): DocsArticle[] {
         json: `{ "method": "GET", "path": "/v1/models" }`,
       },
       responseTitle: 'Response · /v1/models',
-      responseJson: `{\n  "object": "list",\n  "data": [{ "id": "gpt-5.6", "object": "model", "owned_by": "openai" }]\n}`,
+      responseJson: `{\n  "object": "list",\n  "data": [{ "id": "${models.openai}", "object": "model", "owned_by": "openai" }]\n}`,
     },
     {
       id: 'task-batch',
@@ -852,7 +846,9 @@ export function buildStaticDocs(baseUrl: string): DocsArticle[] {
           id: 'cl-ide',
           title: '2. Cursor / Cherry Studio / ChatBox',
           paragraphs: [
-            '在模型供应商中选择 OpenAI Compatible 或自定义接口，填入 Base URL（国内网络推荐 https://cn.magirouter.com/v1）与 API 密钥，刷新模型列表即可开始对话。',
+            secondaryEntry
+              ? `在模型供应商中选择 OpenAI Compatible 或自定义接口，填入 Base URL（如 ${primaryEntryUrl} 或备用线路 ${secondaryEntry.url}）与 API 密钥，刷新模型列表即可开始对话。`
+              : `在模型供应商中选择 OpenAI Compatible 或自定义接口，填入 Base URL（${primaryEntryUrl}）与 API 密钥，刷新模型列表即可开始对话。`,
           ],
         },
       ],
@@ -1019,6 +1015,113 @@ export function buildStaticDocs(baseUrl: string): DocsArticle[] {
       responseJson: `{\n  "error": {\n    "message": "Rate limit reached for requests",\n    "type": "rate_limit_error",\n    "code": "rate_limit_exceeded"\n  }\n}`,
     },
   ]
+
+  const overrides = options?.config?.articles
+  if (!overrides || overrides.length === 0) {
+    return defaults
+  }
+
+  const overrideMap = new Map<string, DocsArticleOverride>(
+    overrides.map((item) => [item.id, item])
+  )
+  const builtInIds = new Set(defaults.map((item) => item.id))
+
+  const merged: Array<{ article: DocsArticle; order: number; index: number }> =
+    []
+
+  defaults.forEach((article, index) => {
+    const override = overrideMap.get(article.id)
+    if (!override) {
+      merged.push({ article, order: index * 10, index })
+      return
+    }
+    if (override.hidden) return
+    const nextArticle: DocsArticle = {
+      ...article,
+      group: override.group ?? article.group,
+      title: override.title ?? article.title,
+      summary: override.summary ?? article.summary,
+      urlLabel: override.url_label ?? article.urlLabel,
+      urlValue: override.url_value
+        ? applyDocsPlaceholders(override.url_value, vars)
+        : article.urlValue,
+      endpoints: override.endpoints ?? article.endpoints,
+      markdown: override.markdown
+        ? applyDocsPlaceholders(override.markdown, vars)
+        : article.markdown,
+      snippets: {
+        curl: override.snippets?.curl
+          ? applyDocsPlaceholders(override.snippets.curl, vars)
+          : article.snippets.curl,
+        python: override.snippets?.python
+          ? applyDocsPlaceholders(override.snippets.python, vars)
+          : article.snippets.python,
+        node: override.snippets?.node
+          ? applyDocsPlaceholders(override.snippets.node, vars)
+          : article.snippets.node,
+        json: override.snippets?.json
+          ? applyDocsPlaceholders(override.snippets.json, vars)
+          : article.snippets.json,
+      },
+      responseTitle: override.response_title ?? article.responseTitle,
+      responseJson: override.response_json
+        ? applyDocsPlaceholders(override.response_json, vars)
+        : article.responseJson,
+    }
+    merged.push({
+      article: nextArticle,
+      order: override.order ?? index * 10,
+      index,
+    })
+  })
+
+  overrides.forEach((override, offset) => {
+    if (builtInIds.has(override.id) || override.hidden) return
+    if (!override.group || !override.title) return
+    const customArticle: DocsArticle = {
+      id: override.id,
+      group: override.group,
+      title: override.title,
+      summary: override.summary ?? '',
+      urlLabel: override.url_label ?? 'Base URL',
+      urlValue: override.url_value
+        ? applyDocsPlaceholders(override.url_value, vars)
+        : primaryEntryUrl,
+      endpoints: override.endpoints ?? [],
+      sections: [],
+      markdown: override.markdown
+        ? applyDocsPlaceholders(override.markdown, vars)
+        : '',
+      snippets: {
+        curl: override.snippets?.curl
+          ? applyDocsPlaceholders(override.snippets.curl, vars)
+          : '',
+        python: override.snippets?.python
+          ? applyDocsPlaceholders(override.snippets.python, vars)
+          : '',
+        node: override.snippets?.node
+          ? applyDocsPlaceholders(override.snippets.node, vars)
+          : '',
+        json: override.snippets?.json
+          ? applyDocsPlaceholders(override.snippets.json, vars)
+          : '',
+      },
+      responseTitle: override.response_title ?? 'Response · 200 OK',
+      responseJson: override.response_json
+        ? applyDocsPlaceholders(override.response_json, vars)
+        : '',
+    }
+    merged.push({
+      article: customArticle,
+      order: override.order ?? 1000 + offset * 10,
+      index: defaults.length + offset,
+    })
+  })
+
+  merged.sort(
+    (left, right) => left.order - right.order || left.index - right.index
+  )
+  return merged.map((entry) => entry.article)
 }
 
 function getModelEndpointPath(
@@ -1086,17 +1189,26 @@ function buildModelJsonSnippet(cap: DocsModality, modelId: string): string {
   return `{\n  "model": "${modelId}",\n  "messages": [{ "role": "user", "content": "请简要分析这段架构设计的优缺点" }]\n}`
 }
 
+export interface BuildModelDocOptions {
+  recommendedEntry?: DocsEntryEndpoint
+  override?: DocsModelOverride
+}
+
 export function buildModelDocArticle(
   modelId: string,
   baseUrl: string,
   family: DocsModelFamily,
-  liveModel?: PricingModel
+  liveModel?: PricingModel,
+  options?: BuildModelDocOptions
 ): DocsArticle {
   const root = baseUrl.replace(/\/+$/, '')
   const v1 = `${root}/v1`
   const cap = family.cap
+  const override = options?.override
+  const vars = { baseUrl: root, v1Url: v1, model: modelId }
 
-  const endpointPath = getModelEndpointPath(cap, modelId, family.vendor)
+  const endpointPath =
+    override?.endpoint_path || getModelEndpointPath(cap, modelId, family.vendor)
 
   const groupsText =
     liveModel?.enable_groups && liveModel.enable_groups.length > 0
@@ -1112,6 +1224,22 @@ export function buildModelDocArticle(
       : `import OpenAI from 'openai'\n\nconst client = new OpenAI({ baseURL: '${v1}', apiKey: process.env.MAGIROUTER_API_KEY })\n// 将 model 设为 '${modelId}' 即可调用\nconsole.log('${modelId}')`
 
   const jsonSnippet = buildModelJsonSnippet(cap, modelId)
+  const defaultEndpoints: DocsEndpoint[] =
+    cap === 'video' && !override?.endpoint_path
+      ? [
+          { method: 'POST', path: '/v1/videos' },
+          { method: 'GET', path: '/v1/videos/{task_id}' },
+        ]
+      : [{ method: 'POST', path: endpointPath }]
+  const defaultResponseTitle =
+    cap === 'video' ? 'Response · Async Accepted' : 'Response · 200 OK'
+  const defaultResponseJson =
+    cap === 'video'
+      ? `{\n  "id": "video_01mr",\n  "model": "${modelId}",\n  "status": "queued"\n}`
+      : `{\n  "id": "mr_01ok",\n  "model": "${modelId}",\n  "status": "ok"\n}`
+  const entryHint = options?.recommendedEntry
+    ? `如需切换线路，可改用 ${options.recommendedEntry.label}（${options.recommendedEntry.url}）。`
+    : `线上请求直接指向 ${v1} 即可。`
 
   return {
     id: `model:${modelId}`,
@@ -1120,17 +1248,12 @@ export function buildModelDocArticle(
     familyName: family.name,
     title: modelId,
     summary:
+      override?.summary ||
       liveModel?.description ||
       `${modelId} 属于 ${family.name}（${DOCS_MODALITY_TITLES[cap]}），由 ${liveModel?.vendor_name || family.vendor} 提供，可直接通过 MagiRouter 统一密钥调用。`,
     urlLabel: 'API Endpoint',
     urlValue: `${root}${endpointPath}`,
-    endpoints:
-      cap === 'video'
-        ? [
-            { method: 'POST', path: '/v1/videos' },
-            { method: 'GET', path: '/v1/videos/{task_id}' },
-          ]
-        : [{ method: 'POST', path: endpointPath }],
+    endpoints: override?.endpoints ?? defaultEndpoints,
     sections: [
       {
         id: 'model-overview',
@@ -1156,22 +1279,31 @@ export function buildModelDocArticle(
         id: 'model-routing',
         title: '2. 调试与上线建议',
         paragraphs: [
-          '建议先在 AI 创作 → Playground 中直观验证提示词与参数，再直接复制生成的请求代码接入线上服务；国内网络环境可将域名切换为 https://cn.magirouter.com。',
+          `建议先在 AI 创作 → Playground 中直观验证提示词与参数，再直接复制生成的请求代码接入线上服务；${entryHint}`,
         ],
       },
     ],
+    markdown: override?.markdown
+      ? applyDocsPlaceholders(override.markdown, vars)
+      : undefined,
     snippets: {
-      curl: curlSnippet,
-      python: pythonSnippet,
-      node: nodeSnippet,
-      json: jsonSnippet,
+      curl: override?.snippets?.curl
+        ? applyDocsPlaceholders(override.snippets.curl, vars)
+        : curlSnippet,
+      python: override?.snippets?.python
+        ? applyDocsPlaceholders(override.snippets.python, vars)
+        : pythonSnippet,
+      node: override?.snippets?.node
+        ? applyDocsPlaceholders(override.snippets.node, vars)
+        : nodeSnippet,
+      json: override?.snippets?.json
+        ? applyDocsPlaceholders(override.snippets.json, vars)
+        : jsonSnippet,
     },
-    responseTitle:
-      cap === 'video' ? 'Response · Async Accepted' : 'Response · 200 OK',
-    responseJson:
-      cap === 'video'
-        ? `{\n  "id": "video_01mr",\n  "model": "${modelId}",\n  "status": "queued"\n}`
-        : `{\n  "id": "mr_01ok",\n  "model": "${modelId}",\n  "status": "ok"\n}`,
+    responseTitle: override?.response_title || defaultResponseTitle,
+    responseJson: override?.response_json
+      ? applyDocsPlaceholders(override.response_json, vars)
+      : defaultResponseJson,
   }
 }
 
@@ -1184,20 +1316,26 @@ export function buildDocMarkdown(article: DocsArticle): string {
     `- **${article.urlLabel}**: \`${article.urlValue}\``,
     '',
   ]
-  for (const section of article.sections) {
-    lines.push(`## ${section.title}`, '')
-    for (const paragraph of section.paragraphs) {
-      lines.push(paragraph, '')
-    }
-    if (section.table) {
-      lines.push(`| ${section.table.headers.join(' | ')} |`)
-      lines.push(`| ${section.table.headers.map(() => '---').join(' | ')} |`)
-      for (const row of section.table.rows) {
-        lines.push(`| ${row.join(' | ')} |`)
+  if (article.markdown) {
+    lines.push(article.markdown, '')
+  } else {
+    for (const section of article.sections) {
+      lines.push(`## ${section.title}`, '')
+      for (const paragraph of section.paragraphs) {
+        lines.push(paragraph, '')
       }
-      lines.push('')
+      if (section.table) {
+        lines.push(`| ${section.table.headers.join(' | ')} |`)
+        lines.push(`| ${section.table.headers.map(() => '---').join(' | ')} |`)
+        for (const row of section.table.rows) {
+          lines.push(`| ${row.join(' | ')} |`)
+        }
+        lines.push('')
+      }
     }
   }
-  lines.push('## cURL 示例', '', '```bash', article.snippets.curl, '```', '')
+  if (article.snippets.curl) {
+    lines.push('## cURL 示例', '', '```bash', article.snippets.curl, '```', '')
+  }
   return lines.join('\n')
 }

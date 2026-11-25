@@ -32,12 +32,17 @@ import {
   isApiSuccess,
 } from '../api'
 import {
+  extractDailyTopUpLimitExceeded,
   isStripePayment,
   isWaffoPayment,
   isWaffoPancakePayment,
   submitPaymentForm,
 } from '../lib'
-import type { AmountRequest, AmountResponse } from '../types'
+import type {
+  AmountRequest,
+  AmountResponse,
+  DailyTopUpLimitStatus,
+} from '../types'
 
 // ============================================================================
 // Payment Hook
@@ -81,10 +86,15 @@ export async function requestPaymentAmount(
   return Number.parseFloat(response.data)
 }
 
-export function usePayment() {
+interface UsePaymentOptions {
+  onDailyLimitExceeded?: (dailyLimit: DailyTopUpLimitStatus) => void
+}
+
+export function usePayment(options?: UsePaymentOptions) {
   const [amount, setAmount] = useState<number>(0)
   const [calculating, setCalculating] = useState(false)
   const [processing, setProcessing] = useState(false)
+  const onDailyLimitExceeded = options?.onDailyLimitExceeded
 
   // Calculate payment amount
   const calculatePaymentAmount = useCallback(
@@ -127,6 +137,11 @@ export function usePayment() {
             })
 
         if (!isApiSuccess(response)) {
+          const limitExceeded = extractDailyTopUpLimitExceeded(response)
+          if (limitExceeded && onDailyLimitExceeded) {
+            onDailyLimitExceeded(limitExceeded)
+            return false
+          }
           handleServerError(response, i18next.t('Payment request failed'))
           return false
         }
@@ -156,7 +171,7 @@ export function usePayment() {
         setProcessing(false)
       }
     },
-    []
+    [onDailyLimitExceeded]
   )
 
   return {

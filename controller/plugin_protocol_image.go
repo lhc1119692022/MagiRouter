@@ -261,6 +261,17 @@ func respondTaskPluginImageError(c *gin.Context, taskErr *dto.TaskError) {
 			code = upstream.Code
 		}
 	}
+	if !taskErr.LocalError || code == "image_generation_failed" {
+		sanitized := service.SanitizeTaskErrorMessage(status, message, false, common.UpstreamAddresses(c)...)
+		if sanitized != "" {
+			message = sanitized
+		}
+		if status >= http.StatusInternalServerError || status == http.StatusUnauthorized || status == http.StatusPaymentRequired || status == http.StatusForbidden {
+			code = "upstream_error"
+		} else if status == http.StatusTooManyRequests {
+			code = "rate_limit_exceeded"
+		}
+	}
 	errorType := "new_api_error"
 	if status < http.StatusInternalServerError {
 		errorType = "invalid_request_error"

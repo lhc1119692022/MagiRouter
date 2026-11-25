@@ -112,10 +112,16 @@ func assignDisplayLogIds(logs []*Log, startIdx int) {
 	}
 }
 
+func formatUserLog(log *Log) {
+	log.ChannelId = 0
+	log.ChannelName = ""
+	log.UpstreamRequestId = ""
+	log.Other = formatLogOtherJSON(log.Other, logOtherVisibilityUser)
+}
+
 func formatUserLogs(logs []*Log, startIdx int) {
 	for i := range logs {
-		logs[i].ChannelName = ""
-		logs[i].Other = formatLogOtherJSON(logs[i].Other, logOtherVisibilityUser)
+		formatUserLog(logs[i])
 	}
 	assignDisplayLogIds(logs, startIdx)
 }
@@ -657,8 +663,7 @@ func StreamUserLogs(ctx context.Context, userId int, filter LogFilter, fn func(*
 	return streamLogs(tx, "logs.id desc", func(log *Log) error {
 		count++
 		log.Id = count
-		log.ChannelName = ""
-		log.Other = formatLogOtherJSON(log.Other, logOtherVisibilityUser)
+		formatUserLog(log)
 		return fn(log)
 	})
 }

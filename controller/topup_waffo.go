@@ -221,6 +221,7 @@ func RequestWaffoPay(c *gin.Context) {
 	}
 
 	// 创建本地订单
+	now := time.Now()
 	topUp := &model.TopUp{
 		UserId:          id,
 		Amount:          amount,
@@ -228,10 +229,13 @@ func RequestWaffoPay(c *gin.Context) {
 		TradeNo:         merchantOrderId,
 		PaymentMethod:   model.PaymentMethodWaffo,
 		PaymentProvider: model.PaymentProviderWaffo,
-		CreateTime:      time.Now().Unix(),
+		CreateTime:      now.Unix(),
 		Status:          common.TopUpStatusPending,
 	}
-	if err := topUp.Insert(); err != nil {
+	if err := model.CreateTopUpWithDailyLimit(topUp, payMoney, now); err != nil {
+		if handleDailyTopUpLimitError(c, err) {
+			return
+		}
 		logger.LogError(c.Request.Context(), common.LogText("Waffo failed to create top-up order user_id=%d trade_no=%s amount=%d error=%q", id, merchantOrderId, req.Amount, err.Error()))
 		paymentError(c, common.NewMessage("Failed to create order"))
 		return

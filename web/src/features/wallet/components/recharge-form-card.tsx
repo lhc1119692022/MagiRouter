@@ -16,7 +16,16 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Gift, ExternalLink, Loader2, Receipt, WalletCards } from 'lucide-react'
+import {
+  AlertCircle,
+  ExternalLink,
+  Gift,
+  Loader2,
+  QrCode,
+  Receipt,
+  ShieldCheck,
+  WalletCards,
+} from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 
@@ -43,8 +52,10 @@ import {
   getPaymentIcon,
   getMinTopupAmount,
   calculatePresetPricing,
+  isAmountOverDailyLimit,
 } from '../lib'
 import type {
+  DailyTopUpLimitStatus,
   PaymentMethod,
   PresetAmount,
   TopupInfo,
@@ -81,6 +92,8 @@ interface RechargeFormCardProps {
   waffoMinTopup?: number
   onWaffoMethodSelect?: (method: WaffoPayMethod, index: number) => void
   enableWaffoPancakeTopup?: boolean
+  dailyLimit?: DailyTopUpLimitStatus | null
+  onOpenDailyLimitContact?: (requestedAmount?: number) => void
 }
 
 export function RechargeFormCard({
@@ -111,6 +124,8 @@ export function RechargeFormCard({
   waffoMinTopup,
   onWaffoMethodSelect,
   enableWaffoPancakeTopup,
+  dailyLimit,
+  onOpenDailyLimitContact,
 }: RechargeFormCardProps) {
   const { t } = useTranslation()
   const [localAmount, setLocalAmount] = useState(topupAmount.toString())
@@ -142,6 +157,9 @@ export function RechargeFormCard({
     Array.isArray(waffoPayMethods) && waffoPayMethods.length > 0
   const minTopup = getMinTopupAmount(topupInfo)
   const redemptionEnabled = topupInfo?.enable_redemption !== false
+  const showDailyLimit = Boolean(dailyLimit?.enabled)
+  const isOverDailyLimit = isAmountOverDailyLimit(dailyLimit, paymentAmount)
+  const qrCode = dailyLimit?.contact_wechat_qrcode?.trim() || ''
 
   if (loading) {
     return (
@@ -219,6 +237,50 @@ export function RechargeFormCard({
       {/* Online Topup Section */}
       {hasAnyTopup ? (
         <div className='space-y-4 sm:space-y-6'>
+          {showDailyLimit && dailyLimit && (
+            <div className='bg-muted/30 flex flex-col gap-2 rounded-lg border px-3.5 py-2.5 sm:flex-row sm:items-center sm:justify-between'>
+              {dailyLimit.exempt ? (
+                <div className='flex items-center gap-2 text-xs font-medium text-green-600 dark:text-green-400'>
+                  <ShieldCheck className='h-4 w-4 shrink-0' />
+                  <span>{t('Daily top-up limit: Exempt (whitelisted)')}</span>
+                </div>
+              ) : (
+                <>
+                  <div className='space-y-0.5'>
+                    <div className='text-xs font-medium'>
+                      {t(
+                        'Daily online top-up remaining: {{remaining}} / {{limit}}',
+                        {
+                          remaining: formatCurrency(dailyLimit.remaining),
+                          limit: formatCurrency(dailyLimit.limit),
+                        }
+                      )}
+                    </div>
+                    {dailyLimit.pending > 0 && (
+                      <div className='text-muted-foreground text-[11px]'>
+                        {t('Pending orders hold: {{pending}}', {
+                          pending: formatCurrency(dailyLimit.pending),
+                        })}
+                      </div>
+                    )}
+                  </div>
+                  {onOpenDailyLimitContact && (
+                    <Button
+                      type='button'
+                      variant='outline'
+                      size='sm'
+                      onClick={() => onOpenDailyLimitContact()}
+                      className='h-7 shrink-0 gap-1.5 self-start text-xs sm:self-auto'
+                    >
+                      <QrCode className='h-3.5 w-3.5' />
+                      {t('Large top-up? WeChat QR')}
+                    </Button>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
           {hasConfigurableTopup && (
             <>
               {presetAmounts.length > 0 && (
@@ -322,6 +384,66 @@ export function RechargeFormCard({
                   </div>
                 </div>
               </div>
+
+              {isOverDailyLimit && dailyLimit && (
+                <div className='rounded-xl border border-amber-500/30 bg-amber-500/5 p-3.5 sm:p-4'>
+                  <div className='flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
+                    <div className='space-y-1.5'>
+                      <div className='flex items-center gap-1.5 text-sm font-medium text-amber-700 dark:text-amber-400'>
+                        <AlertCircle className='h-4 w-4 shrink-0' />
+                        <span>{t('Daily Top-up Limit Exceeded')}</span>
+                      </div>
+                      <p className='text-muted-foreground text-xs leading-relaxed'>
+                        {dailyLimit.remaining <= 0
+                          ? t(
+                              'You have reached today’s online top-up limit of {{limit}}. Scan the WeChat QR code to contact us for larger top-ups.',
+                              { limit: formatCurrency(dailyLimit.limit) }
+                            )
+                          : t(
+                              'Payment amount {{amount}} exceeds today’s remaining limit of {{remaining}} (daily cap: {{limit}}). Scan the WeChat QR code to contact us.',
+                              {
+                                amount: formatCurrency(paymentAmount),
+                                remaining: formatCurrency(dailyLimit.remaining),
+                                limit: formatCurrency(dailyLimit.limit),
+                              }
+                            )}
+                      </p>
+                      {dailyLimit.contact_note && (
+                        <p className='text-foreground text-xs'>
+                          {dailyLimit.contact_note}
+                        </p>
+                      )}
+                      {onOpenDailyLimitContact && (
+                        <div className='pt-1'>
+                          <Button
+                            type='button'
+                            variant='outline'
+                            size='sm'
+                            onClick={() =>
+                              onOpenDailyLimitContact(
+                                paymentAmount > 0 ? paymentAmount : undefined
+                              )
+                            }
+                            className='h-8 gap-1.5 text-xs'
+                          >
+                            <QrCode className='h-3.5 w-3.5' />
+                            {t('View WeChat QR Code')}
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                    {qrCode && (
+                      <div className='shrink-0 self-center rounded-lg border bg-white p-2 shadow-xs sm:self-auto'>
+                        <img
+                          src={qrCode}
+                          alt={t('WeChat Contact QR Code')}
+                          className='h-28 w-28 object-contain'
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               <div className='space-y-2.5 sm:space-y-3'>
                 <Label className='text-muted-foreground text-xs font-medium tracking-wider uppercase'>

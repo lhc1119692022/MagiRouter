@@ -423,7 +423,7 @@ func (s *responsesWSSession) runCall(c *gin.Context, state *responsesWSCallState
 		if stopErr == nil {
 			return &incoming
 		}
-		openAIErr := stopErr.ToOpenAIError(common.UpstreamAddresses(c)...)
+		openAIErr := service.SanitizeClientOpenAIError(stopErr, "", common.UpstreamAddresses(c)...)
 		body, _ := common.Marshal(&responsesWSErrorEvent{Type: "error", Status: stopErr.StatusCode, EventID: create.EventID, StreamID: create.StreamID, ResponseID: responseID, Error: &openAIErr})
 		return &responsesWSMessage{kind: websocket.TextMessage, body: body}
 	}
@@ -1050,7 +1050,7 @@ func buildResponsesWSErrorPayload(eventID, streamID string, apiErr *types.NewAPI
 	if status == 0 {
 		status = http.StatusInternalServerError
 	}
-	openaiErr := apiErr.ToOpenAIError(upstreamURLs...)
+	openaiErr := service.SanitizeClientOpenAIError(apiErr, "", upstreamURLs...)
 	return common.Marshal(&responsesWSErrorEvent{
 		Type:     "error",
 		Status:   status,

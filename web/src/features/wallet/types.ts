@@ -117,6 +117,20 @@ export interface WaffoPayMethod {
 }
 
 /**
+ * Per-user daily top-up money limit status
+ */
+export interface DailyTopUpLimitStatus {
+  enabled: boolean
+  limit: number
+  used: number
+  pending: number
+  remaining: number
+  exempt: boolean
+  contact_wechat_qrcode: string
+  contact_note: string
+}
+
+/**
  * Topup configuration information
  */
 export interface TopupInfo {
@@ -156,6 +170,8 @@ export interface TopupInfo {
   payment_compliance_confirmed?: boolean
   /** Current compliance terms version */
   payment_compliance_terms_version?: string
+  /** Per-user daily online top-up limit status */
+  daily_limit?: DailyTopUpLimitStatus
 }
 
 /**

@@ -247,7 +247,9 @@ export function SystemInfoSection({ defaultValues }: SystemInfoSectionProps) {
                       />
                     </FormControl>
                     <FormDescription>
-                      {t('Link to your documentation site')}
+                      {t(
+                        'External documentation site URL. Leave empty to use the built-in Docs Center (/docs).'
+                      )}
                     </FormDescription>
                     <FormMessage />
                   </FormItem>

@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 
+import { SitePopupHost } from '@/components/site-popup-host'
 import { usePricingData } from '@/features/pricing/hooks'
 import { useStatus } from '@/hooks/use-status'
 
@@ -68,6 +69,7 @@ export function MagiRouterHome(props: MagiRouterHomeProps) {
       />
       <IntegrationSection isAuthenticated={props.isAuthenticated} />
       <BrandFooter />
+      <SitePopupHost trigger='home' />
     </main>
   )
 }

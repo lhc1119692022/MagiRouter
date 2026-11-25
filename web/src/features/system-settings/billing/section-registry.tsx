@@ -150,6 +150,13 @@ const BILLING_SECTIONS = [
           PayMethods: settings.PayMethods,
           AmountOptions: settings['payment_setting.amount_options'],
           AmountDiscount: settings['payment_setting.amount_discount'],
+          DailyTopUpLimit: settings['payment_setting.daily_topup_limit'] ?? 200,
+          DailyTopUpExemptUsers:
+            settings['payment_setting.daily_topup_exempt_users'] ?? '[]',
+          DailyTopUpContactWeChatQRCode:
+            settings['payment_setting.daily_topup_contact_wechat_qrcode'] ?? '',
+          DailyTopUpContactNote:
+            settings['payment_setting.daily_topup_contact_note'] ?? '',
           StripeApiSecret: settings.StripeApiSecret,
           StripeWebhookSecret: settings.StripeWebhookSecret,
           StripePriceId: settings.StripePriceId,

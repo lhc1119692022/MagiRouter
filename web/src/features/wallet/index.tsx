@@ -29,6 +29,7 @@ import { getSelf } from '@/lib/api'
 import { AffiliateRewardsCard } from './components/affiliate-rewards-card'
 import { BillingHistoryDialog } from './components/dialogs/billing-history-dialog'
 import { CreemConfirmDialog } from './components/dialogs/creem-confirm-dialog'
+import { DailyLimitContactDialog } from './components/dialogs/daily-limit-contact-dialog'
 import { PaymentConfirmDialog } from './components/dialogs/payment-confirm-dialog'
 import { TransferDialog } from './components/dialogs/transfer-dialog'
 import { RechargeFormCard } from './components/recharge-form-card'
@@ -48,8 +49,10 @@ import {
   getDefaultPaymentType,
   getMinTopupAmount,
   dispatchSelectedPayment,
+  isAmountOverDailyLimit,
 } from './lib'
 import type {
+  DailyTopUpLimitStatus,
   UserWalletData,
   PaymentMethod,
   PresetAmount,
@@ -81,10 +84,51 @@ export function Wallet(props: WalletProps) {
   const [selectedCreemProduct, setSelectedCreemProduct] =
     useState<CreemProduct | null>(null)
   const [showSubscriptionPanel, setShowSubscriptionPanel] = useState(true)
+  const [dailyLimitOverride, setDailyLimitOverride] =
+    useState<DailyTopUpLimitStatus | null>(null)
+  const [dailyLimitDialogOpen, setDailyLimitDialogOpen] = useState(false)
+  const [dailyLimitRequestedAmount, setDailyLimitRequestedAmount] = useState<
+    number | undefined
+  >(undefined)
+  const paymentAmountRef = useRef(0)
 
   const { status } = useStatus()
   const { currency } = useSystemConfig()
-  const { topupInfo, presetAmounts, loading: topupLoading } = useTopupInfo()
+  const {
+    topupInfo,
+    presetAmounts,
+    loading: topupLoading,
+    refetch: refetchTopupInfo,
+  } = useTopupInfo()
+
+  const effectiveDailyLimit =
+    dailyLimitOverride ?? topupInfo?.daily_limit ?? null
+
+  useEffect(() => {
+    if (topupInfo?.daily_limit) {
+      setDailyLimitOverride(null)
+    }
+  }, [topupInfo?.daily_limit])
+
+  const handleOpenDailyLimitContact = useCallback(
+    (requestedAmount?: number) => {
+      setDailyLimitRequestedAmount(requestedAmount)
+      setDailyLimitDialogOpen(true)
+    },
+    []
+  )
+
+  const handleBackendDailyLimitExceeded = useCallback(
+    (limitStatus: DailyTopUpLimitStatus, requestedAmount?: number) => {
+      setDailyLimitOverride(limitStatus)
+      setConfirmDialogOpen(false)
+      setCreemDialogOpen(false)
+      setDailyLimitRequestedAmount(requestedAmount)
+      setDailyLimitDialogOpen(true)
+      void refetchTopupInfo()
+    },
+    [refetchTopupInfo]
+  )
 
   // Calculate effective exchange rate - when display type is USD, use rate of 1
   const effectiveUsdExchangeRate = useMemo(() => {
@@ -98,7 +142,13 @@ export function Wallet(props: WalletProps) {
     processing,
     calculatePaymentAmount,
     processPayment,
-  } = usePayment()
+  } = usePayment({
+    onDailyLimitExceeded: (limitStatus) =>
+      handleBackendDailyLimitExceeded(limitStatus, paymentAmountRef.current),
+  })
+  useEffect(() => {
+    paymentAmountRef.current = paymentAmount
+  }, [paymentAmount])
   const {
     affiliateLink,
     loading: affiliateLoading,
@@ -106,10 +156,19 @@ export function Wallet(props: WalletProps) {
     transferring,
   } = useAffiliate()
   const { redeeming, redeemCode } = useRedemption()
-  const { processing: creemProcessing, processCreemPayment } = useCreemPayment()
-  const { processing: waffoProcessing, processWaffoPayment } = useWaffoPayment()
+  const { processing: creemProcessing, processCreemPayment } = useCreemPayment({
+    onDailyLimitExceeded: (limitStatus) =>
+      handleBackendDailyLimitExceeded(limitStatus, selectedCreemProduct?.price),
+  })
+  const { processing: waffoProcessing, processWaffoPayment } = useWaffoPayment({
+    onDailyLimitExceeded: (limitStatus) =>
+      handleBackendDailyLimitExceeded(limitStatus, paymentAmountRef.current),
+  })
   const { processing: pancakeProcessing, processWaffoPancakePayment } =
-    useWaffoPancakePayment()
+    useWaffoPancakePayment({
+      onDailyLimitExceeded: (limitStatus) =>
+        handleBackendDailyLimitExceeded(limitStatus, paymentAmountRef.current),
+    })
 
   // Fetch and refresh user data
   const fetchUser = useCallback(async () => {
@@ -185,7 +244,16 @@ export function Wallet(props: WalletProps) {
       }
 
       // Calculate payment amount and show confirmation dialog
-      await calculatePaymentAmount(topupAmount, method.type)
+      const calculatedAmount = await calculatePaymentAmount(
+        topupAmount,
+        method.type
+      )
+      if (isAmountOverDailyLimit(effectiveDailyLimit, calculatedAmount)) {
+        handleOpenDailyLimitContact(
+          calculatedAmount > 0 ? calculatedAmount : undefined
+        )
+        return
+      }
       setConfirmDialogOpen(true)
     } finally {
       setPaymentLoading(null)
@@ -209,7 +277,7 @@ export function Wallet(props: WalletProps) {
 
     if (success) {
       setConfirmDialogOpen(false)
-      await fetchUser()
+      await Promise.all([fetchUser(), refetchTopupInfo()])
     }
   }
 
@@ -235,6 +303,10 @@ export function Wallet(props: WalletProps) {
 
   // Handle Creem product selection
   const handleCreemProductSelect = (product: CreemProduct) => {
+    if (isAmountOverDailyLimit(effectiveDailyLimit, product.price)) {
+      handleOpenDailyLimitContact(product.price)
+      return
+    }
     setSelectedCreemProduct(product)
     setCreemDialogOpen(true)
   }
@@ -247,7 +319,7 @@ export function Wallet(props: WalletProps) {
     if (success) {
       setCreemDialogOpen(false)
       setSelectedCreemProduct(null)
-      await fetchUser()
+      await Promise.all([fetchUser(), refetchTopupInfo()])
     }
   }
 
@@ -265,7 +337,16 @@ export function Wallet(props: WalletProps) {
     setPaymentLoading(loadingKey)
 
     try {
-      await calculatePaymentAmount(topupAmount, PAYMENT_TYPES.WAFFO)
+      const calculatedAmount = await calculatePaymentAmount(
+        topupAmount,
+        PAYMENT_TYPES.WAFFO
+      )
+      if (isAmountOverDailyLimit(effectiveDailyLimit, calculatedAmount)) {
+        handleOpenDailyLimitContact(
+          calculatedAmount > 0 ? calculatedAmount : undefined
+        )
+        return
+      }
       setConfirmDialogOpen(true)
     } finally {
       setPaymentLoading(null)
@@ -384,6 +465,8 @@ export function Wallet(props: WalletProps) {
                   enableWaffoPancakeTopup={
                     topupInfo?.enable_waffo_pancake_topup
                   }
+                  dailyLimit={effectiveDailyLimit}
+                  onOpenDailyLimitContact={handleOpenDailyLimitContact}
                 />
               </div>
 
@@ -440,6 +523,13 @@ export function Wallet(props: WalletProps) {
         onConfirm={handleCreemConfirm}
         product={selectedCreemProduct}
         processing={creemProcessing}
+      />
+
+      <DailyLimitContactDialog
+        open={dailyLimitDialogOpen}
+        onOpenChange={setDailyLimitDialogOpen}
+        dailyLimit={effectiveDailyLimit}
+        requestedAmount={dailyLimitRequestedAmount}
       />
     </>
   )

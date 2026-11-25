@@ -7,6 +7,8 @@ type ConsoleSetting struct {
 	HomeShowcase         string `json:"home_showcase"`
 	PricingBanner        string `json:"pricing_banner"`
 	CreationPresets      string `json:"creation_presets"`
+	DocsConfig           string `json:"docs_config"`
+	SitePopups           string `json:"site_popups"`
 	ApiInfo              string `json:"api_info"`              // 控制台 API 信息 (JSON 数组字符串)
 	UptimeKumaGroups     string `json:"uptime_kuma_groups"`    // Uptime Kuma 分组配置 (JSON 数组字符串)
 	Announcements        string `json:"announcements"`         // 系统公告 (JSON 数组字符串)
@@ -23,6 +25,8 @@ var defaultConsoleSetting = ConsoleSetting{
 	HomeShowcase:         "{}",
 	PricingBanner:        "[]",
 	CreationPresets:      "[]",
+	DocsConfig:           "{}",
+	SitePopups:           "[]",
 	ApiInfo:              "",
 	UptimeKumaGroups:     "",
 	Announcements:        "",

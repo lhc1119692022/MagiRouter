@@ -25,9 +25,11 @@ import { ApiInfoSection } from './api-info-section'
 import { ChatSettingsSection } from './chat-settings-section'
 import { CreationPresetsSection } from './creation-presets-section'
 import { DashboardSection } from './dashboard-section'
+import { DocsCenterSection } from './docs-center-section'
 import { DrawingSettingsSection } from './drawing-settings-section'
 import { FAQSection } from './faq-section'
 import { OfficialModelPricesSection } from './official-model-prices-section'
+import { SitePopupsSection } from './site-popups-section'
 import { UptimeKumaSection } from './uptime-kuma-section'
 
 /**
@@ -69,6 +71,13 @@ const CONTENT_SECTIONS = [
     ),
   },
   {
+    id: 'popups',
+    titleKey: 'Site Popups',
+    build: (settings: ContentSettings) => (
+      <SitePopupsSection value={settings['console_setting.site_popups']} />
+    ),
+  },
+  {
     id: 'api-info',
     titleKey: 'API Addresses',
     build: (settings: ContentSettings) => (
@@ -76,6 +85,13 @@ const CONTENT_SECTIONS = [
         enabled={settings['console_setting.api_info_enabled']}
         data={settings['console_setting.api_info']}
       />
+    ),
+  },
+  {
+    id: 'docs',
+    titleKey: 'Docs Center',
+    build: (settings: ContentSettings) => (
+      <DocsCenterSection value={settings['console_setting.docs_config']} />
     ),
   },
   {

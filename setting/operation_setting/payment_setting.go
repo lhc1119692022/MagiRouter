@@ -1,7 +1,12 @@
 package operation_setting
 
 import (
+	"encoding/base64"
+	"math"
+	"net/url"
+	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/Calcium-Ion/go-epay/epay"
 	"github.com/QuantumNous/new-api/common"
@@ -22,6 +27,11 @@ type PaymentSetting struct {
 	EpaySignType           string `json:"epay_sign_type"`
 	EpayMerchantPrivateKey string `json:"epay_merchant_private_key"`
 	EpayPlatformPublicKey  string `json:"epay_platform_public_key"`
+
+	DailyTopUpLimit               float64  `json:"daily_topup_limit"`
+	DailyTopUpExemptUsers         []string `json:"daily_topup_exempt_users"`
+	DailyTopUpContactWeChatQRCode string   `json:"daily_topup_contact_wechat_qrcode"`
+	DailyTopUpContactNote         string   `json:"daily_topup_contact_note"`
 }
 
 const CurrentComplianceTermsVersion = "v1"
@@ -33,14 +43,34 @@ const (
 	EpaySignTypeOptionKey           = "payment_setting.epay_sign_type"
 	EpayMerchantPrivateKeyOptionKey = "payment_setting.epay_merchant_private_key"
 	EpayPlatformPublicKeyOptionKey  = "payment_setting.epay_platform_public_key"
+
+	DailyTopUpLimitOptionKey               = "payment_setting.daily_topup_limit"
+	DailyTopUpExemptUsersOptionKey         = "payment_setting.daily_topup_exempt_users"
+	DailyTopUpContactWeChatQRCodeOptionKey = "payment_setting.daily_topup_contact_wechat_qrcode"
+	DailyTopUpContactNoteOptionKey         = "payment_setting.daily_topup_contact_note"
+
+	DefaultDailyTopUpLimit        = 200.0
+	MaxDailyTopUpLimit            = 1_000_000_000.0
+	MaxDailyTopUpExemptUsers      = 1000
+	MaxDailyTopUpQRCodeLength     = 750 * 1024
+	MaxDailyTopUpContactNoteRunes = 500
 )
+
+type DailyTopUpLimitConfig struct {
+	Limit           float64
+	ExemptUsers     []string
+	ContactWeChatQR string
+	ContactNote     string
+}
 
 // 默认配置
 var paymentSetting = PaymentSetting{
 	AmountOptions:  []int{10, 20, 50, 100, 200, 500},
 	AmountDiscount: map[int]float64{},
 	// 没有保存过签名方式的站点按 MD5 运行，升级后行为不变。
-	EpaySignType: EpaySignTypeMD5,
+	EpaySignType:          EpaySignTypeMD5,
+	DailyTopUpLimit:       DefaultDailyTopUpLimit,
+	DailyTopUpExemptUsers: []string{},
 }
 
 func init() {
@@ -55,6 +85,138 @@ func GetPaymentSetting() *PaymentSetting {
 func IsPaymentComplianceConfirmed() bool {
 	return paymentSetting.ComplianceConfirmed &&
 		paymentSetting.ComplianceTermsVersion == CurrentComplianceTermsVersion
+}
+
+func GetDailyTopUpLimitConfig() DailyTopUpLimitConfig {
+	common.OptionMapRWMutex.RLock()
+	defer common.OptionMapRWMutex.RUnlock()
+
+	exemptUsers := make([]string, 0, len(paymentSetting.DailyTopUpExemptUsers))
+	for _, raw := range paymentSetting.DailyTopUpExemptUsers {
+		if trimmed := strings.TrimSpace(raw); trimmed != "" {
+			exemptUsers = append(exemptUsers, trimmed)
+		}
+	}
+
+	limit := paymentSetting.DailyTopUpLimit
+	if math.IsNaN(limit) || math.IsInf(limit, 0) || limit < 0 {
+		limit = 0
+	}
+
+	return DailyTopUpLimitConfig{
+		Limit:           limit,
+		ExemptUsers:     exemptUsers,
+		ContactWeChatQR: strings.TrimSpace(paymentSetting.DailyTopUpContactWeChatQRCode),
+		ContactNote:     strings.TrimSpace(paymentSetting.DailyTopUpContactNote),
+	}
+}
+
+func (cfg DailyTopUpLimitConfig) IsUserExempt(userId int, username string, email string) bool {
+	trimmedUsername := strings.TrimSpace(username)
+	trimmedEmail := strings.TrimSpace(email)
+
+	for _, rawEntry := range cfg.ExemptUsers {
+		entry := strings.TrimSpace(rawEntry)
+		if entry == "" {
+			continue
+		}
+
+		numericCandidate := strings.TrimPrefix(entry, "#")
+		if numericCandidate != "" {
+			if parsedId, err := strconv.Atoi(numericCandidate); err == nil && parsedId > 0 && strconv.Itoa(parsedId) == numericCandidate {
+				if userId > 0 && parsedId == userId {
+					return true
+				}
+				continue
+			}
+		}
+
+		if trimmedUsername != "" && strings.EqualFold(entry, trimmedUsername) {
+			return true
+		}
+		if trimmedEmail != "" && strings.EqualFold(entry, trimmedEmail) {
+			return true
+		}
+	}
+
+	return false
+}
+
+var allowedQRCodeDataURLPrefixes = []string{
+	"data:image/png;base64,",
+	"data:image/jpeg;base64,",
+	"data:image/jpg;base64,",
+	"data:image/webp;base64,",
+	"data:image/gif;base64,",
+}
+
+func isValidWeChatQRCodeSource(value string) bool {
+	lower := strings.ToLower(value)
+	for _, prefix := range allowedQRCodeDataURLPrefixes {
+		if strings.HasPrefix(lower, prefix) {
+			payload := value[len(prefix):]
+			if payload == "" {
+				return false
+			}
+			if _, err := base64.StdEncoding.DecodeString(payload); err != nil {
+				return false
+			}
+			return true
+		}
+	}
+
+	if strings.HasPrefix(value, "/") {
+		if strings.HasPrefix(value, "//") {
+			return false
+		}
+		return !strings.ContainsAny(value, " \t\r\n")
+	}
+
+	parsed, err := url.Parse(value)
+	if err != nil {
+		return false
+	}
+	scheme := strings.ToLower(parsed.Scheme)
+	return (scheme == "https" || scheme == "http") && parsed.Host != ""
+}
+
+func ValidateDailyTopUpOption(key, value string) error {
+	switch key {
+	case DailyTopUpLimitOptionKey:
+		parsed, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
+		if err != nil || math.IsNaN(parsed) || math.IsInf(parsed, 0) || parsed < 0 || parsed > MaxDailyTopUpLimit {
+			return common.NewMessage("Daily top-up limit must be a non-negative number")
+		}
+	case DailyTopUpExemptUsersOptionKey:
+		var entries []string
+		if err := common.UnmarshalJsonStr(value, &entries); err != nil {
+			return common.NewMessage("Daily top-up exempt users must be a valid JSON string array")
+		}
+		if len(entries) > MaxDailyTopUpExemptUsers {
+			return common.NewMessage("Daily top-up exempt users list cannot exceed {{max}} entries", map[string]any{"max": MaxDailyTopUpExemptUsers})
+		}
+		for _, entry := range entries {
+			if len(strings.TrimSpace(entry)) > 255 {
+				return common.NewMessage("Daily top-up exempt user identifier is too long")
+			}
+		}
+	case DailyTopUpContactWeChatQRCodeOptionKey:
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			return nil
+		}
+		if len(trimmed) > MaxDailyTopUpQRCodeLength {
+			return common.NewMessage("WeChat QR code image is too large")
+		}
+		if !isValidWeChatQRCodeSource(trimmed) {
+			return common.NewMessage("WeChat QR code must be a valid HTTP(S) URL, site path, or PNG/JPEG/WebP/GIF image")
+		}
+	case DailyTopUpContactNoteOptionKey:
+		if utf8.RuneCountInString(strings.TrimSpace(value)) > MaxDailyTopUpContactNoteRunes {
+			return common.NewMessage("Daily top-up contact note cannot exceed {{max}} characters", map[string]any{"max": MaxDailyTopUpContactNoteRunes})
+		}
+	}
+	return nil
 }
 
 // ValidateEpaySignOption checks a change to the Epay signing settings against

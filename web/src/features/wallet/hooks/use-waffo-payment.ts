@@ -23,7 +23,11 @@ import { toast } from 'sonner'
 import { handleServerError } from '@/lib/handle-server-error'
 
 import { requestWaffoPayment, isApiSuccess } from '../api'
-import { getPaymentErrorTranslation } from '../lib'
+import {
+  extractDailyTopUpLimitExceeded,
+  getPaymentErrorTranslation,
+} from '../lib'
+import type { DailyTopUpLimitStatus } from '../types'
 
 function getPaymentUrl(data: unknown): string | null {
   if (!data || typeof data !== 'object') {
@@ -51,8 +55,13 @@ function getErrorMessage(message: string | undefined, data: unknown): string {
 /**
  * Hook for handling Waffo payment processing
  */
-export function useWaffoPayment() {
+interface UseWaffoPaymentOptions {
+  onDailyLimitExceeded?: (dailyLimit: DailyTopUpLimitStatus) => void
+}
+
+export function useWaffoPayment(options?: UseWaffoPaymentOptions) {
   const [processing, setProcessing] = useState(false)
+  const onDailyLimitExceeded = options?.onDailyLimitExceeded
 
   const processWaffoPayment = useCallback(
     async (topupAmount: number, payMethodIndex?: number) => {
@@ -74,6 +83,12 @@ export function useWaffoPayment() {
           }
         }
 
+        const limitExceeded = extractDailyTopUpLimitExceeded(response)
+        if (limitExceeded && onDailyLimitExceeded) {
+          onDailyLimitExceeded(limitExceeded)
+          return false
+        }
+
         handleServerError(response, undefined, {
           title:
             getPaymentErrorTranslation(response) ??
@@ -87,7 +102,7 @@ export function useWaffoPayment() {
         setProcessing(false)
       }
     },
-    []
+    [onDailyLimitExceeded]
   )
 
   return { processing, processWaffoPayment }

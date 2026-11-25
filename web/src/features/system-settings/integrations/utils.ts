@@ -126,3 +126,26 @@ export function getJsonError(
     return formatJsonError(error, trimmed)
   }
 }
+
+export function isValidWeChatQRCodeValue(value: string): boolean {
+  const trimmed = value.trim()
+  if (!trimmed) {
+    return true
+  }
+  if (
+    /^data:image\/(png|jpeg|jpg|webp|gif);base64,[A-Za-z0-9+/=]+$/i.test(
+      trimmed
+    )
+  ) {
+    return trimmed.length <= 750 * 1024
+  }
+  if (trimmed.startsWith('/')) {
+    return !trimmed.startsWith('//') && !/\s/.test(trimmed)
+  }
+  try {
+    const url = new URL(trimmed)
+    return url.protocol === 'https:' || url.protocol === 'http:'
+  } catch {
+    return false
+  }
+}

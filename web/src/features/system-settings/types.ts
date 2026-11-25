@@ -211,6 +211,8 @@ export type AuthSettings = {
 export type ContentSettings = {
   'console_setting.official_model_prices': string
   'console_setting.creation_presets': string
+  'console_setting.docs_config': string
+  'console_setting.site_popups': string
   'console_setting.api_info': string
   'console_setting.announcements': string
   'console_setting.faq': string
@@ -326,6 +328,10 @@ export type BillingSettings = {
   'payment_setting.epay_sign_type': string
   'payment_setting.epay_merchant_private_key': string
   'payment_setting.epay_platform_public_key': string
+  'payment_setting.daily_topup_limit': number
+  'payment_setting.daily_topup_exempt_users': string
+  'payment_setting.daily_topup_contact_wechat_qrcode': string
+  'payment_setting.daily_topup_contact_note': string
   'payment_setting.compliance_confirmed': boolean
   'payment_setting.compliance_terms_version': string
   'payment_setting.compliance_confirmed_at': number

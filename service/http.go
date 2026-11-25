@@ -23,22 +23,36 @@ func CloseResponseBodyGracefully(httpResponse *http.Response) {
 	}
 }
 
+var allowedUpstreamResponseHeaders = map[string]bool{
+	"Accept-Ranges":        true,
+	"Cache-Control":        true,
+	"Content-Disposition":  true,
+	"Content-Encoding":     true,
+	"Content-Language":     true,
+	"Content-Range":        true,
+	"Content-Type":         true,
+	"Etag":                 true,
+	"Last-Modified":        true,
+	"Retry-After":          true,
+	"Vary":                 true,
+	"X-Codex-Turn-State":   true,
+	"X-Reasoning-Included": true,
+}
+
 // ShouldCopyUpstreamHeader checks whether a given upstream response header
-// should be copied to the client response. It returns false for Content-Length
-// (managed separately) and X-Oneapi-Request-Id (to preserve the local instance
-// ID). When the upstream header is X-Oneapi-Request-Id, the value is captured
-// into the Gin context for later logging.
+// should be copied to the client response. Only safe functional headers on the
+// allowlist are forwarded so upstream proxy, CDN, and vendor fingerprint
+// headers are never leaked to clients. When the upstream header is
+// X-Oneapi-Request-Id, the value is captured into the Gin context for admin
+// logging and never forwarded.
 func ShouldCopyUpstreamHeader(c *gin.Context, k string, v []string) bool {
-	if strings.EqualFold(k, "Content-Length") {
-		return false
-	}
 	if strings.EqualFold(k, common.RequestIdKey) {
 		if c != nil && len(v) > 0 {
 			c.Set(common.UpstreamRequestIdKey, v[0])
 		}
 		return false
 	}
-	return true
+	return allowedUpstreamResponseHeaders[http.CanonicalHeaderKey(k)]
 }
 
 func IOCopyBytesGracefully(c *gin.Context, src *http.Response, data []byte) {
@@ -54,7 +68,7 @@ func IOCopyBytesGracefully(c *gin.Context, src *http.Response, data []byte) {
 	// For example, Postman will report error, and we cannot check the response at all.
 	if src != nil {
 		for k, v := range src.Header {
-			if !ShouldCopyUpstreamHeader(c, k, v) {
+			if len(v) == 0 || !ShouldCopyUpstreamHeader(c, k, v) {
 				continue
 			}
 			c.Writer.Header().Set(k, v[0])

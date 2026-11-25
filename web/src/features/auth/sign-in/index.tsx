@@ -20,6 +20,7 @@ import { Link, useNavigate, useSearch } from '@tanstack/react-router'
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { SitePopupHost } from '@/components/site-popup-host'
 import { useStatus } from '@/hooks/use-status'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -73,6 +74,7 @@ export function SignIn() {
           className='text-center'
         />
       </div>
+      <SitePopupHost trigger='sign_in' />
     </AuthLayout>
   )
 }

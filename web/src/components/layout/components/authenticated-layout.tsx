@@ -21,6 +21,7 @@ import { useEffect } from 'react'
 
 import { CommandMenu } from '@/components/command-menu'
 import { AnimatedOutlet } from '@/components/page-transition'
+import { SitePopupHost } from '@/components/site-popup-host'
 import { SkipToMain } from '@/components/skip-to-main'
 import {
   SidebarInset,
@@ -108,6 +109,10 @@ export function AuthenticatedLayout(props: AuthenticatedLayoutProps) {
             </SidebarInset>
           </div>
           <CommandMenu />
+          <SitePopupHost
+            trigger='console'
+            suppressed={pathname === '/system-settings/content/popups'}
+          />
         </SidebarProvider>
       </SearchProvider>
     </LayoutProvider>

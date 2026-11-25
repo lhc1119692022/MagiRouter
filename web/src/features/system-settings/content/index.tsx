@@ -27,6 +27,8 @@ import {
 const defaultContentSettings: ContentSettings = {
   'console_setting.official_model_prices': '',
   'console_setting.creation_presets': '',
+  'console_setting.docs_config': '{}',
+  'console_setting.site_popups': '[]',
   'console_setting.api_info': '[]',
   'console_setting.announcements': '[]',
   'console_setting.faq': '[]',

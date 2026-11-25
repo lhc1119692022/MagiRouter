@@ -23,36 +23,52 @@ import { toast } from 'sonner'
 import { handleServerError } from '@/lib/handle-server-error'
 
 import { requestCreemPayment, isApiSuccess } from '../api'
+import { extractDailyTopUpLimitExceeded } from '../lib'
+import type { DailyTopUpLimitStatus } from '../types'
 
 /**
  * Hook for handling Creem payment processing
  */
-export function useCreemPayment() {
+interface UseCreemPaymentOptions {
+  onDailyLimitExceeded?: (dailyLimit: DailyTopUpLimitStatus) => void
+}
+
+export function useCreemPayment(options?: UseCreemPaymentOptions) {
   const [processing, setProcessing] = useState(false)
+  const onDailyLimitExceeded = options?.onDailyLimitExceeded
 
-  const processCreemPayment = useCallback(async (productId: string) => {
-    setProcessing(true)
-    try {
-      const response = await requestCreemPayment({
-        product_id: productId,
-        payment_method: 'creem',
-      })
+  const processCreemPayment = useCallback(
+    async (productId: string) => {
+      setProcessing(true)
+      try {
+        const response = await requestCreemPayment({
+          product_id: productId,
+          payment_method: 'creem',
+        })
 
-      if (isApiSuccess(response) && response.data?.checkout_url) {
-        window.open(response.data.checkout_url, '_blank')
-        toast.success(i18next.t('Redirecting to Creem checkout...'))
-        return true
+        if (isApiSuccess(response) && response.data?.checkout_url) {
+          window.open(response.data.checkout_url, '_blank')
+          toast.success(i18next.t('Redirecting to Creem checkout...'))
+          return true
+        }
+
+        const limitExceeded = extractDailyTopUpLimitExceeded(response)
+        if (limitExceeded && onDailyLimitExceeded) {
+          onDailyLimitExceeded(limitExceeded)
+          return false
+        }
+
+        handleServerError(response, i18next.t('Payment request failed'))
+        return false
+      } catch (_error) {
+        handleServerError(_error, i18next.t('Payment request failed'))
+        return false
+      } finally {
+        setProcessing(false)
       }
-
-      handleServerError(response, i18next.t('Payment request failed'))
-      return false
-    } catch (_error) {
-      handleServerError(_error, i18next.t('Payment request failed'))
-      return false
-    } finally {
-      setProcessing(false)
-    }
-  }, [])
+    },
+    [onDailyLimitExceeded]
+  )
 
   return { processing, processCreemPayment }
 }

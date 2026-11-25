@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { Link } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 
+import { SitePopupHost } from '@/components/site-popup-host'
 import { useStatus } from '@/hooks/use-status'
 
 import { AuthLayout } from '../auth-layout'
@@ -56,6 +57,7 @@ export function SignUp() {
           className='text-center'
         />
       </div>
+      <SitePopupHost trigger='sign_up' />
     </AuthLayout>
   )
 }

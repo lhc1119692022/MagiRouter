@@ -14,6 +14,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { PublicLayout } from '@/components/layout'
+import { Markdown } from '@/components/ui/markdown'
+import { useApiInfo } from '@/features/dashboard/hooks/use-status-data'
 import { BrandFooter } from '@/features/magirouter-home/components/brand-footer'
 import { resolveBaseUrl } from '@/features/magirouter-home/lib/snippets'
 import { usePricingData } from '@/features/pricing/hooks'
@@ -37,6 +39,12 @@ import {
   type DocsModality,
   type DocsModelFamily,
 } from './data/docs-data'
+import {
+  normalizeDocsApiEntries,
+  parseMarkdownSections,
+  resolveDocsExampleModels,
+  useDocsConfig,
+} from './lib/docs-config'
 
 const CODE_TABS: { value: Exclude<CodeLanguage, 'bash'>; label: string }[] = [
   { value: 'curl', label: 'cURL' },
@@ -61,26 +69,46 @@ function escapeHtmlText(raw: string): string {
 }
 
 function buildDocHtml(article: DocsArticle): string {
-  const sectionsHtml = article.sections
-    .map((section) => {
-      const paragraphsHtml = section.paragraphs
-        .map((paragraph) => `<p>${escapeHtmlText(paragraph)}</p>`)
+  const sectionsHtml = article.markdown
+    ? (() => {
+        const parsed = parseMarkdownSections(article.markdown)
+        const blocks: string[] = []
+        if (parsed.intro) {
+          blocks.push(
+            `<section><pre>${escapeHtmlText(parsed.intro)}</pre></section>`
+          )
+        }
+        for (const section of parsed.sections) {
+          blocks.push(
+            `<section><h2>${escapeHtmlText(section.title)}</h2><pre>${escapeHtmlText(section.body)}</pre></section>`
+          )
+        }
+        return blocks.join('\n')
+      })()
+    : article.sections
+        .map((section) => {
+          const paragraphsHtml = section.paragraphs
+            .map((paragraph) => `<p>${escapeHtmlText(paragraph)}</p>`)
+            .join('\n')
+          const tableHtml = section.table
+            ? `<table><thead><tr>${section.table.headers
+                .map((header) => `<th>${escapeHtmlText(header)}</th>`)
+                .join('')}</tr></thead><tbody>${section.table.rows
+                .map(
+                  (row) =>
+                    `<tr>${row
+                      .map((cell) => `<td>${escapeHtmlText(cell)}</td>`)
+                      .join('')}</tr>`
+                )
+                .join('')}</tbody></table>`
+            : ''
+          return `<section><h2>${escapeHtmlText(section.title)}</h2>${paragraphsHtml}${tableHtml}</section>`
+        })
         .join('\n')
-      const tableHtml = section.table
-        ? `<table><thead><tr>${section.table.headers
-            .map((header) => `<th>${escapeHtmlText(header)}</th>`)
-            .join('')}</tr></thead><tbody>${section.table.rows
-            .map(
-              (row) =>
-                `<tr>${row
-                  .map((cell) => `<td>${escapeHtmlText(cell)}</td>`)
-                  .join('')}</tr>`
-            )
-            .join('')}</tbody></table>`
-        : ''
-      return `<section><h2>${escapeHtmlText(section.title)}</h2>${paragraphsHtml}${tableHtml}</section>`
-    })
-    .join('\n')
+
+  const snippetHtml = article.snippets.curl
+    ? `<h2>cURL</h2>\n<pre><code>${escapeHtmlText(article.snippets.curl)}</code></pre>`
+    : ''
 
   return `<!doctype html>
 <html lang="zh-CN">
@@ -90,8 +118,7 @@ function buildDocHtml(article: DocsArticle): string {
 <p>${escapeHtmlText(article.summary)}</p>
 <p><strong>${escapeHtmlText(article.urlLabel)}:</strong> <code>${escapeHtmlText(article.urlValue)}</code></p>
 ${sectionsHtml}
-<h2>cURL</h2>
-<pre><code>${escapeHtmlText(article.snippets.curl)}</code></pre>
+${snippetHtml}
 </body>
 </html>`
 }
@@ -120,6 +147,12 @@ export function DocsCenter() {
   const search = useSearch({ from: '/docs/' })
   const { status } = useStatus()
   const pricing = usePricingData(true)
+  const apiInfo = useApiInfo()
+  const docsConfigQuery = useDocsConfig()
+  const docsConfig = useMemo(
+    () => docsConfigQuery.data ?? {},
+    [docsConfigQuery.data]
+  )
   const baseUrl = resolveBaseUrl(status?.server_address)
 
   const [query, setQuery] = useState('')
@@ -164,24 +197,45 @@ export function DocsCenter() {
     return map
   }, [pricing.models])
 
-  const staticDocs = useMemo(() => buildStaticDocs(baseUrl), [baseUrl])
+  const apiEntries = useMemo(
+    () =>
+      normalizeDocsApiEntries(apiInfo.enabled ? apiInfo.items : [], baseUrl),
+    [apiInfo.enabled, apiInfo.items, baseUrl]
+  )
+
+  const exampleModels = useMemo(
+    () => resolveDocsExampleModels(pricing.models, docsConfig.example_models),
+    [docsConfig.example_models, pricing.models]
+  )
+
+  const modelOverrideMap = useMemo(
+    () =>
+      new Map(
+        (docsConfig.model_overrides ?? []).map((item) => [item.model_id, item])
+      ),
+    [docsConfig.model_overrides]
+  )
+
+  const staticDocs = useMemo(
+    () =>
+      buildStaticDocs(baseUrl, {
+        apiEntries,
+        exampleModels,
+        config: docsConfig,
+      }),
+    [apiEntries, baseUrl, docsConfig, exampleModels]
+  )
 
   // Family tree is derived from the live catalog so the sidebar can never
   // list a model that is not actually callable, or miss a newly added one.
   const modelFamilies = useMemo(
-    () => buildDocsModelFamilies(pricing.models),
-    [pricing.models]
+    () => buildDocsModelFamilies(pricing.models, docsConfig.model_overrides),
+    [docsConfig.model_overrides, pricing.models]
   )
-
-  useEffect(() => {
-    if (modelFamilies.length === 0) return
-    setExpandedFamilies((prev) =>
-      prev.length > 0 ? prev : [modelFamilies[0].name]
-    )
-  }, [modelFamilies])
 
   const modelArticles = useMemo(() => {
     const list: DocsArticle[] = []
+    const recommendedEntry = apiEntries[1]
     for (const family of modelFamilies) {
       for (const modelId of family.models) {
         list.push(
@@ -189,13 +243,17 @@ export function DocsCenter() {
             modelId,
             baseUrl,
             family,
-            liveModelMap.get(modelId)
+            liveModelMap.get(modelId),
+            {
+              recommendedEntry,
+              override: modelOverrideMap.get(modelId),
+            }
           )
         )
       }
     }
     return list
-  }, [baseUrl, liveModelMap, modelFamilies])
+  }, [apiEntries, baseUrl, liveModelMap, modelFamilies, modelOverrideMap])
 
   const orderedArticles = useMemo(() => {
     const list: DocsArticle[] = []
@@ -220,7 +278,14 @@ export function DocsCenter() {
   }, [orderedArticles])
 
   const requestedArticle = search.doc ? articleById.get(search.doc) : undefined
-  const activeArticle = requestedArticle ?? orderedArticles[0] ?? staticDocs[0]
+  const fallbackArticle = useMemo(
+    () =>
+      orderedArticles[0] ??
+      staticDocs[0] ??
+      buildStaticDocs(baseUrl, { apiEntries, exampleModels })[0],
+    [apiEntries, baseUrl, exampleModels, orderedArticles, staticDocs]
+  )
+  const activeArticle = requestedArticle ?? fallbackArticle
   let modelMessage = ''
   if (search.doc?.startsWith('model:')) {
     if (pricing.isLoading) modelMessage = t('Loading')
@@ -239,15 +304,53 @@ export function DocsCenter() {
       ? orderedArticles[activeIndex + 1]
       : null
 
+  const activeFamilyKey =
+    activeArticle.cap && activeArticle.familyName
+      ? `${activeArticle.cap}:${activeArticle.familyName}`
+      : ''
+  const parsedMarkdown = useMemo(
+    () =>
+      activeArticle.markdown
+        ? parseMarkdownSections(activeArticle.markdown)
+        : null,
+    [activeArticle.markdown]
+  )
+  const availableCodeTabs = useMemo(
+    () => CODE_TABS.filter((tab) => Boolean(activeArticle.snippets[tab.value])),
+    [activeArticle.snippets]
+  )
+  const activeCodeTab = availableCodeTabs.some((tab) => tab.value === codeTab)
+    ? codeTab
+    : (availableCodeTabs[0]?.value ?? 'curl')
+  const hasReferenceSection =
+    activeArticle.endpoints.length > 0 ||
+    availableCodeTabs.length > 0 ||
+    Boolean(activeArticle.responseJson)
+
+  const tocItems = useMemo(() => {
+    const sectionItems = parsedMarkdown
+      ? parsedMarkdown.sections.map((section) => ({
+          id: section.id,
+          title: section.title,
+        }))
+      : activeArticle.sections.map((section) => ({
+          id: section.id,
+          title: section.title,
+        }))
+    return hasReferenceSection
+      ? [...sectionItems, { id: 'reference', title: '接口端点与调用示例' }]
+      : sectionItems
+  }, [activeArticle.sections, hasReferenceSection, parsedMarkdown])
+  const firstSectionId = tocItems[0]?.id ?? ''
+
   useEffect(() => {
-    const familyName = activeArticle.familyName
-    if (familyName) {
+    if (activeFamilyKey) {
       setExpandedFamilies((prev) =>
-        prev.includes(familyName) ? prev : [...prev, familyName]
+        prev.includes(activeFamilyKey) ? prev : [...prev, activeFamilyKey]
       )
     }
-    setActiveSectionId(activeArticle.sections[0]?.id ?? 'reference')
-  }, [activeArticle.familyName, activeArticle.id, activeArticle.sections])
+    setActiveSectionId(firstSectionId)
+  }, [activeArticle.id, activeFamilyKey, firstSectionId])
 
   const selectArticle = (id: string) => {
     void navigate({
@@ -257,11 +360,11 @@ export function DocsCenter() {
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
-  const toggleFamily = (familyName: string) => {
+  const toggleFamily = (familyKey: string) => {
     setExpandedFamilies((prev) =>
-      prev.includes(familyName)
-        ? prev.filter((name) => name !== familyName)
-        : [...prev, familyName]
+      prev.includes(familyKey)
+        ? prev.filter((key) => key !== familyKey)
+        : [...prev, familyKey]
     )
   }
 
@@ -317,14 +420,6 @@ export function DocsCenter() {
   }
 
   const isModelDoc = activeArticle.id.startsWith('model:')
-
-  const tocItems = [
-    ...activeArticle.sections.map((section) => ({
-      id: section.id,
-      title: section.title,
-    })),
-    { id: 'reference', title: '接口端点与调用示例' },
-  ]
 
   const scrollToSection = (sectionId: string) => {
     setActiveSectionId(sectionId)
@@ -411,17 +506,16 @@ export function DocsCenter() {
                                 {block.title}
                               </div>
                               {block.families.map((family: DocsModelFamily) => {
+                                const familyKey = `${family.cap}:${family.name}`
                                 const isOpen =
                                   Boolean(normalizedQuery) ||
-                                  expandedFamilies.includes(family.name)
+                                  expandedFamilies.includes(familyKey)
                                 return (
-                                  <div
-                                    key={family.name}
-                                    className='docs-folder'
-                                  >
+                                  <div key={familyKey} className='docs-folder'>
                                     <button
                                       type='button'
-                                      onClick={() => toggleFamily(family.name)}
+                                      aria-expanded={isOpen}
+                                      onClick={() => toggleFamily(familyKey)}
                                       className={cn(
                                         'docs-folder-btn',
                                         isOpen && 'is-open'
@@ -732,172 +826,211 @@ export function DocsCenter() {
                     </div>
                   )}
 
-                  {activeArticle.sections.map((section) => (
-                    <div
-                      key={section.id}
-                      id={`doc-sec-${section.id}`}
-                      className='docs-section-block scroll-mt-24'
-                    >
-                      <h2>{section.title}</h2>
-                      {section.paragraphs.map((paragraph) => (
-                        <p key={`${section.id}-${paragraph.slice(0, 40)}`}>
-                          {paragraph}
-                        </p>
-                      ))}
-                      {section.table && (
-                        <div className='docs-table-wrap'>
-                          <table className='docs-param-table'>
-                            <thead>
-                              <tr>
-                                {section.table.headers.map((header) => (
-                                  <th key={header}>{header}</th>
-                                ))}
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {section.table.rows.map((row) => {
-                                const rowKey = row.join('|')
-                                const headers = section.table?.headers ?? []
-                                return (
-                                  <tr key={rowKey}>
-                                    {row.map((cell, cellIndex) => (
-                                      <td
-                                        key={`${rowKey}-${headers[cellIndex] ?? cell}`}
-                                      >
-                                        {cellIndex === 1 &&
-                                        !cell.includes(' ') ? (
-                                          <code>{cell}</code>
-                                        ) : (
-                                          cell
-                                        )}
-                                      </td>
-                                    ))}
-                                  </tr>
-                                )
-                              })}
-                            </tbody>
-                          </table>
+                  {parsedMarkdown ? (
+                    <>
+                      {parsedMarkdown.intro && (
+                        <div className='docs-section-block'>
+                          <Markdown className='docs-markdown-body'>
+                            {parsedMarkdown.intro}
+                          </Markdown>
                         </div>
                       )}
-                    </div>
-                  ))}
-
-                  <div
-                    id='doc-sec-reference'
-                    className='docs-section-block scroll-mt-24'
-                  >
-                    <h2>接口端点与调用示例</h2>
-                    <div
-                      id='docs-inline-ref-host'
-                      style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '12px',
-                      }}
-                    >
-                      <div className='docs-ref-card'>
-                        <div className='docs-ref-head'>
-                          <span>Endpoints</span>
-                          <span>
-                            {activeArticle.familyName || activeArticle.group}
-                          </span>
+                      {parsedMarkdown.sections.map((section) => (
+                        <div
+                          key={section.id}
+                          id={`doc-sec-${section.id}`}
+                          className='docs-section-block scroll-mt-24'
+                        >
+                          <h2>{section.title}</h2>
+                          {section.body && (
+                            <Markdown className='docs-markdown-body'>
+                              {section.body}
+                            </Markdown>
+                          )}
                         </div>
-                        <div className='docs-ref-endpoints'>
-                          {activeArticle.endpoints.map((endpoint) => {
-                            const epKey = `ep:${endpoint.method}:${endpoint.path}`
-                            return (
-                              <div key={epKey} className='docs-ref-ep-row'>
-                                <span className='docs-ref-ep-main'>
-                                  <span
-                                    className={getMethodBadgeClass(
-                                      endpoint.method
+                      ))}
+                    </>
+                  ) : (
+                    activeArticle.sections.map((section) => (
+                      <div
+                        key={section.id}
+                        id={`doc-sec-${section.id}`}
+                        className='docs-section-block scroll-mt-24'
+                      >
+                        <h2>{section.title}</h2>
+                        {section.paragraphs.map((paragraph) => (
+                          <p key={`${section.id}-${paragraph.slice(0, 40)}`}>
+                            {paragraph}
+                          </p>
+                        ))}
+                        {section.table && (
+                          <div className='docs-table-wrap'>
+                            <table className='docs-param-table'>
+                              <thead>
+                                <tr>
+                                  {section.table.headers.map((header) => (
+                                    <th key={header}>{header}</th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {section.table.rows.map((row) => {
+                                  const rowKey = row.join('|')
+                                  const headers = section.table?.headers ?? []
+                                  return (
+                                    <tr key={rowKey}>
+                                      {row.map((cell, cellIndex) => (
+                                        <td
+                                          key={`${rowKey}-${headers[cellIndex] ?? cell}`}
+                                        >
+                                          {cellIndex === 1 &&
+                                          !cell.includes(' ') ? (
+                                            <code>{cell}</code>
+                                          ) : (
+                                            cell
+                                          )}
+                                        </td>
+                                      ))}
+                                    </tr>
+                                  )
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    ))
+                  )}
+
+                  {hasReferenceSection && (
+                    <div
+                      id='doc-sec-reference'
+                      className='docs-section-block scroll-mt-24'
+                    >
+                      <h2>接口端点与调用示例</h2>
+                      <div
+                        id='docs-inline-ref-host'
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '12px',
+                        }}
+                      >
+                        {activeArticle.endpoints.length > 0 && (
+                          <div className='docs-ref-card'>
+                            <div className='docs-ref-head'>
+                              <span>Endpoints</span>
+                              <span>
+                                {activeArticle.familyName ||
+                                  activeArticle.group}
+                              </span>
+                            </div>
+                            <div className='docs-ref-endpoints'>
+                              {activeArticle.endpoints.map((endpoint) => {
+                                const epKey = `ep:${endpoint.method}:${endpoint.path}`
+                                return (
+                                  <div key={epKey} className='docs-ref-ep-row'>
+                                    <span className='docs-ref-ep-main'>
+                                      <span
+                                        className={getMethodBadgeClass(
+                                          endpoint.method
+                                        )}
+                                      >
+                                        {endpoint.method}
+                                      </span>
+                                      <span className='docs-ref-ep-path'>
+                                        {endpoint.path}
+                                      </span>
+                                    </span>
+                                    <button
+                                      type='button'
+                                      className='docs-ref-copy'
+                                      onClick={() =>
+                                        void copyWithFeedback(
+                                          epKey,
+                                          `${baseUrl}${endpoint.path}`
+                                        )
+                                      }
+                                    >
+                                      {copiedKey === epKey ? '已复制' : '复制'}
+                                    </button>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        {availableCodeTabs.length > 0 && (
+                          <div className='docs-ref-card'>
+                            <div className='docs-ref-head'>
+                              <div className='docs-ref-tabs'>
+                                {availableCodeTabs.map((tab) => (
+                                  <button
+                                    key={tab.value}
+                                    type='button'
+                                    onClick={() => setCodeTab(tab.value)}
+                                    className={cn(
+                                      'docs-ref-tab',
+                                      activeCodeTab === tab.value && 'is-active'
                                     )}
                                   >
-                                    {endpoint.method}
-                                  </span>
-                                  <span className='docs-ref-ep-path'>
-                                    {endpoint.path}
-                                  </span>
-                                </span>
-                                <button
-                                  type='button'
-                                  className='docs-ref-copy'
-                                  onClick={() =>
-                                    void copyWithFeedback(
-                                      epKey,
-                                      `${baseUrl}${endpoint.path}`
-                                    )
-                                  }
-                                >
-                                  {copiedKey === epKey ? '已复制' : '复制'}
-                                </button>
+                                    {tab.label}
+                                  </button>
+                                ))}
                               </div>
-                            )
-                          })}
-                        </div>
-                      </div>
-
-                      <div className='docs-ref-card'>
-                        <div className='docs-ref-head'>
-                          <div className='docs-ref-tabs'>
-                            {CODE_TABS.map((tab) => (
                               <button
-                                key={tab.value}
                                 type='button'
-                                onClick={() => setCodeTab(tab.value)}
-                                className={cn(
-                                  'docs-ref-tab',
-                                  codeTab === tab.value && 'is-active'
-                                )}
+                                className='docs-ref-copy'
+                                onClick={() =>
+                                  void copyWithFeedback(
+                                    'snippet',
+                                    activeArticle.snippets[activeCodeTab]
+                                  )
+                                }
                               >
-                                {tab.label}
+                                {copiedKey === 'snippet'
+                                  ? '已复制'
+                                  : '复制示例'}
                               </button>
-                            ))}
+                            </div>
+                            <HighlightedCode
+                              code={activeArticle.snippets[activeCodeTab]}
+                              language={activeCodeTab}
+                              className='docs-ref-pre'
+                            />
                           </div>
-                          <button
-                            type='button'
-                            className='docs-ref-copy'
-                            onClick={() =>
-                              void copyWithFeedback(
-                                'snippet',
-                                activeArticle.snippets[codeTab]
-                              )
-                            }
-                          >
-                            {copiedKey === 'snippet' ? '已复制' : '复制示例'}
-                          </button>
-                        </div>
-                        <HighlightedCode
-                          code={activeArticle.snippets[codeTab]}
-                          language={codeTab}
-                          className='docs-ref-pre'
-                        />
-                      </div>
+                        )}
 
-                      <div className='docs-ref-card'>
-                        <div className='docs-ref-head'>
-                          <span>{activeArticle.responseTitle}</span>
-                          <button
-                            type='button'
-                            className='docs-ref-copy'
-                            onClick={() =>
-                              void copyWithFeedback(
-                                'response',
-                                activeArticle.responseJson
-                              )
-                            }
-                          >
-                            {copiedKey === 'response' ? '已复制' : '复制响应'}
-                          </button>
-                        </div>
-                        <HighlightedCode
-                          code={activeArticle.responseJson}
-                          language='json'
-                          className='docs-ref-pre'
-                        />
+                        {activeArticle.responseJson && (
+                          <div className='docs-ref-card'>
+                            <div className='docs-ref-head'>
+                              <span>{activeArticle.responseTitle}</span>
+                              <button
+                                type='button'
+                                className='docs-ref-copy'
+                                onClick={() =>
+                                  void copyWithFeedback(
+                                    'response',
+                                    activeArticle.responseJson
+                                  )
+                                }
+                              >
+                                {copiedKey === 'response'
+                                  ? '已复制'
+                                  : '复制响应'}
+                              </button>
+                            </div>
+                            <HighlightedCode
+                              code={activeArticle.responseJson}
+                              language='json'
+                              className='docs-ref-pre'
+                            />
+                          </div>
+                        )}
                       </div>
                     </div>
-                  </div>
+                  )}
 
                   <div className='docs-pager'>
                     {prevArticle ? (

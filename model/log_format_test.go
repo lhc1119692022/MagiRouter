@@ -114,8 +114,9 @@ func TestLegacyLogOtherVisibilityIsRoleSeparated(t *testing.T) {
 		formatUserLogs(logs, 10)
 
 		assert.Equal(t, 11, logs[0].Id)
-		assert.Equal(t, 77, logs[0].ChannelId)
+		assert.Zero(t, logs[0].ChannelId)
 		assert.Empty(t, logs[0].ChannelName)
+		assert.Empty(t, logs[0].UpstreamRequestId)
 		parsed, err := common.StrToMap(logs[0].Other)
 		require.NoError(t, err)
 		assert.Equal(t, "/v1/chat/completions", parsed["request_path"])
@@ -241,4 +242,22 @@ func TestLogFormattingPreservesLargeIntegerLexemes(t *testing.T) {
 		FormatAdminLogs(adminLogs)
 		assert.Equal(t, unprivileged, adminLogs[0].Other)
 	})
+}
+
+func TestFormatUserLogsRedactsChannelAndUpstreamRequestId(t *testing.T) {
+	logs := []*Log{{
+		ChannelId:         42,
+		ChannelName:       "upstream-relay-hk",
+		RequestId:         "local-req-1",
+		UpstreamRequestId: "upstream-req-secret",
+		Other:             `{"status_code":200,"admin_info":{"use_channel":["42"]}}`,
+	}}
+
+	formatUserLogs(logs, 0)
+
+	assert.Zero(t, logs[0].ChannelId)
+	assert.Empty(t, logs[0].ChannelName)
+	assert.Equal(t, "local-req-1", logs[0].RequestId)
+	assert.Empty(t, logs[0].UpstreamRequestId)
+	assert.NotContains(t, logs[0].Other, "admin_info")
 }

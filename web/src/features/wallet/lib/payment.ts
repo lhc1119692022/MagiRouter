@@ -24,7 +24,12 @@ import {
   DEFAULT_PAYMENT_TYPE,
   DEFAULT_MIN_TOPUP,
 } from '../constants'
-import type { PaymentMethod, PresetAmount, TopupInfo } from '../types'
+import type {
+  DailyTopUpLimitStatus,
+  PaymentMethod,
+  PresetAmount,
+  TopupInfo,
+} from '../types'
 
 // ============================================================================
 // Payment Processing Functions
@@ -44,6 +49,50 @@ export function getPaymentErrorTranslation(
     return undefined
   }
   return getServerMessage(body)
+}
+
+export function extractDailyTopUpLimitExceeded(
+  response: unknown
+): DailyTopUpLimitStatus | null {
+  if (!response || typeof response !== 'object') {
+    return null
+  }
+  const body = response as Record<string, unknown>
+  if (body.code !== 'daily_topup_limit_exceeded') {
+    return null
+  }
+  const rawLimit = body.daily_limit
+  if (!rawLimit || typeof rawLimit !== 'object') {
+    return null
+  }
+  const limitObj = rawLimit as Record<string, unknown>
+  return {
+    enabled: Boolean(limitObj.enabled),
+    limit: Number(limitObj.limit) || 0,
+    used: Number(limitObj.used) || 0,
+    pending: Number(limitObj.pending) || 0,
+    remaining: Number(limitObj.remaining) || 0,
+    exempt: Boolean(limitObj.exempt),
+    contact_wechat_qrcode:
+      typeof limitObj.contact_wechat_qrcode === 'string'
+        ? limitObj.contact_wechat_qrcode
+        : '',
+    contact_note:
+      typeof limitObj.contact_note === 'string' ? limitObj.contact_note : '',
+  }
+}
+
+export function isAmountOverDailyLimit(
+  dailyLimit: DailyTopUpLimitStatus | null | undefined,
+  paymentMoney: number
+): boolean {
+  if (!dailyLimit || !dailyLimit.enabled || dailyLimit.exempt) {
+    return false
+  }
+  if (dailyLimit.remaining <= 0) {
+    return true
+  }
+  return paymentMoney > 0 && paymentMoney - dailyLimit.remaining > 0.0001
 }
 
 /**

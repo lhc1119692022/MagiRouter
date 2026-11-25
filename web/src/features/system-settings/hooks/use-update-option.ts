@@ -73,6 +73,9 @@ export function useUpdateOption() {
         if (variables.key === 'console_setting.official_model_prices') {
           void queryClient.invalidateQueries({ queryKey: ['pricing'] })
         }
+        if (variables.key === 'console_setting.docs_config') {
+          void queryClient.invalidateQueries({ queryKey: ['docs-config'] })
+        }
 
         // If updating frontend-display-related config, also refresh status
         if (variables.key.startsWith('console_setting.uptime_kuma_')) {

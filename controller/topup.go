@@ -97,6 +97,12 @@ func GetTopUpInfo(c *gin.Context) {
 		}
 	}
 
+	userId := c.GetInt("id")
+	dailyLimit, dailyLimitErr := model.GetUserDailyTopUpStatus(userId, time.Now())
+	if dailyLimitErr != nil {
+		logger.LogWarn(c.Request.Context(), common.LogText("failed to query user daily top-up limit status user_id=%d error=%q", userId, dailyLimitErr.Error()))
+	}
+
 	data := gin.H{
 		"enable_online_topup":              isEpayTopUpEnabled(),
 		"enable_stripe_topup":              isStripeTopUpEnabled(),
@@ -121,6 +127,7 @@ func GetTopUpInfo(c *gin.Context) {
 		"amount_options":          operation_setting.GetPaymentSetting().AmountOptions,
 		"discount":                operation_setting.GetPaymentSetting().AmountDiscount,
 		"topup_link":              common.TopUpLink,
+		"daily_limit":             dailyLimit,
 	}
 	common.ApiSuccess(c, data)
 }
@@ -264,6 +271,33 @@ func paymentError(c *gin.Context, err error) {
 	c.JSON(http.StatusOK, body)
 }
 
+func formatDailyLimitMoney(amount float64) string {
+	return decimal.NewFromFloat(amount).Round(2).String()
+}
+
+func handleDailyTopUpLimitError(c *gin.Context, err error) bool {
+	var limitErr *model.DailyTopUpLimitExceededError
+	if !errors.As(err, &limitErr) {
+		return false
+	}
+	msg := common.NewMessage(
+		"Daily top-up limit of {{limit}} exceeded (remaining today: {{remaining}}). Please scan the WeChat QR code to contact us for larger top-ups.",
+		map[string]any{
+			"limit":     formatDailyLimitMoney(limitErr.Status.Limit),
+			"remaining": formatDailyLimitMoney(limitErr.Status.Remaining),
+		},
+	)
+	body := gin.H{
+		"message":     "error",
+		"code":        "daily_topup_limit_exceeded",
+		"data":        msg.Error(),
+		"daily_limit": limitErr.Status,
+	}
+	maps.Copy(body, msg.Fields())
+	c.JSON(http.StatusOK, body)
+	return true
+}
+
 func rejectInvalidCreditedQuota(c *gin.Context, userId int, quota decimal.Decimal) bool {
 	creditedQuota, err := validateCreditedQuota(quota)
 	if err == nil {
@@ -330,6 +364,32 @@ func RequestEpay(c *gin.Context) {
 		paymentError(c, common.NewMessage("Payment information has not been configured by administrator"))
 		return
 	}
+	amount := req.Amount
+	if operation_setting.GetQuotaDisplayType() == operation_setting.QuotaDisplayTypeTokens {
+		dAmount := decimal.NewFromInt(int64(amount))
+		dQuotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
+		amount = dAmount.Div(dQuotaPerUnit).IntPart()
+	}
+	now := time.Now()
+	topUp := &model.TopUp{
+		UserId:          id,
+		Amount:          amount,
+		Money:           payMoney,
+		TradeNo:         tradeNo,
+		PaymentMethod:   req.PaymentMethod,
+		PaymentProvider: model.PaymentProviderEpay,
+		CreateTime:      now.Unix(),
+		Status:          common.TopUpStatusPending,
+	}
+	err = model.CreateTopUpWithDailyLimit(topUp, payMoney, now)
+	if err != nil {
+		if handleDailyTopUpLimitError(c, err) {
+			return
+		}
+		logger.LogError(c.Request.Context(), common.LogText("Epay failed to create top-up order user_id=%d trade_no=%s payment_method=%s amount=%d error=%q", id, tradeNo, req.PaymentMethod, req.Amount, err.Error()))
+		paymentError(c, common.NewMessage("Failed to create order"))
+		return
+	}
 	uri, params, err := client.Purchase(&epay.PurchaseArgs{
 		Type:           req.PaymentMethod,
 		ServiceTradeNo: tradeNo,
@@ -340,30 +400,9 @@ func RequestEpay(c *gin.Context) {
 		ReturnUrl:      returnUrl,
 	})
 	if err != nil {
+		_ = model.UpdatePendingTopUpStatus(tradeNo, model.PaymentProviderEpay, common.TopUpStatusFailed)
 		logger.LogError(c.Request.Context(), common.LogText("Epay failed to start payment user_id=%d trade_no=%s payment_method=%s amount=%d error=%q", id, tradeNo, req.PaymentMethod, req.Amount, err.Error()))
 		paymentError(c, common.NewMessage("Failed to start payment"))
-		return
-	}
-	amount := req.Amount
-	if operation_setting.GetQuotaDisplayType() == operation_setting.QuotaDisplayTypeTokens {
-		dAmount := decimal.NewFromInt(int64(amount))
-		dQuotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
-		amount = dAmount.Div(dQuotaPerUnit).IntPart()
-	}
-	topUp := &model.TopUp{
-		UserId:          id,
-		Amount:          amount,
-		Money:           payMoney,
-		TradeNo:         tradeNo,
-		PaymentMethod:   req.PaymentMethod,
-		PaymentProvider: model.PaymentProviderEpay,
-		CreateTime:      time.Now().Unix(),
-		Status:          common.TopUpStatusPending,
-	}
-	err = topUp.Insert()
-	if err != nil {
-		logger.LogError(c.Request.Context(), common.LogText("Epay failed to create top-up order user_id=%d trade_no=%s payment_method=%s amount=%d error=%q", id, tradeNo, req.PaymentMethod, req.Amount, err.Error()))
-		paymentError(c, common.NewMessage("Failed to create order"))
 		return
 	}
 	logger.LogInfo(c.Request.Context(), common.LogText("Epay top-up order created user_id=%d trade_no=%s payment_method=%s amount=%d money=%.2f uri=%q params=%q", id, tradeNo, req.PaymentMethod, req.Amount, payMoney, uri, common.GetJsonString(params)))
