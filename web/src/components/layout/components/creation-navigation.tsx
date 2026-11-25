@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
+import { isStandaloneAppRedirect } from '@/features/auth/lib/auth-redirect'
 import { useStatus } from '@/hooks/use-status'
 import { parseHeaderNavModulesFromStatus } from '@/lib/nav-modules'
 import { cn } from '@/lib/utils'
@@ -66,7 +67,17 @@ export function CreationNavigation({
     status ?? null
   )
   const destination = (href?: string) =>
-    href ? { ...link, href, external: href.startsWith('https://') } : undefined
+    href
+      ? {
+          ...link,
+          href,
+          requiresAuth: isStandaloneAppRedirect(href)
+            ? false
+            : link.requiresAuth,
+          external:
+            href.startsWith('https://') || isStandaloneAppRedirect(href),
+        }
+      : undefined
   const [open, setOpen] = useState(false)
   const wrap = useRef<HTMLDivElement>(null)
   const trigger = useRef<HTMLButtonElement>(null)

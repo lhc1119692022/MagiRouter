@@ -136,6 +136,18 @@ test('publishing a studio destination enables only that item and rejects unsafe 
   ).toBeDisabled()
 })
 
+test('a same-origin standalone canvas subpath opens directly without routing through new-api SPA auth', async () => {
+  const user = userEvent.setup()
+  await renderHeader({
+    canvasUrl: '/canvas/',
+  })
+  await user.click(screen.getByRole('button', { name: 'AI Studio' }))
+  const menu = within(screen.getByRole('group', { name: 'AI Studio menu' }))
+  const canvasLink = menu.getByRole('link', { name: /Canvas/ })
+  expect(canvasLink).toHaveAttribute('href', '/canvas/')
+  expect(canvasLink).toHaveAttribute('target', '_blank')
+})
+
 test('a touch opens the navigation; Tab remains inside and Escape restores focus to the trigger', async () => {
   const user = userEvent.setup()
   await renderHeader({ docs: true })

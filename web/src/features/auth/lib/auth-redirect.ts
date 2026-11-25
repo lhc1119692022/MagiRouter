@@ -19,6 +19,16 @@ For commercial licensing, please contact support@quantumnous.com
 import type { AuthUser } from '@/stores/auth-store'
 
 const allowedRedirectProtocols = new Set(['http:', 'https:'])
+const standaloneAppRedirectPrefixes = ['/canvas', '/magicanva', '/workbench']
+
+export function isStandaloneAppRedirect(path: string): boolean {
+  const trimmed = path.trim()
+  if (!trimmed.startsWith('/')) return false
+  const pathname = trimmed.split(/[?#]/, 1)[0] ?? ''
+  return standaloneAppRedirectPrefixes.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
+  )
+}
 
 export function getSavedLanguage(user: AuthUser): string | undefined {
   if (typeof user.language === 'string') {

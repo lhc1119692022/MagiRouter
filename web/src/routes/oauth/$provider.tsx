@@ -33,7 +33,10 @@ import {
   OAUTH_POPUP_RESULT_MESSAGE,
 } from '@/features/auth/constants'
 import { useAuthRedirect } from '@/features/auth/hooks/use-auth-redirect'
-import { sanitizeAuthRedirect } from '@/features/auth/lib/auth-redirect'
+import {
+  isStandaloneAppRedirect,
+  sanitizeAuthRedirect,
+} from '@/features/auth/lib/auth-redirect'
 import {
   parseTelegramBindCallback,
   postTelegramBindResult,
@@ -194,6 +197,10 @@ function OAuthCallback() {
     const safeNavigate = (target: unknown, fallback = '/dashboard') => {
       const href =
         sanitizeAuthRedirect(target, window.location.origin) ?? fallback
+      if (isStandaloneAppRedirect(href)) {
+        window.location.replace(href)
+        return
+      }
       void navigate({ href, replace: true })
     }
 

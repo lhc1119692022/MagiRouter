@@ -20,7 +20,11 @@ import { describe, expect, test } from 'vitest'
 
 import type { AuthUser } from '@/stores/auth-store'
 
-import { getSavedLanguage, sanitizeAuthRedirect } from './auth-redirect'
+import {
+  getSavedLanguage,
+  isStandaloneAppRedirect,
+  sanitizeAuthRedirect,
+} from './auth-redirect'
 
 const origin = 'https://dashboard.example.com'
 
@@ -57,6 +61,20 @@ describe('authentication redirect validation', () => {
   test('rejects invalid or non-HTTP application origins', () => {
     expect(sanitizeAuthRedirect('/dashboard', 'not-an-origin')).toBe(null)
     expect(sanitizeAuthRedirect('/dashboard', 'file:///tmp/app')).toBe(null)
+  })
+
+  test('detects same-origin standalone sub-app redirects requiring full reload', () => {
+    expect(isStandaloneAppRedirect('/canvas')).toBe(true)
+    expect(isStandaloneAppRedirect('/canvas/')).toBe(true)
+    expect(isStandaloneAppRedirect('/canvas/#/flows/abc?node=1')).toBe(true)
+    expect(isStandaloneAppRedirect('/magicanva/#/dashboard')).toBe(true)
+    expect(isStandaloneAppRedirect('/workbench/project-1')).toBe(true)
+    expect(isStandaloneAppRedirect('/dashboard')).toBe(false)
+    expect(isStandaloneAppRedirect('/create/canvas')).toBe(false)
+    expect(isStandaloneAppRedirect('/canvas-preview')).toBe(false)
+    expect(isStandaloneAppRedirect('https://magirouter.com/canvas/')).toBe(
+      false
+    )
   })
 })
 

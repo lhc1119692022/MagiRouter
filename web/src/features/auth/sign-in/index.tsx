@@ -26,7 +26,10 @@ import { useAuthStore } from '@/stores/auth-store'
 
 import { AuthLayout } from '../auth-layout'
 import { TermsFooter } from '../components/terms-footer'
-import { sanitizeAuthRedirect } from '../lib/auth-redirect'
+import {
+  isStandaloneAppRedirect,
+  sanitizeAuthRedirect,
+} from '../lib/auth-redirect'
 import { UserAuthForm } from './components/user-auth-form'
 
 export function SignIn() {
@@ -41,6 +44,10 @@ export function SignIn() {
     if (!userId) return
     const target =
       sanitizeAuthRedirect(redirect, window.location.origin) ?? '/dashboard'
+    if (isStandaloneAppRedirect(target)) {
+      window.location.replace(target)
+      return
+    }
     void navigate({ href: target, replace: true })
   }, [navigate, redirect, userId])
 
