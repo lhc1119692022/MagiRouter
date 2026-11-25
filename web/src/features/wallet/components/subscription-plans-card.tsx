@@ -16,7 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Crown, RefreshCw, Sparkles, Check } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
+import { Check, RefreshCw, Settings2 } from 'lucide-react'
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -27,7 +28,6 @@ import {
   textColorMap,
 } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
 import {
   Select,
@@ -39,7 +39,6 @@ import {
 } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
-import { TitledCard } from '@/components/ui/titled-card'
 import {
   Tooltip,
   TooltipContent,
@@ -58,8 +57,10 @@ import type {
 } from '@/features/subscriptions/types'
 import { formatQuota } from '@/lib/format'
 import { handleServerError } from '@/lib/handle-server-error'
+import { ROLE } from '@/lib/roles'
 import { requireServerSuccess } from '@/lib/server-error-message'
 import { cn } from '@/lib/utils'
+import { useAuthStore } from '@/stores/auth-store'
 
 import type { PaymentMethod, TopupInfo } from '../types'
 
@@ -101,6 +102,8 @@ export function SubscriptionPlansCard({
   onPurchaseSuccess,
 }: SubscriptionPlansCardProps) {
   const { t } = useTranslation()
+  const userRole = useAuthStore((state) => state.auth.user?.role)
+  const isAdmin = (userRole ?? 0) >= ROLE.ADMIN
 
   const [plans, setPlans] = useState<PlanRecord[]>([])
   const [activeSubscriptions, setActiveSubscriptions] = useState<
@@ -121,10 +124,28 @@ export function SubscriptionPlansCard({
   const enableCreem = !!topupInfo?.enable_creem_topup
   const enableWaffoPancake = !!topupInfo?.enable_waffo_pancake_topup
   const enableOnlineTopUp = !!topupInfo?.enable_online_topup
+  const complianceConfirmed = topupInfo?.payment_compliance_confirmed === true
   const epayMethods = useMemo(
     () => getEpayMethods(topupInfo?.pay_methods),
     [topupInfo?.pay_methods]
   )
+  const activeGateways = useMemo(() => {
+    const list: string[] = [t('Wallet Balance')]
+    if (enableOnlineTopUp && epayMethods.length > 0) {
+      list.push(t('Online Payment'))
+    }
+    if (enableStripe) list.push('Stripe')
+    if (enableCreem) list.push('Creem')
+    if (enableWaffoPancake) list.push('Waffo Pancake')
+    return list
+  }, [
+    enableCreem,
+    enableOnlineTopUp,
+    enableStripe,
+    enableWaffoPancake,
+    epayMethods.length,
+    t,
+  ])
 
   const fetchPlans = useCallback(async () => {
     try {
@@ -238,41 +259,137 @@ export function SubscriptionPlansCard({
 
   if (loading) {
     return (
-      <Card data-card-hover='false' className='gap-0 overflow-hidden py-0'>
-        <CardHeader className='border-b p-3 !pb-3 sm:p-5 sm:!pb-5'>
+      <div className='el-console-card'>
+        <div className='el-console-card-head'>
           <Skeleton className='h-6 w-32' />
-        </CardHeader>
-        <CardContent className='space-y-4 p-3 sm:p-5'>
-          <Skeleton className='h-20 w-full' />
-          <div className='grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3'>
-            {['first', 'second', 'third'].map((key) => (
-              <Skeleton key={key} className='h-48 w-full' />
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+        </div>
+        <Skeleton className='h-14 w-full rounded-xl' />
+        <div className='sub-plan-grid'>
+          {['first', 'second'].map((key) => (
+            <Skeleton key={key} className='h-44 w-full rounded-[14px]' />
+          ))}
+        </div>
+      </div>
     )
   }
 
   if (plans.length === 0 && !hasAny) {
-    return null
+    return (
+      <section className='el-console-card'>
+        <div className='el-console-card-head'>
+          <div>
+            <h2 className='el-console-card-title'>{t('Subscription Plans')}</h2>
+            <p className='el-console-card-sub'>
+              {t(
+                'Periodic quota plans with automatic fallback to wallet balance.'
+              )}
+            </p>
+          </div>
+          {isAdmin ? (
+            <Link to='/subscriptions' className='el-btn el-btn-xs el-btn-white'>
+              <Settings2 className='h-3.5 w-3.5' />
+              {t('Configure Plans')}
+            </Link>
+          ) : null}
+        </div>
+
+        <div className='sub-plan-card'>
+          <div className='flex flex-wrap items-center gap-2'>
+            <span className='el-pill'>{t('Coming Soon')}</span>
+            <span className='console-head-meta'>
+              {t('No active subscription plans published yet')}
+            </span>
+          </div>
+          <div className='text-sm font-medium text-[var(--ink-strong)]'>
+            {t('Subscription plans are being prepared')}
+          </div>
+          <p className='m-0 text-xs leading-relaxed text-[var(--ink-muted)]'>
+            {t(
+              'Not listed yet during initial launch. Use pay-as-you-go top-up on the left for instant access.'
+            )}
+          </p>
+          <ul className='m-0 space-y-1.5 border-t border-[var(--divider-color)] pt-3 text-xs text-[var(--ink-body)]'>
+            <li className='flex items-center gap-2'>
+              <Check className='size-3.5 shrink-0 text-[var(--ink-muted)]' />
+              <span>{t('Periodic Quota Reset')}</span>
+            </li>
+            <li className='flex items-center gap-2'>
+              <Check className='size-3.5 shrink-0 text-[var(--ink-muted)]' />
+              <span>{t('Dedicated Group Privileges')}</span>
+            </li>
+            <li className='flex items-center gap-2'>
+              <Check className='size-3.5 shrink-0 text-[var(--ink-muted)]' />
+              <span>{t('Flexible Deduction Priority')}</span>
+            </li>
+          </ul>
+        </div>
+
+        {isAdmin && (
+          <div className='billing-note-strip space-y-2.5'>
+            <div className='flex flex-wrap items-center justify-between gap-2'>
+              <span className='font-medium text-[var(--ink-strong)]'>
+                {t('Admin Subscription Pipeline Status')}
+              </span>
+              <StatusBadge
+                variant={complianceConfirmed ? 'success' : 'warning'}
+                copyable={false}
+              >
+                {complianceConfirmed
+                  ? t('Compliance Confirmed')
+                  : t('Compliance Pending')}
+              </StatusBadge>
+            </div>
+            <div className='text-xs'>
+              {t('Connected checkout channels: {{channels}}', {
+                channels: activeGateways.join(' / '),
+              })}
+            </div>
+            <div className='flex flex-wrap gap-2'>
+              <Link
+                to='/subscriptions'
+                className='el-btn el-btn-xs el-btn-primary'
+              >
+                {t('Open Subscription Manager')}
+              </Link>
+              <Link
+                to='/system-settings/billing/$section'
+                params={{ section: 'subscriptions' }}
+                className='el-btn el-btn-xs el-btn-white'
+              >
+                {t('Billing Settings Panel')}
+              </Link>
+            </div>
+          </div>
+        )}
+      </section>
+    )
   }
 
   return (
     <>
-      <TitledCard
-        title={t('Subscription Plans')}
-        description={t('Subscribe to a plan for model access')}
-        icon={<Crown className='h-4 w-4' />}
-        iconTone='warning'
-        disableHoverEffect
-        contentClassName='space-y-4 sm:space-y-5'
-      >
+      <section className='el-console-card'>
+        <div className='el-console-card-head'>
+          <div>
+            <h2 className='el-console-card-title'>{t('Subscription Plans')}</h2>
+            <p className='el-console-card-sub'>
+              {t(
+                'Periodic quota plans with automatic fallback to wallet balance.'
+              )}
+            </p>
+          </div>
+          {isAdmin ? (
+            <Link to='/subscriptions' className='el-btn el-btn-xs el-btn-white'>
+              <Settings2 className='h-3.5 w-3.5' />
+              {t('Configure Plans')}
+            </Link>
+          ) : null}
+        </div>
+
         {/* My subscriptions & billing preference */}
-        <div className='rounded-xl border p-3 sm:p-4'>
-          <div className='flex flex-wrap items-center justify-between gap-2.5 sm:gap-3'>
+        <div className='billing-note-strip'>
+          <div className='flex flex-wrap items-center justify-between gap-2'>
             <div className='flex min-w-0 flex-wrap items-center gap-2'>
-              <span className='text-sm font-medium'>
+              <span className='text-[13px] font-medium text-[var(--ink-strong)]'>
                 {t('My Subscriptions')}
               </span>
               <span className='flex items-center gap-1.5 text-xs font-medium'>
@@ -381,7 +498,7 @@ export function SubscriptionPlansCard({
           </div>
 
           {disablePref && isSubPref && (
-            <p className='text-muted-foreground mt-2 text-xs'>
+            <p className='mt-2 mb-0 text-xs text-[var(--ink-muted)]'>
               {billingPreference === 'subscription_only'
                 ? t(
                     'Preference saved as {{pref}}, but no active subscription. Requests will be rejected.',
@@ -514,17 +631,11 @@ export function SubscriptionPlansCard({
               </div>
             </>
           )}
-
-          {!hasAny && (
-            <p className='text-muted-foreground mt-2 text-xs'>
-              {t('Subscribe to a plan for model access')}
-            </p>
-          )}
         </div>
 
         {/* Available plans grid */}
         {plans.length > 0 ? (
-          <div className='grid grid-cols-1 gap-3 2xl:grid-cols-2 2xl:gap-4'>
+          <div className='sub-plan-grid'>
             {plans.map((p, index) => {
               const plan = p?.plan
               if (!plan) return null
@@ -550,80 +661,75 @@ export function SubscriptionPlansCard({
               ].filter(Boolean) as string[]
 
               return (
-                <Card
+                <div
                   key={plan.id}
-                  data-card-hover='false'
-                  className={cn(isPopular && 'border-primary/70 shadow-sm')}
+                  className={cn('sub-plan-card', isPopular && 'is-current')}
                 >
-                  <CardContent className='flex h-full flex-col p-3.5 sm:p-4'>
-                    <div className='mb-2 flex items-start justify-between gap-3'>
-                      <div className='min-w-0'>
-                        <h4 className='truncate font-semibold'>
-                          {plan.title || t('Subscription Plans')}
-                        </h4>
-                        {plan.subtitle && (
-                          <p className='text-muted-foreground truncate text-xs'>
-                            {plan.subtitle}
-                          </p>
-                        )}
-                      </div>
-                      {isPopular && (
-                        <StatusBadge
-                          variant='info'
-                          copyable={false}
-                          className='shrink-0'
-                        >
-                          <Sparkles className='h-3 w-3' />
-                          {t('Recommended')}
-                        </StatusBadge>
+                  <div className='flex items-start justify-between gap-2'>
+                    <div className='min-w-0'>
+                      <h4 className='m-0 truncate text-sm font-medium text-[var(--ink-strong)]'>
+                        {plan.title || t('Subscription Plans')}
+                      </h4>
+                      {plan.subtitle && (
+                        <p className='m-0 mt-0.5 truncate text-xs text-[var(--ink-muted)]'>
+                          {plan.subtitle}
+                        </p>
                       )}
                     </div>
-
-                    <div className='py-2'>
-                      <span className='text-primary text-2xl font-bold'>
-                        ${price}
+                    {isPopular && (
+                      <span className='el-pill shrink-0'>
+                        {t('Recommended')}
                       </span>
-                    </div>
-
-                    <div className='flex-1 space-y-1.5 pb-3'>
-                      {benefits.map((label) => (
-                        <div
-                          key={label}
-                          className='text-muted-foreground flex items-center gap-2 text-xs'
-                        >
-                          <Check className='text-primary h-3 w-3 shrink-0' />
-                          <span>{label}</span>
-                        </div>
-                      ))}
-                    </div>
-
-                    <Separator className='mb-3' />
-
-                    {reached ? (
-                      <Tooltip>
-                        <TooltipTrigger render={<div />}>
-                          <Button variant='outline' className='w-full' disabled>
-                            {t('Limit Reached')}
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          {t('Purchase limit reached')} ({count}/{limit})
-                        </TooltipContent>
-                      </Tooltip>
-                    ) : (
-                      <Button
-                        variant='outline'
-                        className='w-full'
-                        onClick={() => {
-                          setSelectedPlan(p)
-                          setPurchaseOpen(true)
-                        }}
-                      >
-                        {t('Subscribe Now')}
-                      </Button>
                     )}
-                  </CardContent>
-                </Card>
+                  </div>
+
+                  <div className='font-mono text-2xl font-medium text-[var(--ink-strong)] tabular-nums'>
+                    ${price}
+                  </div>
+
+                  <div className='flex-1 space-y-1.5'>
+                    {benefits.map((label) => (
+                      <div
+                        key={label}
+                        className='flex items-center gap-2 text-xs text-[var(--ink-muted)]'
+                      >
+                        <Check className='size-3 shrink-0 text-[var(--ink-strong)]' />
+                        <span>{label}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {reached ? (
+                    <Tooltip>
+                      <TooltipTrigger render={<div />}>
+                        <button
+                          type='button'
+                          className='el-btn el-btn-sm el-btn-white w-full opacity-50'
+                          disabled
+                        >
+                          {t('Limit Reached')}
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        {t('Purchase limit reached')} ({count}/{limit})
+                      </TooltipContent>
+                    </Tooltip>
+                  ) : (
+                    <button
+                      type='button'
+                      className={cn(
+                        'el-btn el-btn-sm w-full',
+                        isPopular ? 'el-btn-primary' : 'el-btn-white'
+                      )}
+                      onClick={() => {
+                        setSelectedPlan(p)
+                        setPurchaseOpen(true)
+                      }}
+                    >
+                      {t('Subscribe Now')}
+                    </button>
+                  )}
+                </div>
               )
             })}
           </div>
@@ -632,7 +738,7 @@ export function SubscriptionPlansCard({
             {t('No plans available')}
           </p>
         )}
-      </TitledCard>
+      </section>
 
       <SubscriptionPurchaseDialog
         open={purchaseOpen}

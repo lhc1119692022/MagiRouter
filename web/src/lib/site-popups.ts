@@ -1,3 +1,8 @@
+import {
+  CONSOLE_DISCLAIMER_POPUP_MARKDOWN,
+  SIGN_UP_COMPLIANCE_POPUP_MARKDOWN,
+} from './platform-legal-templates'
+
 export const SITE_POPUPS_OPTION_KEY = 'console_setting.site_popups'
 
 export const SITE_POPUP_TRIGGERS = [
@@ -41,7 +46,7 @@ const VALID_TONES = new Set<string>(SITE_POPUP_TONES)
 const DAILY_MS = 24 * 60 * 60 * 1000
 
 export const SITE_POPUP_PRESETS: Record<
-  'sign_up_qq' | 'console_disclaimer',
+  'sign_up_qq' | 'sign_up_compliance' | 'console_disclaimer',
   SitePopupItem
 > = {
   sign_up_qq: {
@@ -50,11 +55,24 @@ export const SITE_POPUP_PRESETS: Record<
     trigger: 'sign_up',
     title: '新站启航 · 注册提示',
     content:
-      '欢迎体验本站！目前新站启航阶段仅支持 **QQ 邮箱（`@qq.com`）** 注册账号，后续将逐步开放更多邮箱服务商。请使用有效 QQ 邮箱完成验证。',
+      '欢迎体验本站！目前新站启航阶段仅支持 **QQ 邮箱（`@qq.com`）** 注册账号，后续将逐步开放更多邮箱服务商。请使用有效 QQ 邮箱完成验证；若收件箱未收到验证码邮件，请检查**垃圾箱 / 广告邮件**。',
     tone: 'info',
     confirm_text: '我知道了',
     frequency: 'session',
     require_confirm: false,
+    version: 1,
+  },
+  sign_up_compliance: {
+    id: 'sign-up-compliance',
+    enabled: true,
+    trigger: 'sign_up',
+    title: '注册须知与平台合规协议',
+    content: SIGN_UP_COMPLIANCE_POPUP_MARKDOWN,
+    tone: 'warning',
+    confirm_text: '同意并继续注册',
+    frequency: 'once',
+    require_confirm: true,
+    checkbox_label: '我已阅读并同意平台服务协议与合规使用要求',
     version: 1,
   },
   console_disclaimer: {
@@ -62,8 +80,7 @@ export const SITE_POPUP_PRESETS: Record<
     enabled: true,
     trigger: 'console',
     title: '控制台使用须知与免责声明',
-    content:
-      '1. 本平台仅提供合规的 AI 模型接口中转与路由调度服务，请严格遵守所在地区法律法规与上游模型厂商的使用规范。\n2. 请妥善保管您的 API 密钥，切勿泄露或用于任何违法违规用途；因密钥泄露或违规调用产生的费用及法律责任由账户持有人自行承担。\n3. 上游模型服务可能存在限流、波动或临时维护，请做好业务侧重试与容灾处理。',
+    content: CONSOLE_DISCLAIMER_POPUP_MARKDOWN,
     tone: 'warning',
     confirm_text: '同意并进入控制台',
     frequency: 'once',

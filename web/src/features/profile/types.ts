@@ -243,6 +243,12 @@ export interface CheckinStats {
 export interface CheckinStatusResponse {
   /** Whether check-in feature is enabled */
   enabled: boolean
+  /** Whether the current user's group is allowed to check in */
+  eligible?: boolean
+  /** Current user's group */
+  user_group?: string
+  /** Configured groups allowed to check in (empty means all groups) */
+  allowed_groups?: string[]
   /** Check-in statistics */
   stats: CheckinStats
 }

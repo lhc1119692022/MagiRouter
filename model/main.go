@@ -379,6 +379,9 @@ func migrateDB() error {
 		&ViolationEvent{},
 		&ViolationAccountCase{},
 		&ViolationAllowlist{},
+		&MediaDailyTraffic{},
+		&MediaTrafficOverride{},
+		&MediaRelayObject{},
 	)
 	if err != nil {
 		return err

@@ -14,6 +14,7 @@ type ConsoleSetting struct {
 	Announcements        string `json:"announcements"`         // 系统公告 (JSON 数组字符串)
 	FAQ                  string `json:"faq"`                   // 常见问题 (JSON 数组字符串)
 	ApiInfoEnabled       bool   `json:"api_info_enabled"`      // 是否启用 API 信息面板
+	AuthDomainsEnabled   bool   `json:"auth_domains_enabled"`  // 是否在登录注册页展示官方访问域名
 	UptimeKumaEnabled    bool   `json:"uptime_kuma_enabled"`   // 是否启用 Uptime Kuma 面板
 	AnnouncementsEnabled bool   `json:"announcements_enabled"` // 是否启用系统公告面板
 	FAQEnabled           bool   `json:"faq_enabled"`           // 是否启用常见问答面板
@@ -32,6 +33,7 @@ var defaultConsoleSetting = ConsoleSetting{
 	Announcements:        "",
 	FAQ:                  "",
 	ApiInfoEnabled:       true,
+	AuthDomainsEnabled:   false,
 	UptimeKumaEnabled:    true,
 	AnnouncementsEnabled: true,
 	FAQEnabled:           true,

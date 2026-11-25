@@ -84,7 +84,7 @@ export function Hero(props: HeroProps) {
   const [activeCapability, setActiveCapability] =
     useState<CapabilityKey>('text')
   const [copiedUrl, setCopiedUrl] = useState(false)
-  const endpoint = `${props.baseUrl}/v1`
+  const endpoint = props.baseUrl.replace(/\/+$/, '').replace(/\/v1$/i, '')
 
   const modelByName = useMemo(() => {
     const map = new Map<string, PricingModel>()

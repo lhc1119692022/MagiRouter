@@ -53,8 +53,26 @@ func HasCheckedInToday(userId int) (bool, error) {
 // SQLite 不支持嵌套事务，使用顺序操作 + 手动回滚
 func UserCheckin(userId int) (*Checkin, error) {
 	setting := operation_setting.GetCheckinSetting()
-	if !setting.Enabled {
+	common.OptionMapRWMutex.RLock()
+	enabled := setting.Enabled
+	minQuota := setting.MinQuota
+	maxQuota := setting.MaxQuota
+	allowedGroups := setting.NormalizedAllowedGroups()
+	common.OptionMapRWMutex.RUnlock()
+
+	if !enabled {
 		return nil, common.NewMessage("Check-in feature is not enabled")
+	}
+
+	if len(allowedGroups) > 0 {
+		userGroup, err := GetUserGroup(userId, true)
+		if err != nil {
+			return nil, err
+		}
+		groupChecker := &operation_setting.CheckinSetting{AllowedGroups: allowedGroups}
+		if !groupChecker.IsGroupAllowed(userGroup) {
+			return nil, common.NewMessage("Check-in is not available for your user group")
+		}
 	}
 
 	// 检查今天是否已签到
@@ -67,9 +85,9 @@ func UserCheckin(userId int) (*Checkin, error) {
 	}
 
 	// 计算随机额度奖励
-	quotaAwarded := setting.MinQuota
-	if setting.MaxQuota > setting.MinQuota {
-		quotaAwarded = setting.MinQuota + rand.Intn(setting.MaxQuota-setting.MinQuota+1)
+	quotaAwarded := minQuota
+	if maxQuota > minQuota {
+		quotaAwarded = minQuota + rand.Intn(maxQuota-minQuota+1)
 	}
 
 	today := time.Now().Format("2006-01-02")

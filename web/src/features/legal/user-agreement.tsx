@@ -18,6 +18,8 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useTranslation } from 'react-i18next'
 
+import { DEFAULT_USER_AGREEMENT_MARKDOWN } from '@/lib/platform-legal-templates'
+
 import { getUserAgreement } from './api'
 import { LegalDocument } from './legal-document'
 
@@ -28,6 +30,7 @@ export function UserAgreement() {
       title={t('User Agreement')}
       queryKey='user-agreement'
       fetchDocument={getUserAgreement}
+      fallbackContent={DEFAULT_USER_AGREEMENT_MARKDOWN}
       emptyMessage={t(
         'The administrator has not configured a user agreement yet.'
       )}

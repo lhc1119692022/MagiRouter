@@ -321,5 +321,5 @@ export function resolveBaseUrl(serverAddress: unknown): string {
   const configured =
     typeof serverAddress === 'string' ? serverAddress.trim() : ''
   const origin = configured || window.location.origin
-  return origin.replace(/\/+$/, '')
+  return origin.replace(/\/+$/, '').replace(/\/v1$/i, '')
 }

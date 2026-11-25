@@ -14,11 +14,20 @@ import (
 // GetCheckinStatus 获取用户签到状态和历史记录
 func GetCheckinStatus(c *gin.Context) {
 	setting := operation_setting.GetCheckinSetting()
-	if !setting.Enabled {
+	common.OptionMapRWMutex.RLock()
+	enabled := setting.Enabled
+	minQuota := setting.MinQuota
+	maxQuota := setting.MaxQuota
+	allowedGroups := setting.NormalizedAllowedGroups()
+	common.OptionMapRWMutex.RUnlock()
+	if !enabled {
 		common.ApiErrorT(c, "Check-in feature is not enabled")
 		return
 	}
 	userId := c.GetInt("id")
+	userGroup, _ := model.GetUserGroup(userId, false)
+	groupChecker := &operation_setting.CheckinSetting{AllowedGroups: allowedGroups}
+	eligible := groupChecker.IsGroupAllowed(userGroup)
 	// 获取月份参数，默认为当前月份
 	month := c.DefaultQuery("month", time.Now().Format("2006-01"))
 
@@ -31,10 +40,13 @@ func GetCheckinStatus(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data": gin.H{
-			"enabled":   setting.Enabled,
-			"min_quota": setting.MinQuota,
-			"max_quota": setting.MaxQuota,
-			"stats":     stats,
+			"enabled":        enabled,
+			"eligible":       eligible,
+			"user_group":     userGroup,
+			"allowed_groups": allowedGroups,
+			"min_quota":      minQuota,
+			"max_quota":      maxQuota,
+			"stats":          stats,
 		},
 	})
 }

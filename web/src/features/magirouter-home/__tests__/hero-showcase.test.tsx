@@ -76,6 +76,12 @@ test('links featured models directly to Playground and appends inline explore-al
     await screen.findByRole('heading', { name: '定制语言模型舞台' })
   ).toBeVisible()
 
+  const baseUrlButton = screen.getByRole('button', {
+    name: '复制 Base URL https://api.example.test',
+  })
+  expect(baseUrlButton).toHaveTextContent('https://api.example.test')
+  expect(baseUrlButton).not.toHaveTextContent('/v1')
+
   const bgImage = document.querySelector('img.showcase-media-bg')
   expect(bgImage).toHaveAttribute(
     'src',

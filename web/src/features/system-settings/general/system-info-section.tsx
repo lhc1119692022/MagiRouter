@@ -21,6 +21,7 @@ import type { Resolver } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import * as z from 'zod'
 
+import { Button } from '@/components/ui/button'
 import {
   Form,
   FormControl,
@@ -32,6 +33,10 @@ import {
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import {
+  DEFAULT_PRIVACY_POLICY_MARKDOWN,
+  DEFAULT_USER_AGREEMENT_MARKDOWN,
+} from '@/lib/platform-legal-templates'
 
 import { FormDirtyIndicator } from '../components/form-dirty-indicator'
 import { FormNavigationGuard } from '../components/form-navigation-guard'
@@ -334,7 +339,23 @@ export function SystemInfoSection({ defaultValues }: SystemInfoSectionProps) {
                 name='legal.user_agreement'
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{t('User Agreement')}</FormLabel>
+                    <div className='flex items-center justify-between gap-2'>
+                      <FormLabel>{t('User Agreement')}</FormLabel>
+                      <Button
+                        type='button'
+                        variant='outline'
+                        size='sm'
+                        onClick={() =>
+                          form.setValue(
+                            'legal.user_agreement',
+                            DEFAULT_USER_AGREEMENT_MARKDOWN,
+                            { shouldDirty: true }
+                          )
+                        }
+                      >
+                        {t('Fill recommended template')}
+                      </Button>
+                    </div>
                     <FormControl>
                       <Textarea
                         placeholder={t(
@@ -359,7 +380,23 @@ export function SystemInfoSection({ defaultValues }: SystemInfoSectionProps) {
                 name='legal.privacy_policy'
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{t('Privacy Policy')}</FormLabel>
+                    <div className='flex items-center justify-between gap-2'>
+                      <FormLabel>{t('Privacy Policy')}</FormLabel>
+                      <Button
+                        type='button'
+                        variant='outline'
+                        size='sm'
+                        onClick={() =>
+                          form.setValue(
+                            'legal.privacy_policy',
+                            DEFAULT_PRIVACY_POLICY_MARKDOWN,
+                            { shouldDirty: true }
+                          )
+                        }
+                      >
+                        {t('Fill recommended template')}
+                      </Button>
+                    </div>
                     <FormControl>
                       <Textarea
                         placeholder={t(

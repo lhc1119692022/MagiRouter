@@ -37,9 +37,19 @@ export function Profile() {
   const { t } = useTranslation()
   const { profile, loading, refreshProfile } = useProfile()
   const { status } = useStatus()
-  const permissions = useAuthStore((s) => s.auth.user?.permissions)
+  const authUser = useAuthStore((s) => s.auth.user)
+  const permissions = authUser?.permissions
 
-  const checkinEnabled = status?.checkin_enabled === true
+  const globalCheckinEnabled = status?.checkin_enabled === true
+  const allowedCheckinGroups = Array.isArray(status?.checkin_allowed_groups)
+    ? status.checkin_allowed_groups
+    : []
+  const currentUserGroup =
+    profile?.group?.trim() || authUser?.group?.trim() || 'default'
+  const checkinEnabled =
+    globalCheckinEnabled &&
+    (allowedCheckinGroups.length === 0 ||
+      allowedCheckinGroups.includes(currentUserGroup))
   const turnstileEnabled = !!(
     status?.turnstile_check && status?.turnstile_site_key
   )

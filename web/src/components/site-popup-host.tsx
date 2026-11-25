@@ -69,7 +69,7 @@ export function SitePopupDialog({
         if (requireConfirm) return
         onDismiss()
       }}
-      contentClassName='sm:max-w-lg'
+      contentClassName='sm:max-w-xl'
       title={
         <span className='flex items-center gap-2.5'>
           <PopupToneIcon tone={popup.tone} />
@@ -93,7 +93,7 @@ export function SitePopupDialog({
       }
     >
       <div className='grid gap-4'>
-        <div className='text-foreground/90 text-sm [&_ol]:list-decimal [&_ol]:space-y-1.5 [&_ol]:pl-5 [&_p]:leading-relaxed [&_ul]:list-disc [&_ul]:space-y-1.5 [&_ul]:pl-5'>
+        <div className='text-foreground/90 max-h-[58vh] overflow-y-auto pr-1 text-sm [&_a]:font-medium [&_a]:underline [&_a]:underline-offset-2 [&_ol]:list-decimal [&_ol]:space-y-2 [&_ol]:pl-5 [&_p]:leading-relaxed [&_ul]:list-disc [&_ul]:space-y-1.5 [&_ul]:pl-5'>
           <Markdown>{popup.content}</Markdown>
         </div>
         {needsCheckbox && (

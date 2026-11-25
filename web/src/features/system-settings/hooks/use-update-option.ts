@@ -83,6 +83,8 @@ export function useUpdateOption() {
         }
         if (
           variables.key.startsWith('console_setting.') ||
+          variables.key.startsWith('checkin_setting.') ||
+          variables.key.startsWith('legal.') ||
           STATUS_RELATED_KEYS.has(variables.key)
         ) {
           queryClient.invalidateQueries({ queryKey: ['status'] })

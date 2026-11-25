@@ -73,6 +73,14 @@ var accessTokenExemptRoutes = []string{
 	// API key authentication (TokenAuthReadOnly).
 	"GET /api/usage/token/",
 	"GET /api/log/token",
+
+	// API key authenticated canvas media relay endpoints.
+	"GET /api/media/account",
+	"GET /api/media/pricing",
+	"GET /api/media/quota",
+	"POST /api/media/presign",
+	"POST /api/media/complete",
+	"POST /api/media/abort",
 }
 
 // accessTokenHelperRoutes are declared through handlePermissionRoute outside

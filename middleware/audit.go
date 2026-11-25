@@ -51,6 +51,11 @@ var auditRouteActions = map[string]string{
 	"POST /api/option/payment_compliance":       "option.payment_compliance",
 	"POST /api/option/rest_model_ratio":         "option.reset_ratio",
 	"DELETE /api/option/channel_affinity_cache": "option.clear_affinity_cache",
+	"PUT /api/option/media_relay":               "option.media_relay_update",
+	"POST /api/option/media_relay/test":         "option.media_relay_test",
+	"PUT /api/option/media_relay/overrides/:user_id":     "option.media_relay_override_upsert",
+	"DELETE /api/option/media_relay/overrides/:user_id":  "option.media_relay_override_delete",
+	"POST /api/option/media_relay/usage/:user_id/reset":  "option.media_relay_usage_reset",
 
 	// 自定义 OAuth（root）
 	"POST /api/custom-oauth-provider/":      "custom_oauth.create",

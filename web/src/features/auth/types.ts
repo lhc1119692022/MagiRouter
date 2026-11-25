@@ -138,6 +138,15 @@ export interface SystemStatus {
     home_showcase?: Record<string, unknown>
     pricing_banner?: unknown[]
     site_popups?: unknown[]
+    auth_domains_enabled?: boolean
+    auth_domains?: Array<{
+      id?: number
+      url?: string
+      route?: string
+      description?: string
+      color?: string
+    }>
+    checkin_allowed_groups?: string[]
     [key: string]: unknown
   }
   // Allow direct access to common properties
@@ -188,6 +197,15 @@ export interface SystemStatus {
   home_showcase?: Record<string, unknown>
   pricing_banner?: unknown[]
   site_popups?: unknown[]
+  auth_domains_enabled?: boolean
+  auth_domains?: Array<{
+    id?: number
+    url?: string
+    route?: string
+    description?: string
+    color?: string
+  }>
+  checkin_allowed_groups?: string[]
   log_export_enabled?: boolean
   log_max_range_days?: number
   quota_remind_enabled?: boolean

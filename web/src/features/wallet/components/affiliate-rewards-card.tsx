@@ -16,14 +16,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Share2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { CopyButton } from '@/components/copy-button'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
-import { IconBadge } from '@/components/ui/icon-badge'
-import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { formatQuota } from '@/lib/format'
 
@@ -47,38 +42,33 @@ export function AffiliateRewardsCard({
   const { t } = useTranslation()
   if (loading) {
     return (
-      <Card data-card-hover='false' className='bg-muted/20 py-0'>
-        <CardContent className='grid gap-4 p-3 sm:p-4 lg:grid-cols-[minmax(220px,1fr)_minmax(220px,0.72fr)_minmax(320px,1.15fr)] lg:items-center'>
+      <div className='el-console-card'>
+        <div className='grid gap-4 lg:grid-cols-[minmax(220px,1fr)_minmax(220px,0.72fr)_minmax(320px,1.15fr)] lg:items-center'>
           <div>
             <Skeleton className='h-5 w-32' />
             <Skeleton className='mt-2 h-4 w-48' />
           </div>
           <Skeleton className='h-14 rounded-lg' />
           <Skeleton className='h-10 rounded-lg' />
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     )
   }
 
   const hasRewards = (user?.aff_quota ?? 0) > 0
 
   return (
-    <Card data-card-hover='false' className='bg-muted/20 py-0'>
-      <CardContent className='grid gap-3 p-3 sm:gap-4 sm:p-4 lg:grid-cols-[minmax(200px,1fr)_minmax(180px,0.65fr)_minmax(280px,1fr)] lg:items-center'>
-        <div className='flex min-w-0 items-center gap-2.5'>
-          <IconBadge tone='chart-3'>
-            <Share2 />
-          </IconBadge>
-          <div className='min-w-0'>
-            <h3 className='truncate text-sm font-semibold'>
-              {t('Referral Program')}
-            </h3>
-            <p className='text-muted-foreground line-clamp-1 text-xs'>
-              {t(
-                'Earn rewards when users join through your referral link. Transfer accumulated rewards to your balance anytime.'
-              )}
-            </p>
-          </div>
+    <section className='el-console-card'>
+      <div className='grid gap-3 sm:gap-4 lg:grid-cols-[minmax(200px,1fr)_minmax(180px,0.65fr)_minmax(280px,1fr)] lg:items-center'>
+        <div className='min-w-0'>
+          <h3 className='el-console-card-title truncate'>
+            {t('Referral Program')}
+          </h3>
+          <p className='el-console-card-sub line-clamp-1'>
+            {t(
+              'Share your link to earn rewards and transfer them to your balance anytime.'
+            )}
+          </p>
         </div>
 
         <div className='grid grid-cols-3 gap-1.5 text-center'>
@@ -88,10 +78,10 @@ export function AffiliateRewardsCard({
             [t('Invites'), String(user?.aff_count ?? 0)],
           ].map(([label, value]) => (
             <div key={label}>
-              <div className='text-muted-foreground truncate text-[10px] font-medium tracking-wider uppercase'>
+              <div className='truncate text-[11px] font-medium text-[var(--ink-muted)]'>
                 {label}
               </div>
-              <div className='mt-0.5 truncate text-sm font-semibold tabular-nums'>
+              <div className='mt-0.5 truncate font-mono text-sm font-medium text-[var(--ink-strong)] tabular-nums'>
                 {value}
               </div>
             </div>
@@ -99,11 +89,9 @@ export function AffiliateRewardsCard({
         </div>
 
         <div className='flex items-center gap-2'>
-          <Input
-            value={affiliateLink}
-            readOnly
-            className='border-muted bg-background/70 h-9 min-w-0 flex-1 font-mono text-xs'
-          />
+          <div className='billing-input-box h-9 min-w-0'>
+            <input value={affiliateLink} readOnly className='text-xs' />
+          </div>
           <CopyButton
             value={affiliateLink}
             variant='outline'
@@ -113,14 +101,14 @@ export function AffiliateRewardsCard({
             aria-label={t('Copy referral link')}
           />
           {hasRewards && (
-            <Button
+            <button
+              type='button'
               onClick={onTransfer}
               disabled={!complianceConfirmed}
-              className='h-9 shrink-0 px-3'
-              size='sm'
+              className='el-btn el-btn-sm el-btn-primary shrink-0'
             >
               {t('Transfer to Balance')}
-            </Button>
+            </button>
           )}
         </div>
         {!complianceConfirmed ? (
@@ -130,7 +118,7 @@ export function AffiliateRewardsCard({
             )}
           </p>
         ) : null}
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   )
 }

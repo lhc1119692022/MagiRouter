@@ -235,29 +235,6 @@ export function buildDocsModelFamilies(
     )
 }
 
-export const OFFICIAL_DOMAINS = [
-  {
-    label: '主站直连',
-    host: 'https://magirouter.com',
-    scene: '默认主力入口，全协议兼容',
-  },
-  {
-    label: '国内优化',
-    host: 'https://cn.magirouter.com',
-    scene: '国内网络与桌面客户端低延迟直连',
-  },
-  {
-    label: '全球加速',
-    host: 'https://cf.magirouter.com',
-    scene: '海外服务器与云端 Agent 边缘接入',
-  },
-  {
-    label: '美国备用',
-    host: 'https://us.magirouter.com',
-    scene: '高并发容灾与美西节点直连',
-  },
-] as const
-
 export interface BuildStaticDocsOptions {
   apiEntries?: DocsEntryEndpoint[]
   exampleModels?: ResolvedDocsExampleModels

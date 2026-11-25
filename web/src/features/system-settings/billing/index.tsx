@@ -115,6 +115,9 @@ const defaultBillingSettings: BillingSettings = {
   'checkin_setting.enabled': false,
   'checkin_setting.min_quota': 1000,
   'checkin_setting.max_quota': 10000,
+  'checkin_setting.allowed_groups': '[]',
+  'checkin_setting.topup_upgrade_enabled': false,
+  'checkin_setting.topup_upgrade_rules': '[]',
 }
 
 export function BillingSettings() {

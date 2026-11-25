@@ -241,6 +241,14 @@ func SetApiRouter(router *gin.Engine) {
 			optionRoute.POST("/waffo-pancake/save", controller.SaveWaffoPancake)
 			optionRoute.POST("/waffo-pancake/subscription-product", controller.CreateWaffoPancakeSubscriptionProduct)
 			optionRoute.GET("/waffo-pancake/subscription-product-options", controller.ListWaffoPancakeSubscriptionProductOptions)
+			optionRoute.GET("/media_relay", controller.GetMediaRelayConfig)
+			optionRoute.PUT("/media_relay", controller.UpdateMediaRelayConfig)
+			optionRoute.POST("/media_relay/test", controller.TestMediaRelayConfig)
+			optionRoute.GET("/media_relay/overrides", controller.ListMediaTrafficOverrides)
+			optionRoute.GET("/media_relay/users/:user_id", controller.GetAdminUserMediaTraffic)
+			optionRoute.PUT("/media_relay/overrides/:user_id", controller.UpsertMediaTrafficOverride)
+			optionRoute.DELETE("/media_relay/overrides/:user_id", controller.DeleteMediaTrafficOverride)
+			optionRoute.POST("/media_relay/usage/:user_id/reset", controller.ResetAdminUserMediaDailyTraffic)
 		}
 
 		// Custom OAuth provider management (root only)
@@ -323,6 +331,17 @@ func SetApiRouter(router *gin.Engine) {
 			{
 				tokenUsageRoute.GET("/", controller.GetTokenUsage)
 			}
+		}
+
+		mediaRoute := apiRouter.Group("/media")
+		mediaRoute.Use(middleware.CORS(), middleware.CriticalRateLimit())
+		{
+			mediaRoute.GET("/account", middleware.TokenAuthReadOnly(), controller.GetMediaAccount)
+			mediaRoute.GET("/pricing", middleware.TokenAuthReadOnly(), controller.GetMediaPricing)
+			mediaRoute.GET("/quota", middleware.TokenAuthReadOnly(), controller.GetMediaQuota)
+			mediaRoute.POST("/presign", middleware.TokenAuth(), controller.PresignMediaUpload)
+			mediaRoute.POST("/complete", middleware.TokenAuth(), controller.CompleteMediaUpload)
+			mediaRoute.POST("/abort", middleware.TokenAuth(), controller.AbortMediaUpload)
 		}
 
 		redemptionRoute := apiRouter.Group("/redemption")

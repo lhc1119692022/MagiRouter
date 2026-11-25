@@ -83,6 +83,7 @@ const CONTENT_SECTIONS = [
     build: (settings: ContentSettings) => (
       <ApiInfoSection
         enabled={settings['console_setting.api_info_enabled']}
+        authDomainsEnabled={settings['console_setting.auth_domains_enabled']}
         data={settings['console_setting.api_info']}
       />
     ),

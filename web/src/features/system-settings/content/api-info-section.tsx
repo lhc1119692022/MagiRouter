@@ -77,6 +77,7 @@ type ApiInfo = {
 
 type ApiInfoSectionProps = {
   enabled: boolean
+  authDomainsEnabled?: boolean
   data: string
 }
 
@@ -132,7 +133,11 @@ function parseApiInfoList(data: string): ApiInfo[] {
   }
 }
 
-export function ApiInfoSection({ enabled, data }: ApiInfoSectionProps) {
+export function ApiInfoSection({
+  enabled,
+  authDomainsEnabled = false,
+  data,
+}: ApiInfoSectionProps) {
   const { t } = useTranslation()
   const updateOption = useUpdateOption()
   const apiInfoSchema = createApiInfoSchema(t)
@@ -141,6 +146,9 @@ export function ApiInfoSection({ enabled, data }: ApiInfoSectionProps) {
     null
   )
   const [isEnabledDraft, setIsEnabledDraft] = useState<boolean | null>(null)
+  const [isAuthDomainsDraft, setIsAuthDomainsDraft] = useState<boolean | null>(
+    null
+  )
   const [selectedIds, setSelectedIds] = useState<number[]>([])
   const [showDialog, setShowDialog] = useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
@@ -148,6 +156,7 @@ export function ApiInfoSection({ enabled, data }: ApiInfoSectionProps) {
   const [deleteTarget, setDeleteTarget] = useState<'single' | 'batch'>('single')
   const apiInfoList = draftApiInfoList ?? parsedApiInfoList
   const isEnabled = isEnabledDraft ?? enabled
+  const isAuthDomainsEnabled = isAuthDomainsDraft ?? authDomainsEnabled
   const hasChanges = draftApiInfoList !== null
 
   const form = useForm<ApiInfoFormValues>({
@@ -167,6 +176,19 @@ export function ApiInfoSection({ enabled, data }: ApiInfoSectionProps) {
         value: checked,
       })
       setIsEnabledDraft(checked)
+      toast.success(t('Setting saved'))
+    } catch (error) {
+      handleServerError(error, t('Failed to update setting'))
+    }
+  }
+
+  const handleToggleAuthDomains = async (checked: boolean) => {
+    try {
+      await updateOption.mutateAsync({
+        key: 'console_setting.auth_domains_enabled',
+        value: checked,
+      })
+      setIsAuthDomainsDraft(checked)
       toast.success(t('Setting saved'))
     } catch (error) {
       handleServerError(error, t('Failed to update setting'))
@@ -313,6 +335,20 @@ export function ApiInfoSection({ enabled, data }: ApiInfoSectionProps) {
             checked={isEnabled}
             onCheckedChange={handleToggleEnabled}
             label={t('Enabled')}
+            className='py-0'
+          />
+        </div>
+
+        <div className='bg-muted/30 rounded-lg border px-4 py-3'>
+          <SettingsSwitchField
+            controlId='auth-page-domains-enabled'
+            disabled={updateOption.isPending}
+            checked={isAuthDomainsEnabled}
+            onCheckedChange={handleToggleAuthDomains}
+            label={t('Show official domains on sign-in and sign-up pages')}
+            description={t(
+              'When enabled, displays the configured addresses below on sign-in and sign-up pages. When disabled, shows the platform highlights, QQ email registration note, and spam folder hint instead.'
+            )}
             className='py-0'
           />
         </div>

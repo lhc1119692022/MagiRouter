@@ -100,6 +100,7 @@ func GetStatus(c *gin.Context) {
 
 		// 面板启用开关
 		"api_info_enabled":      cs.ApiInfoEnabled,
+		"auth_domains_enabled":  cs.AuthDomainsEnabled,
 		"uptime_kuma_enabled":   cs.UptimeKumaEnabled,
 		"announcements_enabled": cs.AnnouncementsEnabled,
 		"faq_enabled":           cs.FAQEnabled,
@@ -123,6 +124,7 @@ func GetStatus(c *gin.Context) {
 		"user_agreement_enabled":      legalSetting.UserAgreement != "",
 		"privacy_policy_enabled":      legalSetting.PrivacyPolicy != "",
 		"checkin_enabled":             operation_setting.GetCheckinSetting().Enabled,
+		"checkin_allowed_groups":      operation_setting.GetCheckinSetting().NormalizedAllowedGroups(),
 		"log_export_enabled":          operation_setting.GetLogSetting().UserExportEnabled,
 		"log_max_range_days":          operation_setting.GetLogSetting().MaxRangeDays,
 		"quota_remind_enabled":        common.QuotaRemindEnabled,
@@ -132,6 +134,9 @@ func GetStatus(c *gin.Context) {
 	// 根据启用状态注入可选内容
 	if cs.ApiInfoEnabled {
 		data["api_info"] = console_setting.GetApiInfo()
+	}
+	if cs.AuthDomainsEnabled {
+		data["auth_domains"] = console_setting.GetApiInfo()
 	}
 	if cs.AnnouncementsEnabled {
 		data["announcements"] = console_setting.GetAnnouncements()

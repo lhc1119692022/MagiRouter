@@ -25,6 +25,7 @@ import { PaymentSettingsSection } from '../integrations/payment-settings-section
 import { RatioSettingsCard } from '../models/ratio-settings-card'
 import type { BillingSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
+import { SubscriptionSettingsSection } from './subscription-settings-section'
 
 const getModelDefaults = (settings: BillingSettings) => ({
   ModelPrice: settings.ModelPrice,
@@ -203,6 +204,35 @@ const BILLING_SECTIONS = [
     ),
   },
   {
+    id: 'subscriptions',
+    titleKey: 'Subscription Plans',
+    build: (settings: BillingSettings) => {
+      const complianceConfirmed =
+        (settings['payment_setting.compliance_confirmed'] ?? false) &&
+        settings['payment_setting.compliance_terms_version'] === 'v1'
+      const hasEpay = Boolean(
+        settings.PayAddress?.trim() &&
+        settings.EpayId?.trim() &&
+        settings.EpayKey?.trim()
+      )
+      const hasStripe = Boolean(settings.StripeApiSecret?.trim())
+      const hasCreem = Boolean(settings.CreemApiKey?.trim())
+      const hasWaffoPancake = Boolean(
+        settings.WaffoPancakeMerchantID?.trim() &&
+        settings.WaffoPancakeStoreID?.trim()
+      )
+      return (
+        <SubscriptionSettingsSection
+          complianceConfirmed={complianceConfirmed}
+          hasEpay={hasEpay}
+          hasStripe={hasStripe}
+          hasCreem={hasCreem}
+          hasWaffoPancake={hasWaffoPancake}
+        />
+      )
+    },
+  },
+  {
     id: 'checkin',
     titleKey: 'Check-in Rewards',
     build: (settings: BillingSettings) => (
@@ -211,6 +241,10 @@ const BILLING_SECTIONS = [
           enabled: settings['checkin_setting.enabled'],
           minQuota: settings['checkin_setting.min_quota'],
           maxQuota: settings['checkin_setting.max_quota'],
+          allowedGroups: settings['checkin_setting.allowed_groups'],
+          topUpUpgradeEnabled:
+            settings['checkin_setting.topup_upgrade_enabled'],
+          topUpUpgradeRules: settings['checkin_setting.topup_upgrade_rules'],
         }}
       />
     ),

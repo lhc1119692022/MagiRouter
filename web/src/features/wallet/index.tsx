@@ -1,5 +1,3 @@
-import { Link } from '@tanstack/react-router'
-import { ArrowRight, ReceiptText, ShieldCheck, WalletCards } from 'lucide-react'
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -18,15 +16,18 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useNavigate } from '@tanstack/react-router'
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { SectionPageLayout } from '@/components/layout'
+import { useIsAdmin } from '@/hooks/use-admin'
 import { useStatus } from '@/hooks/use-status'
 import { useSystemConfig } from '@/hooks/use-system-config'
 import { getSelf } from '@/lib/api'
 
 import { AffiliateRewardsCard } from './components/affiliate-rewards-card'
+import { BillingHistoryCard } from './components/billing-history-card'
 import { BillingHistoryDialog } from './components/dialogs/billing-history-dialog'
 import { CreemConfirmDialog } from './components/dialogs/creem-confirm-dialog'
 import { DailyLimitContactDialog } from './components/dialogs/daily-limit-contact-dialog'
@@ -66,8 +67,11 @@ interface WalletProps {
 
 export function Wallet(props: WalletProps) {
   const { t } = useTranslation()
+  const navigate = useNavigate()
+  const isAdmin = useIsAdmin()
   const [user, setUser] = useState<UserWalletData | null>(null)
   const [userLoading, setUserLoading] = useState(true)
+  const [historyRefreshKey, setHistoryRefreshKey] = useState(0)
   const [topupAmount, setTopupAmount] = useState(0)
   const [selectedPreset, setSelectedPreset] = useState<number | null>(null)
   const [selectedPaymentMethod, setSelectedPaymentMethod] =
@@ -83,7 +87,6 @@ export function Wallet(props: WalletProps) {
   const [creemDialogOpen, setCreemDialogOpen] = useState(false)
   const [selectedCreemProduct, setSelectedCreemProduct] =
     useState<CreemProduct | null>(null)
-  const [showSubscriptionPanel, setShowSubscriptionPanel] = useState(true)
   const [dailyLimitOverride, setDailyLimitOverride] =
     useState<DailyTopUpLimitStatus | null>(null)
   const [dailyLimitDialogOpen, setDailyLimitDialogOpen] = useState(false)
@@ -277,6 +280,7 @@ export function Wallet(props: WalletProps) {
 
     if (success) {
       setConfirmDialogOpen(false)
+      setHistoryRefreshKey((prev) => prev + 1)
       await Promise.all([fetchUser(), refetchTopupInfo()])
     }
   }
@@ -319,6 +323,7 @@ export function Wallet(props: WalletProps) {
     if (success) {
       setCreemDialogOpen(false)
       setSelectedCreemProduct(null)
+      setHistoryRefreshKey((prev) => prev + 1)
       await Promise.all([fetchUser(), refetchTopupInfo()])
     }
   }
@@ -358,13 +363,6 @@ export function Wallet(props: WalletProps) {
     return topupInfo?.discount?.[topupAmount] || DEFAULT_DISCOUNT_RATE
   }, [topupInfo, topupAmount])
 
-  const handleSubscriptionAvailabilityChange = useCallback(
-    (available: boolean) => {
-      setShowSubscriptionPanel(available)
-    },
-    []
-  )
-
   return (
     <>
       <SectionPageLayout>
@@ -372,68 +370,10 @@ export function Wallet(props: WalletProps) {
           {t('Top up & billing')}
         </SectionPageLayout.Title>
         <SectionPageLayout.Content>
-          <div className='mx-auto flex w-full max-w-7xl flex-col gap-4 sm:gap-5'>
+          <div className='flex w-full flex-col gap-4 sm:gap-5'>
             <WalletStatsCard user={user} loading={userLoading} />
 
-            <div className='border-border bg-card grid grid-cols-1 gap-3 rounded-2xl border p-4 sm:grid-cols-3'>
-              <div className='flex items-start gap-2.5'>
-                <WalletCards className='text-foreground mt-0.5 size-4 shrink-0' />
-                <div className='min-w-0'>
-                  <p className='text-foreground text-xs font-semibold'>
-                    {t('1:1 USD Exchange Billing')}
-                  </p>
-                  <p className='text-muted-foreground mt-0.5 text-[11.5px] leading-relaxed'>
-                    {t(
-                      'Transparent pay-as-you-go balance with no hidden markup or mandatory monthly fee.'
-                    )}
-                  </p>
-                </div>
-              </div>
-              <div className='flex items-start gap-2.5'>
-                <ShieldCheck className='text-foreground mt-0.5 size-4 shrink-0' />
-                <div className='min-w-0'>
-                  <p className='text-foreground text-xs font-semibold'>
-                    {t('Zero Charge on Failed Calls')}
-                  </p>
-                  <p className='text-muted-foreground mt-0.5 text-[11.5px] leading-relaxed'>
-                    {t(
-                      'Upstream timeouts or failed tasks do not deduct balance; async failures auto-refund.'
-                    )}
-                  </p>
-                </div>
-              </div>
-              <div className='flex items-start justify-between gap-2'>
-                <div className='flex items-start gap-2.5'>
-                  <ReceiptText className='text-foreground mt-0.5 size-4 shrink-0' />
-                  <div className='min-w-0'>
-                    <p className='text-foreground text-xs font-semibold'>
-                      {t('Per-Request Audit Trail')}
-                    </p>
-                    <p className='text-muted-foreground mt-0.5 text-[11.5px] leading-relaxed'>
-                      {t(
-                        'Every deduction is traceable by model, token count, and routing multiplier.'
-                      )}
-                    </p>
-                  </div>
-                </div>
-                <Link
-                  to='/docs'
-                  search={{ doc: 'billing-model' }}
-                  className='text-muted-foreground hover:text-foreground inline-flex shrink-0 items-center gap-1 text-[11.5px] font-medium'
-                >
-                  <span>{t('Billing rules')}</span>
-                  <ArrowRight className='size-3' />
-                </Link>
-              </div>
-            </div>
-
-            <div
-              className={
-                showSubscriptionPanel
-                  ? 'grid gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)] xl:items-start'
-                  : 'grid gap-4'
-              }
-            >
+            <div className='console-sub-grid-2 is-billing'>
               <div id='wallet-add-funds' className='scroll-mt-4'>
                 <RechargeFormCard
                   topupInfo={topupInfo}
@@ -467,16 +407,33 @@ export function Wallet(props: WalletProps) {
                   }
                   dailyLimit={effectiveDailyLimit}
                   onOpenDailyLimitContact={handleOpenDailyLimitContact}
+                  onOpenPaymentSettings={
+                    isAdmin
+                      ? () => {
+                          void navigate({
+                            to: '/system-settings/billing/$section',
+                            params: { section: 'payment' },
+                          })
+                        }
+                      : undefined
+                  }
                 />
               </div>
 
               <SubscriptionPlansCard
                 topupInfo={topupInfo}
-                onAvailabilityChange={handleSubscriptionAvailabilityChange}
                 userQuota={user?.quota}
-                onPurchaseSuccess={fetchUser}
+                onPurchaseSuccess={async () => {
+                  setHistoryRefreshKey((prev) => prev + 1)
+                  await fetchUser()
+                }}
               />
             </div>
+
+            <BillingHistoryCard
+              refreshKey={historyRefreshKey}
+              onOrderCompleted={fetchUser}
+            />
 
             <AffiliateRewardsCard
               user={user}

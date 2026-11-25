@@ -147,7 +147,10 @@ export function CheckinCalendarCard({
         const res = await performCheckin(token)
         if (res.success && res.data) {
           toast.success(
-            `${t('Check-in successful! Received')} ${formatQuotaWithCurrency(res.data.quota_awarded)}`
+            `${t('Check-in successful! Received')} ${formatQuotaWithCurrency(
+              res.data.quota_awarded,
+              { digitsLarge: 2, digitsSmall: 4 }
+            )}`
           )
           refetch()
           setTurnstileModalVisible(false)
@@ -222,6 +225,10 @@ export function CheckinCalendarCard({
   const weekDays = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
 
   if (!checkinEnabled) {
+    return null
+  }
+
+  if (checkinData?.eligible === false) {
     return null
   }
 
@@ -319,7 +326,10 @@ export function CheckinCalendarCard({
                 </div>
                 <p className='text-muted-foreground mt-1 line-clamp-2 text-xs sm:text-sm'>
                   {checkedToday && todayAward !== undefined
-                    ? `${t('Today')} +${formatQuotaWithCurrency(todayAward)}`
+                    ? `${t('Today')} +${formatQuotaWithCurrency(todayAward, {
+                        digitsLarge: 2,
+                        digitsSmall: 4,
+                      })}`
                     : t('Check in daily to receive random quota rewards')}
                 </p>
               </div>
@@ -349,7 +359,10 @@ export function CheckinCalendarCard({
               </div>
               <div className='bg-card p-3 text-center sm:p-5'>
                 <div className='text-xl font-semibold tracking-tight tabular-nums sm:text-2xl'>
-                  {formatQuotaWithCurrency(monthlyQuota, { digitsLarge: 0 })}
+                  {formatQuotaWithCurrency(monthlyQuota, {
+                    digitsLarge: 2,
+                    digitsSmall: 4,
+                  })}
                 </div>
                 <div className='text-muted-foreground mt-0.5 text-[10px] font-medium sm:mt-1 sm:text-xs'>
                   {t('This month')}
@@ -360,7 +373,8 @@ export function CheckinCalendarCard({
                   {formatQuotaWithCurrency(
                     checkinData?.stats?.total_quota || 0,
                     {
-                      digitsLarge: 0,
+                      digitsLarge: 2,
+                      digitsSmall: 4,
                     }
                   )}
                 </div>
@@ -453,7 +467,11 @@ export function CheckinCalendarCard({
                                 {t('Checked in')}
                               </div>
                               <div className='text-muted-foreground mt-0.5'>
-                                +{formatQuotaWithCurrency(quotaAwarded)}
+                                +
+                                {formatQuotaWithCurrency(quotaAwarded, {
+                                  digitsLarge: 2,
+                                  digitsSmall: 4,
+                                })}
                               </div>
                             </div>
                           </TooltipContent>

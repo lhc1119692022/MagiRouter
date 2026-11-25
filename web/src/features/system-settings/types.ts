@@ -218,6 +218,7 @@ export type ContentSettings = {
   'console_setting.faq': string
   'console_setting.uptime_kuma_groups': string
   'console_setting.api_info_enabled': boolean
+  'console_setting.auth_domains_enabled': boolean
   'console_setting.announcements_enabled': boolean
   'console_setting.faq_enabled': boolean
   'console_setting.uptime_kuma_enabled': boolean
@@ -372,6 +373,9 @@ export type BillingSettings = {
   'checkin_setting.enabled': boolean
   'checkin_setting.min_quota': number
   'checkin_setting.max_quota': number
+  'checkin_setting.allowed_groups': string
+  'checkin_setting.topup_upgrade_enabled': boolean
+  'checkin_setting.topup_upgrade_rules': string
 }
 
 export type OperationsSettings = {

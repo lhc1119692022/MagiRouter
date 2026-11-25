@@ -165,6 +165,14 @@ var accessTokenRouteRules = map[string]accessTokenRouteRule{
 	"POST /api/option/waffo-pancake/save":                        accessTokenScopeRule("option:write"),
 	"POST /api/option/waffo-pancake/subscription-product":        accessTokenScopeRule("option:write"),
 	"GET /api/option/waffo-pancake/subscription-product-options": accessTokenScopeRule("option:read"),
+	"GET /api/option/media_relay":                                accessTokenScopeRule("option:read"),
+	"PUT /api/option/media_relay":                                accessTokenScopeRule("option:write"),
+	"POST /api/option/media_relay/test":                          accessTokenScopeRule("option:write"),
+	"GET /api/option/media_relay/overrides":                      accessTokenScopeRule("option:read"),
+	"GET /api/option/media_relay/users/:user_id":                 accessTokenScopeRule("option:read"),
+	"PUT /api/option/media_relay/overrides/:user_id":             accessTokenScopeRule("option:write"),
+	"DELETE /api/option/media_relay/overrides/:user_id":          accessTokenScopeRule("option:write"),
+	"POST /api/option/media_relay/usage/:user_id/reset":          accessTokenScopeRule("option:write"),
 
 	// router/api-router.go: /api/custom-oauth-provider, /api/ratio_sync
 	"POST /api/custom-oauth-provider/discovery": accessTokenScopeRule("option:write"),

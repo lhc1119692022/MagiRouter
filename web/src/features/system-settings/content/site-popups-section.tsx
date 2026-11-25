@@ -19,6 +19,7 @@ import { Input } from '@/components/ui/input'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
+import { CONSOLE_DISCLAIMER_POPUP_MARKDOWN } from '@/lib/platform-legal-templates'
 import {
   SITE_POPUP_FREQUENCIES,
   SITE_POPUP_PRESETS,
@@ -273,6 +274,16 @@ function SitePopupsEditor({ initialItems }: { initialItems: SitePopupItem[] }) {
           >
             <Plus className='mr-1 size-3.5' />
             {t('Add Sign-up Notice Template')}
+          </Button>
+          <Button
+            type='button'
+            size='sm'
+            variant='outline'
+            disabled={reachedLimit}
+            onClick={() => openPresetDraft('sign_up_compliance')}
+          >
+            <Plus className='mr-1 size-3.5' />
+            {t('Add Sign-up Compliance Template')}
           </Button>
           <Button
             type='button'
@@ -573,9 +584,28 @@ function SitePopupsEditor({ initialItems }: { initialItems: SitePopupItem[] }) {
             </Field>
 
             <Field>
-              <FieldLabel htmlFor={`${fieldIdPrefix}-content`}>
-                {t('Popup Content (Markdown)')}
-              </FieldLabel>
+              <div className='flex flex-wrap items-center justify-between gap-2'>
+                <FieldLabel htmlFor={`${fieldIdPrefix}-content`}>
+                  {t('Popup Content (Markdown)')}
+                </FieldLabel>
+                <Button
+                  type='button'
+                  size='sm'
+                  variant='outline'
+                  onClick={() =>
+                    setDraft((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            content: CONSOLE_DISCLAIMER_POPUP_MARKDOWN,
+                          }
+                        : prev
+                    )
+                  }
+                >
+                  {t('Fill compliance disclaimer')}
+                </Button>
+              </div>
               <Textarea
                 id={`${fieldIdPrefix}-content`}
                 rows={6}

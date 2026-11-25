@@ -4,6 +4,13 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
 import { api } from '@/lib/api'
+import {
+  CAC_AI_COMPLIANCE_LABEL,
+  CAC_AI_COMPLIANCE_URL,
+  DEFAULT_PRIVACY_POLICY_MARKDOWN,
+  DEFAULT_USER_AGREEMENT_MARKDOWN,
+} from '@/lib/platform-legal-templates'
+import { SITE_POPUP_PRESETS } from '@/lib/site-popups'
 import { useAuthStore } from '@/stores/auth-store'
 
 import { SitePopupHost } from '../site-popup-host'
@@ -156,4 +163,41 @@ test('does not display popups when suppressed', async () => {
   await waitFor(() =>
     expect(screen.queryByText('Should stay hidden')).not.toBeInTheDocument()
   )
+})
+
+test('renders clickable CAC compliance link and full agreement links inside console disclaimer preset', async () => {
+  renderHost('console', [SITE_POPUP_PRESETS.console_disclaimer])
+
+  expect(await screen.findByText('控制台使用须知与免责声明')).toBeVisible()
+
+  const cacLink = screen.getByRole('link', { name: CAC_AI_COMPLIANCE_LABEL })
+  expect(cacLink).toHaveAttribute('href', CAC_AI_COMPLIANCE_URL)
+  expect(cacLink).toHaveAttribute('target', '_blank')
+  expect(cacLink).toHaveAttribute('rel', 'noopener noreferrer')
+
+  const agreementLink = screen.getByRole('link', {
+    name: '《平台技术服务协议与合规使用声明》',
+  })
+  expect(agreementLink).toHaveAttribute('href', '/user-agreement')
+})
+
+test('provides comprehensive default user agreement and privacy policy templates', () => {
+  expect(DEFAULT_USER_AGREEMENT_MARKDOWN).toContain(CAC_AI_COMPLIANCE_LABEL)
+  expect(DEFAULT_USER_AGREEMENT_MARKDOWN).toContain(CAC_AI_COMPLIANCE_URL)
+  expect(DEFAULT_USER_AGREEMENT_MARKDOWN).toContain(
+    '人工智能生成合成内容标识办法'
+  )
+  expect(DEFAULT_USER_AGREEMENT_MARKDOWN).toContain('暂不支持开具')
+  expect(DEFAULT_USER_AGREEMENT_MARKDOWN).toContain('阶梯式违规处罚机制')
+  expect(DEFAULT_USER_AGREEMENT_MARKDOWN).toContain(
+    '未成年人禁入与误购核实处理'
+  )
+
+  expect(DEFAULT_PRIVACY_POLICY_MARKDOWN).toContain('对话内容默认零留存')
+  expect(DEFAULT_PRIVACY_POLICY_MARKDOWN).toContain('个人信息保护法')
+  expect(DEFAULT_PRIVACY_POLICY_MARKDOWN).toContain('跨境数据传输')
+  expect(DEFAULT_PRIVACY_POLICY_MARKDOWN).toContain(
+    '您的个人信息权利与行使方式'
+  )
+  expect(DEFAULT_PRIVACY_POLICY_MARKDOWN).toContain('安全事件应急响应')
 })
