@@ -86,7 +86,9 @@ func GetOptions(c *gin.Context) {
 	optionValues := make(map[string]string)
 	common.OptionMapRWMutex.Lock()
 	for k, v := range common.OptionMap {
-		if k == "theme.frontend" || k == "billing_setting.billing_mode" || k == "billing_setting.billing_expr" || k == "ResendKeyConfigured" || k == model.ViolationAuditOptionKey {
+		if k == "theme.frontend" || k == "billing_setting.billing_mode" || k == "billing_setting.billing_expr" || k == "ResendKeyConfigured" || k == model.ViolationAuditOptionKey ||
+			strings.HasPrefix(k, operation_setting.UpstreamBalanceOptionPrefix) ||
+			k == operation_setting.UpstreamBalanceStateOptionKey {
 			continue
 		}
 		value := common.Interface2String(v)

@@ -20,6 +20,7 @@ const routes: Record<string, SidebarModuleRef> = {
   '/about': ['personal', 'support'],
   '/docs': ['personal', 'docs'],
   '/channels': ['admin', 'channel'],
+  '/upstream-balance': ['admin', 'upstream_balance'],
   '/models': ['admin', 'models'],
   '/models/metadata': ['admin', 'models'],
   '/models/deployments': ['admin', 'deployments'],

@@ -580,6 +580,9 @@ const AUDIT_TEMPLATES: Record<string, string> = {
     'Removed user (ID: {{id}}) from violation audit allowlist',
   'violation_audit.settings_update': 'Updated violation audit settings',
   'option.profit_analytics_update': 'Updated profit analytics cost settings',
+  'option.upstream_balance_update': 'Updated upstream balance monitor settings',
+  'option.upstream_balance_test_email':
+    'Sent upstream balance alert test email',
   // Generic middleware fallback
   generic: '{{method}} {{route}}',
 }

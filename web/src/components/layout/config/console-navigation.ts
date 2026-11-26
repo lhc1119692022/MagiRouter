@@ -125,6 +125,11 @@ export function buildConsoleNavigation(
             title: t('Admin', { context: 'sidebar' }),
             items: [
               entry('admin-channels', t('Channel management'), '/channels'),
+              entry(
+                'admin-upstream-balance',
+                t('Upstream Balance'),
+                '/upstream-balance'
+              ),
               entry('admin-users', t('Users & billing'), '/users'),
               entry(
                 'admin-models-sort',

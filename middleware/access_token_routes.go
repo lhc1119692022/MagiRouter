@@ -176,6 +176,9 @@ var accessTokenRouteRules = map[string]accessTokenRouteRule{
 	"POST /api/option/media_relay/usage/:user_id/reset":          accessTokenScopeRule("option:write"),
 	"GET /api/option/profit_analytics":                           accessTokenScopeRule("option:read"),
 	"PUT /api/option/profit_analytics":                           accessTokenScopeRule("option:write"),
+	"GET /api/option/upstream_balance":                           accessTokenScopeRule("option:read"),
+	"PUT /api/option/upstream_balance":                           accessTokenScopeRule("option:write"),
+	"POST /api/option/upstream_balance/test_email":               accessTokenScopeRule("option:write"),
 
 	// router/api-router.go: /api/custom-oauth-provider, /api/ratio_sync
 	"POST /api/custom-oauth-provider/discovery": accessTokenScopeRule("option:write"),

@@ -57,6 +57,8 @@ var auditRouteActions = map[string]string{
 	"DELETE /api/option/media_relay/overrides/:user_id": "option.media_relay_override_delete",
 	"POST /api/option/media_relay/usage/:user_id/reset": "option.media_relay_usage_reset",
 	"PUT /api/option/profit_analytics":                  "option.profit_analytics_update",
+	"PUT /api/option/upstream_balance":                  "option.upstream_balance_update",
+	"POST /api/option/upstream_balance/test_email":      "option.upstream_balance_test_email",
 
 	// 自定义 OAuth（root）
 	"POST /api/custom-oauth-provider/":      "custom_oauth.create",

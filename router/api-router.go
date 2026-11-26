@@ -252,6 +252,9 @@ func SetApiRouter(router *gin.Engine) {
 			optionRoute.POST("/media_relay/usage/:user_id/reset", controller.ResetAdminUserMediaDailyTraffic)
 			optionRoute.GET("/profit_analytics", controller.GetProfitAnalyticsSettings)
 			optionRoute.PUT("/profit_analytics", controller.UpdateProfitAnalyticsSettings)
+			optionRoute.GET("/upstream_balance", controller.GetUpstreamBalanceSettings)
+			optionRoute.PUT("/upstream_balance", controller.UpdateUpstreamBalanceSettings)
+			optionRoute.POST("/upstream_balance/test_email", controller.TestUpstreamBalanceAlertEmail)
 		}
 
 		// Custom OAuth provider management (root only)
@@ -302,6 +305,9 @@ func SetApiRouter(router *gin.Engine) {
 		// Channel editors read the instances to bind them; changing them is
 		// plugin management, as installing a plugin is.
 		handlePermissionRoute(apiRouter.Group("", middleware.AdminAuth()), http.MethodGet, "/request_plugin/instances", authz.TaskPluginBind, controller.GetRequestPluginInstances)
+		upstreamBalanceGroup := apiRouter.Group("/upstream_balance", middleware.DisableCache(), middleware.AdminAuth())
+		handlePermissionRoute(upstreamBalanceGroup, http.MethodGet, "", authz.ChannelRead, controller.GetUpstreamBalanceOverview)
+		handlePermissionRoute(upstreamBalanceGroup, http.MethodPost, "/refresh", authz.ChannelOperate, controller.RefreshUpstreamBalances)
 		requestPluginRoute := apiRouter.Group("/request_plugin")
 		requestPluginRoute.Use(middleware.RootAuth())
 		{

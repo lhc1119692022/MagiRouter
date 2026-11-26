@@ -24,6 +24,7 @@ func RegisterScheduledSystemTasks() {
 	service.RegisterSystemTaskHandler(asyncTaskPollHandler{})
 	service.RegisterSystemTaskHandler(systemTaskCleanupHandler{})
 	service.RegisterSystemTaskHandler(violationAuditHandler{})
+	service.RegisterSystemTaskHandler(upstreamBalanceHandler{})
 }
 
 // systemTaskCleanupHandler deletes, once a day, the finished system tasks
@@ -243,6 +244,36 @@ func (violationAuditHandler) Run(ctx context.Context, task *model.SystemTask, ru
 		return
 	}
 	summary, err := service.RunViolationAuditBatch(ctx, model.DB, settings, service.NewSystemTaskProgressReporter(task, runnerID))
+	status := model.SystemTaskStatusSucceeded
+	if err != nil {
+		status = model.SystemTaskStatusFailed
+	}
+	finishSystemTaskHandler(task, runnerID, status, summary, err)
+}
+
+type upstreamBalanceHandler struct{}
+
+func (upstreamBalanceHandler) Type() string { return model.SystemTaskTypeUpstreamBalance }
+
+func (upstreamBalanceHandler) Enabled() bool {
+	cfg := operation_setting.GetUpstreamBalanceSettingSnapshot()
+	return cfg.Enabled && cfg.CheckIntervalMinutes >= operation_setting.MinUpstreamCheckIntervalMinutes
+}
+
+func (upstreamBalanceHandler) Interval() time.Duration {
+	minutes := operation_setting.GetUpstreamBalanceSettingSnapshot().CheckIntervalMinutes
+	if minutes < operation_setting.MinUpstreamCheckIntervalMinutes {
+		minutes = operation_setting.DefaultUpstreamCheckIntervalMinutes
+	}
+	return time.Duration(minutes) * time.Minute
+}
+
+func (upstreamBalanceHandler) NewPayload() any { return nil }
+
+func (upstreamBalanceHandler) Run(ctx context.Context, task *model.SystemTask, runnerID string) {
+	summary, err := service.RefreshUpstreamBalances(ctx, service.UpstreamBalanceRefreshOptions{
+		SendAlerts: true,
+	})
 	status := model.SystemTaskStatusSucceeded
 	if err != nil {
 		status = model.SystemTaskStatusFailed

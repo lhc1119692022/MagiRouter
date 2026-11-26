@@ -88,6 +88,7 @@ export const SIDEBAR_MODULES_DEFAULT: SidebarModulesAdminConfig = {
   admin: {
     enabled: true,
     channel: true,
+    upstream_balance: true,
     models: true,
     deployments: true,
     redemption: true,

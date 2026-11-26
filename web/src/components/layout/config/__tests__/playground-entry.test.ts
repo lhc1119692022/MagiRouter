@@ -48,5 +48,6 @@ it('places Profit Analysis and Media Traffic inside the admin management sidebar
     const urls = adminGroup?.items.map((item) => item.url) ?? []
     expect(urls).toContain('/profit-analytics')
     expect(urls).toContain('/media-traffic')
+    expect(urls).toContain('/upstream-balance')
   }
 })
