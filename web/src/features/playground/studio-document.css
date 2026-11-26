@@ -472,13 +472,9 @@ html[data-theme='dark'] .pg-chat-gate-icon,
 .pg-document .pg-chat-composer-wrap {
   flex-shrink: 0;
   min-width: 0;
-  padding: 12px clamp(12px, 2.5vw, 24px) 16px;
-  border-top: var(--hairline) solid var(--divider-color);
-  background: var(--bg-elevated);
-}
-html[data-theme='dark'] .pg-document .pg-chat-composer-wrap,
-.dark .pg-document .pg-chat-composer-wrap {
-  background: #171513;
+  padding: 6px clamp(12px, 2.5vw, 24px) 16px;
+  border-top: 0;
+  background: transparent;
 }
 .pg-document .pg-chat-composer-wrap:has(.pg-chat-welcome-title) {
   margin-block: auto;
@@ -747,6 +743,37 @@ html[data-theme='dark'] .pg-composer-pill,
   color: var(--ink-muted);
   font-size: 0.8125rem;
   line-height: 1.55;
+}
+.pg-parameter-protocol {
+  margin-block: 12px;
+  padding-bottom: 12px;
+  border-bottom: var(--hairline) solid var(--divider-color);
+}
+.pg-protocol-option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+.pg-protocol-option-path {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-muted);
+}
+.pg-protocol-resolved {
+  display: grid;
+  gap: 3px;
+  margin-top: 4px;
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+.pg-protocol-endpoint {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-body);
+  overflow-wrap: anywhere;
 }
 .pg-parameter-fields {
   display: grid;

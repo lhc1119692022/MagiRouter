@@ -63,7 +63,7 @@ func IsRequestPolicyOption(key string) bool {
 		return true
 	}
 	switch key {
-	case "AutomaticEnableChannelEnabled", "ChannelDisableThreshold", "monitor_setting.auto_test_channel_enabled", "monitor_setting.auto_test_channel_minutes", "monitor_setting.channel_test_concurrency", "monitor_setting.channel_test_mode", "RetryTimes", "AutomaticRetryStatusCodes", "AutomaticDisableChannelEnabled", "AutomaticDisableStatusCodes", "AutomaticDisableKeywords":
+	case "AutomaticEnableChannelEnabled", "ChannelDisableThreshold", "monitor_setting.auto_test_channel_enabled", "monitor_setting.auto_test_channel_minutes", "monitor_setting.channel_test_concurrency", "monitor_setting.channel_test_mode", "monitor_setting.channel_test_model_strategy", "monitor_setting.channel_test_sample_percent", "monitor_setting.channel_test_exclude_models", "monitor_setting.channel_test_idle_minutes", "RetryTimes", "AutomaticRetryStatusCodes", "AutomaticDisableChannelEnabled", "AutomaticDisableStatusCodes", "AutomaticDisableKeywords":
 		return true
 	}
 	return false
@@ -144,6 +144,18 @@ func BuildRequestPolicy(options map[string]string) (*RequestPolicySnapshot, erro
 	}
 	if err := operation_setting.ValidateChannelTestConcurrency(raw["monitor_setting.channel_test_concurrency"]); err != nil {
 		return nil, err
+	}
+	if err := operation_setting.ValidateChannelTestModelStrategy(raw["monitor_setting.channel_test_model_strategy"]); err != nil {
+		return nil, err
+	}
+	if err := operation_setting.ValidateChannelTestSamplePercent(raw["monitor_setting.channel_test_sample_percent"]); err != nil {
+		return nil, err
+	}
+	if err := operation_setting.ValidateChannelTestIdleMinutes(raw["monitor_setting.channel_test_idle_minutes"]); err != nil {
+		return nil, err
+	}
+	if len(raw["monitor_setting.channel_test_exclude_models"]) > 2000 {
+		return nil, fmt.Errorf("channel test exclude models cannot exceed 2000 characters")
 	}
 	for _, key := range []string{"ChannelDisableThreshold", "monitor_setting.auto_test_channel_minutes"} {
 		if raw[key] == "" && key == "ChannelDisableThreshold" {

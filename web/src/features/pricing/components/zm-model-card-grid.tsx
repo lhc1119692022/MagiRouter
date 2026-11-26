@@ -363,7 +363,7 @@ const ZmModelCardItem = memo(function ZmModelCardItem(
               className='zm-action-btn is-primary'
               onClick={handleOpenPlayground}
             >
-              {t('Create')}
+              {t('Create', { context: 'playground' })}
             </button>
           )}
         </div>

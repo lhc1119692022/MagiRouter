@@ -2,16 +2,76 @@ import { Link } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
-import { usePublicMonitoring } from '@/features/dashboard/hooks/use-public-monitoring'
+import {
+  useGroupChannelStatus,
+  usePublicMonitoring,
+} from '@/features/dashboard/hooks/use-public-monitoring'
 import {
   measuredAvailability,
   monitorHealth,
 } from '@/features/dashboard/lib/public-monitoring'
-import type { UptimeGroupResult } from '@/features/dashboard/types'
+import type {
+  GroupChannelHealthStatus,
+  GroupChannelStatusItem,
+  UptimeGroupResult,
+} from '@/features/dashboard/types'
 import { toIntlLocale } from '@/i18n/languages'
 import { formatNumber } from '@/lib/format'
 
 import '@/styles/overview-publication.css'
+
+function realGroupHealthMeta(status: GroupChannelHealthStatus): {
+  label: string
+  tone: string
+} {
+  switch (status) {
+    case 'operational':
+      return { label: 'Operational', tone: 'healthy' }
+    case 'degraded':
+      return { label: 'Degraded', tone: 'warning' }
+    case 'outage':
+      return { label: 'Outage', tone: 'error' }
+    default:
+      return { label: 'Awaiting data', tone: 'unknown' }
+  }
+}
+
+function RealGroupStatusRow({ item }: { item: GroupChannelStatusItem }) {
+  const { i18n, t } = useTranslation()
+  const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
+  const health = realGroupHealthMeta(item.status)
+  const ratioLabel = item.is_auto
+    ? t('Auto')
+    : `${Number(item.ratio.toFixed(2))}x`
+  let metrics = '—'
+  if (item.request_count > 0) {
+    metrics = `${item.success_rate.toFixed(2)}%`
+    if (item.avg_latency_ms > 0) {
+      metrics += ` · ${formatNumber(Math.round(item.avg_latency_ms), locale)} ${t('ms')}`
+    }
+  } else if (item.recent_probe) {
+    metrics = `${item.recent_probe.recent_success_rate.toFixed(1)}% · ${formatNumber(Math.round(item.recent_probe.latency_ms), locale)} ${t('ms')}`
+  }
+  return (
+    <Link
+      className='dash-gs-row'
+      to='/channel-status'
+      search={{ group: item.group }}
+    >
+      <span className='dash-gs-head'>
+        <span>{item.group}</span>
+        <span className='dash-gs-ratio'>{ratioLabel}</span>
+      </span>
+      <span className='dash-gs-right'>
+        <span className='dash-gs-status' data-tone={health.tone}>
+          <span aria-hidden='true' className='dash-gs-dot' />
+          {t(health.label)}
+        </span>
+        <span className='dash-gs-metrics tabular-nums'>{metrics}</span>
+      </span>
+    </Link>
+  )
+}
 
 function GroupStatusRow({ group }: { group: UptimeGroupResult }) {
   const { i18n, t } = useTranslation()
@@ -76,7 +136,15 @@ function GroupStatusRow({ group }: { group: UptimeGroupResult }) {
 export function GroupStatusPanel() {
   const { t } = useTranslation()
   const { enabled, query } = usePublicMonitoring()
+  const realStatus = useGroupChannelStatus(24)
   if (!enabled) return null
+  const realGroups = realStatus.query.data?.groups ?? []
+  const uptimeGroups = query.data ?? []
+  const isPending =
+    (query.isPending && realStatus.query.isPending) ||
+    (!realGroups.length && !uptimeGroups.length && (query.isPending || realStatus.query.isPending))
+  const isError = query.isError && realStatus.query.isError
+  const hasAny = realGroups.length > 0 || uptimeGroups.length > 0
   return (
     <section
       className='dash-panel overview-group-status'
@@ -88,23 +156,34 @@ export function GroupStatusPanel() {
           {t('Channel status')} <span aria-hidden='true'>→</span>
         </Link>
       </div>
-      {query.isPending && (
+      {isPending && (
         <p role='status' className='publication-state'>
           {t('Loading...')}
         </p>
       )}
-      {query.isError && (
+      {isError && (
         <p role='alert' className='publication-state'>
           {t('Failed to load')}{' '}
-          <Button size='sm' variant='link' onClick={() => void query.refetch()}>
+          <Button
+            size='sm'
+            variant='link'
+            onClick={() => {
+              void query.refetch()
+              void realStatus.query.refetch()
+            }}
+          >
             {t('Retry')}
           </Button>
         </p>
       )}
-      {query.isSuccess &&
-        (query.data.length ? (
+      {!isPending &&
+        !isError &&
+        (hasAny ? (
           <div className='dash-group-status-list'>
-            {query.data.map((group) => (
+            {realGroups.slice(0, 6).map((item) => (
+              <RealGroupStatusRow key={`real-${item.group}`} item={item} />
+            ))}
+            {uptimeGroups.map((group) => (
               <GroupStatusRow key={group.categoryName} group={group} />
             ))}
           </div>

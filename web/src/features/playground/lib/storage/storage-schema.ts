@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { z } from 'zod'
 
-import { CHAT_REASONING_EFFORTS } from '../../types'
+import { CHAT_API_PROTOCOLS, CHAT_REASONING_EFFORTS } from '../../types'
 
 export const STORAGE_VERSION = 1
 export const MAX_STORED_MESSAGES = 100
@@ -38,6 +38,7 @@ export const parameterEnabledSchema = z.object({
 export const playgroundConfigSchema = z.object({
   model: z.string().optional(),
   group: z.string().optional(),
+  protocol: z.enum(CHAT_API_PROTOCOLS).optional(),
   reasoning_effort: z
     .union([z.literal(''), z.enum(CHAT_REASONING_EFFORTS)])
     .optional(),

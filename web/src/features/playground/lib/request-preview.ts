@@ -18,6 +18,11 @@ For commercial licensing, please contact support@quantumnous.com
 */
 export const REQUEST_PREVIEW_PATH = '/v1/chat/completions'
 
+export interface CurlPreviewOptions {
+  path?: string
+  headers?: Record<string, string>
+}
+
 /** Pretty-printed request body for the JSON tab. */
 export function buildJsonPreview(body: unknown): string {
   return JSON.stringify(body, null, 2)
@@ -31,13 +36,21 @@ export function buildJsonPreview(body: unknown): string {
  */
 export function buildCurlPreview(
   body: unknown,
-  baseUrl = '$MAGIROUTER_BASE_URL'
+  baseUrl = '$MAGIROUTER_BASE_URL',
+  options?: CurlPreviewOptions
 ): string {
-  const endpoint = `${baseUrl.replace(/\/+$/, '')}${REQUEST_PREVIEW_PATH}`
+  const path = options?.path ?? REQUEST_PREVIEW_PATH
+  const headers = options?.headers ?? {
+    'Content-Type': 'application/json',
+    Authorization: 'Bearer $MAGIROUTER_API_KEY',
+  }
+  const endpoint = `${baseUrl.replace(/\/+$/, '')}${path}`
+  const headerLines = Object.entries(headers).map(
+    ([name, value]) => `  -H "${name}: ${value}" \\`
+  )
   return [
     `curl ${endpoint} \\`,
-    '  -H "Content-Type: application/json" \\',
-    '  -H "Authorization: Bearer $MAGIROUTER_API_KEY" \\',
+    ...headerLines,
     `  -d '${buildJsonPreview(body)}'`,
   ].join('\n')
 }

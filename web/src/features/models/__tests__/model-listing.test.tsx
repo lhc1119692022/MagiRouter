@@ -259,7 +259,7 @@ it('requests channel models and distinguishes catalog policy from availability u
   ).toBeVisible()
 })
 
-it('keeps channel rows individually selectable and disables metadata mutations for mixed selection', async () => {
+it('keeps channel rows individually selectable, disables metadata-only mutations, and allows deletion', async () => {
   await renderList()
   const user = userEvent.setup()
   await user.click(
@@ -283,12 +283,14 @@ it('keeps channel rows individually selectable and disables metadata mutations f
     'Clear vendor',
     'Show selected models in model square',
     'Hide selected models from model square',
-    'Delete selected models',
   ]) {
     expect(within(toolbar).getByRole('button', { name })).toBeDisabled()
   }
   expect(
     within(toolbar).getByRole('button', { name: 'Copy model names' })
+  ).toBeEnabled()
+  expect(
+    within(toolbar).getByRole('button', { name: 'Delete selected models' })
   ).toBeEnabled()
   await user.click(
     screen.getByRole('checkbox', { name: 'Select channel-only' })

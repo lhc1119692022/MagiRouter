@@ -41,6 +41,32 @@ export type StreamErrorDetails = {
   errorMessage: string
 }
 
+function formatHtmlStreamError(raw: string): string | null {
+  const trimmed = raw.trim()
+  if (
+    !/^<!doctype\s+html\b/i.test(trimmed) &&
+    !/^<html\b/i.test(trimmed) &&
+    !/<\/html>\s*$/i.test(trimmed)
+  ) {
+    return null
+  }
+
+  const titleMatch = trimmed.match(/<title[^>]*>([\s\S]*?)<\/title>/i)
+  const title = titleMatch?.[1]?.replaceAll(/\s+/g, ' ').trim()
+  const rayMatch = trimmed.match(
+    /Cloudflare\s+Ray\s+ID:\s*(?:<[^>]+>)*([a-z0-9]+)/i
+  )
+  const rayId = rayMatch?.[1]?.trim()
+
+  if (title && rayId) {
+    return `${title} (Ray ID: ${rayId})`
+  }
+  if (title) {
+    return title
+  }
+  return ERROR_MESSAGES.API_REQUEST_ERROR
+}
+
 export function parseStreamErrorDetails(data?: string): StreamErrorDetails {
   const fallbackMessage = data || ERROR_MESSAGES.API_REQUEST_ERROR
 
@@ -60,7 +86,9 @@ export function parseStreamErrorDetails(data?: string): StreamErrorDetails {
       errorMessage: parsed.error.message || fallbackMessage,
     }
   } catch {
-    return { errorMessage: fallbackMessage }
+    return {
+      errorMessage: formatHtmlStreamError(data) ?? fallbackMessage,
+    }
   }
 }
 

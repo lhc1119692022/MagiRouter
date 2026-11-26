@@ -133,6 +133,57 @@ func TestGetUserGroupsExcludesUserManagementGroupsAndFlagsExplicitSelection(t *t
 	assert.False(t, billingResp.RequireExplicitGroup)
 }
 
+func TestGetUserGroupsReportsModelAvailabilityPerGroup(t *testing.T) {
+	configureUserManagementGroupControllerTest(t)
+	originalAutoGroups := setting.AutoGroups2JsonString()
+	t.Cleanup(func() {
+		require.NoError(t, setting.UpdateAutoGroupsByJsonString(originalAutoGroups))
+	})
+	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{"auto":"Auto","standard":"Standard line","fast":"Fast line"}`))
+	require.NoError(t, setting.UpdateAutoGroupsByJsonString(`["fast"]`))
+
+	db := setupTokenControllerTestDB(t)
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.Channel{}, &model.Ability{}))
+
+	user := &model.User{Id: 305, Username: "avail-user", Password: "password", Group: "default", AffCode: "aff305", Status: common.UserStatusEnabled}
+	require.NoError(t, db.Create(user).Error)
+
+	enabledChannel := &model.Channel{Id: 1, Name: "enabled-ch", Status: common.ChannelStatusEnabled}
+	disabledChannel := &model.Channel{Id: 2, Name: "disabled-ch", Status: common.ChannelStatusManuallyDisabled}
+	require.NoError(t, db.Create(enabledChannel).Error)
+	require.NoError(t, db.Create(disabledChannel).Error)
+	require.NoError(t, db.Create(&[]model.Ability{
+		{Group: "standard", Model: "gpt-4o", ChannelId: enabledChannel.Id, Enabled: true},
+		{Group: "fast", Model: "gpt-4o-mini", ChannelId: disabledChannel.Id, Enabled: true},
+		{Group: "fast", Model: "claude-sonnet", ChannelId: enabledChannel.Id, Enabled: false},
+	}).Error)
+
+	queryGroups := func() map[string]map[string]any {
+		rec := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(rec)
+		ctx.Request = httptest.NewRequest(http.MethodGet, "/api/user/self/groups", nil)
+		ctx.Set("id", user.Id)
+		GetUserGroups(ctx)
+		require.Equal(t, http.StatusOK, rec.Code)
+		var resp struct {
+			Success bool                      `json:"success"`
+			Data    map[string]map[string]any `json:"data"`
+		}
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+		require.True(t, resp.Success)
+		return resp.Data
+	}
+
+	data := queryGroups()
+	assert.Equal(t, true, data["standard"]["has_models"])
+	assert.Equal(t, false, data["fast"]["has_models"])
+	assert.Equal(t, false, data["auto"]["has_models"])
+
+	require.NoError(t, setting.UpdateAutoGroupsByJsonString(`["fast","standard"]`))
+	dataWithAuto := queryGroups()
+	assert.Equal(t, true, dataWithAuto["auto"]["has_models"])
+}
+
 func TestAddAndUpdateTokenEnforceExplicitBillingGroup(t *testing.T) {
 	configureUserManagementGroupControllerTest(t)
 	db := setupTokenControllerTestDB(t)

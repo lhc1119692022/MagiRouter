@@ -55,4 +55,26 @@ describe('request preview', () => {
     assert.ok(curl.includes('$MAGIROUTER_API_KEY'))
     assert.ok(!/sk-[A-Za-z0-9]/.test(curl))
   })
+
+  test('uses custom protocol path and headers when provided', () => {
+    const curl = buildCurlPreview(
+      { contents: [{ role: 'user', parts: [{ text: 'hi' }] }] },
+      'https://api.example.com/',
+      {
+        path: '/v1beta/models/gemini-4-neon:streamGenerateContent?alt=sse',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': '$MAGIROUTER_API_KEY',
+        },
+      }
+    )
+
+    assert.ok(
+      curl.startsWith(
+        'curl https://api.example.com/v1beta/models/gemini-4-neon:streamGenerateContent?alt=sse'
+      )
+    )
+    assert.ok(curl.includes('-H "x-goog-api-key: $MAGIROUTER_API_KEY"'))
+    assert.ok(!curl.includes('Authorization:'))
+  })
 })

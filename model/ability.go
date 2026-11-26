@@ -54,6 +54,19 @@ func GetEnabledModels() []string {
 	return models
 }
 
+func GetEnabledModelGroups() ([]string, error) {
+	if DB == nil {
+		return nil, errors.New("database not initialized")
+	}
+	var groups []string
+	err := DB.Table("abilities").
+		Joins("JOIN channels ON abilities.channel_id = channels.id").
+		Where("abilities.enabled = ? AND channels.status = ? AND abilities.model <> ?", true, common.ChannelStatusEnabled, "").
+		Distinct("abilities." + commonGroupCol).
+		Pluck("abilities."+commonGroupCol, &groups).Error
+	return groups, err
+}
+
 func GetAllEnableAbilities() []Ability {
 	var abilities []Ability
 	DB.Find(&abilities, "enabled = ?", true)

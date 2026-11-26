@@ -23,19 +23,28 @@ import { resolveApiKeyValue } from '@/features/keys/api'
 
 import { ERROR_MESSAGES } from '../constants'
 import {
+  buildProtocolRequestBody,
+  getProtocolEndpointPath,
+  getProtocolRequestHeaders,
+  getProtocolStreamEventNames,
   getStreamReadyStateError,
   isStreamClosedReadyState,
-  isStreamDoneMessage,
+  parseProtocolStreamEvent,
   parseStreamErrorDetails,
-  parseStreamMessageUpdates,
 } from '../lib'
-import type { ChatCompletionRequest } from '../types'
+import type { ChatCompletionRequest, ResolvedChatApiProtocol } from '../types'
 
 interface StreamEventSource {
   readyState?: number
   addEventListener: (
     type: string,
-    listener: (event: Event & { data?: string; readyState?: number }) => void
+    listener: (
+      event: Event & {
+        data?: string
+        readyState?: number
+        responseCode?: number
+      }
+    ) => void
   ) => void
   close: () => void
   stream: () => void
@@ -48,11 +57,15 @@ interface StreamRequestCallbacks {
 }
 
 interface StreamRequestControllerRuntime {
-  getHeaders: (keyId?: number | null) => Promise<Record<string, string>>
+  getHeaders: (
+    keyId?: number | null,
+    protocol?: ResolvedChatApiProtocol
+  ) => Promise<Record<string, string>>
   createSource: (
     payload: ChatCompletionRequest,
     headers: Record<string, string>,
-    keyId?: number | null
+    keyId?: number | null,
+    protocol?: ResolvedChatApiProtocol
   ) => StreamEventSource
   setStreaming: (streaming: boolean) => void
 }
@@ -74,7 +87,8 @@ export function createStreamRequestController(
   const send = async (
     payload: ChatCompletionRequest,
     callbacks: StreamRequestCallbacks,
-    keyId?: number | null
+    keyId?: number | null,
+    protocol: ResolvedChatApiProtocol = 'openai_chat'
   ) => {
     const requestGeneration = generation + 1
     generation = requestGeneration
@@ -85,7 +99,7 @@ export function createStreamRequestController(
 
     let headers: Record<string, string>
     try {
-      headers = await runtime.getHeaders(keyId)
+      headers = await runtime.getHeaders(keyId, protocol)
     } catch (error: unknown) {
       if (generation !== requestGeneration) return
       callbacks.onError(
@@ -97,10 +111,11 @@ export function createStreamRequestController(
     }
     if (generation !== requestGeneration) return
 
-    const nextSource = runtime.createSource(payload, headers, keyId)
+    const nextSource = runtime.createSource(payload, headers, keyId, protocol)
     source = nextSource
     runtime.setStreaming(true)
     let completed = false
+    let openResponseCode: number | undefined
 
     const isCurrent = () =>
       generation === requestGeneration && source === nextSource
@@ -112,28 +127,43 @@ export function createStreamRequestController(
       closeActiveSource(nextSource)
     }
 
-    nextSource.addEventListener('message', (event) => {
+    const handleComplete = () => {
       if (!isCurrent() || completed) return
-      const data = event.data ?? ''
-      if (isStreamDoneMessage(data)) {
-        completed = true
-        closeActiveSource(nextSource)
-        callbacks.onComplete()
-        return
-      }
+      completed = true
+      closeActiveSource(nextSource)
+      callbacks.onComplete()
+    }
 
-      try {
-        const updates = parseStreamMessageUpdates(data)
-
-        for (const update of updates) {
-          callbacks.onUpdate(update.type, update.chunk)
-        }
-      } catch (error) {
-        // eslint-disable-next-line no-console
-        console.error('Failed to parse SSE message:', error)
-        handleError(ERROR_MESSAGES.PARSE_ERROR)
+    nextSource.addEventListener('open', (event) => {
+      if (!isCurrent()) return
+      if (typeof event.responseCode === 'number') {
+        openResponseCode = event.responseCode
       }
     })
+
+    for (const eventName of getProtocolStreamEventNames(protocol)) {
+      nextSource.addEventListener(eventName, (event) => {
+        if (!isCurrent() || completed) return
+        const data = event.data ?? ''
+        try {
+          const parsed = parseProtocolStreamEvent(protocol, eventName, data)
+          if (parsed.error) {
+            handleError(parsed.error.errorMessage, parsed.error.errorCode)
+            return
+          }
+          for (const update of parsed.updates) {
+            callbacks.onUpdate(update.type, update.chunk)
+          }
+          if (parsed.done) {
+            handleComplete()
+          }
+        } catch (error) {
+          // eslint-disable-next-line no-console
+          console.error('Failed to parse SSE message:', error)
+          handleError(ERROR_MESSAGES.PARSE_ERROR)
+        }
+      })
+    }
 
     nextSource.addEventListener('error', (event) => {
       if (!isCurrent() || completed) return
@@ -152,6 +182,17 @@ export function createStreamRequestController(
 
       if (errorMessage) {
         handleError(errorMessage)
+        return
+      }
+
+      if (isStreamClosedReadyState(event.readyState)) {
+        if (openResponseCode !== undefined && openResponseCode !== 200) {
+          handleError(
+            `HTTP ${openResponseCode}: ${ERROR_MESSAGES.CONNECTION_CLOSED}`
+          )
+          return
+        }
+        handleComplete()
       }
     })
 
@@ -190,21 +231,32 @@ export function useStreamRequest() {
   > | null>(null)
   if (!controllerRef.current) {
     controllerRef.current = createStreamRequestController({
-      getHeaders: async (keyId) => {
+      getHeaders: async (keyId, protocol = 'openai_chat') => {
         if (keyId == null || !Number.isSafeInteger(keyId) || keyId <= 0) {
           throw new Error('Select an API key')
         }
-        return {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${await resolveApiKeyValue(keyId)}`,
-        }
+        return getProtocolRequestHeaders(
+          protocol,
+          await resolveApiKeyValue(keyId)
+        )
       },
-      createSource: (payload, headers) =>
-        new SSE('/v1/chat/completions', {
+      createSource: (payload, headers, _keyId, protocol = 'openai_chat') => {
+        const endpointPath = getProtocolEndpointPath(
+          protocol,
+          payload.model,
+          true
+        )
+        const wireBody = buildProtocolRequestBody(protocol, {
+          ...payload,
+          stream: true,
+        })
+        return new SSE(endpointPath, {
           headers,
           method: 'POST',
-          payload: JSON.stringify(payload),
-        }) as StreamEventSource,
+          payload: JSON.stringify(wireBody),
+          start: false,
+        }) as StreamEventSource
+      },
       setStreaming: setIsStreaming,
     })
   }
@@ -215,7 +267,8 @@ export function useStreamRequest() {
       onUpdate: (type: 'reasoning' | 'content', chunk: string) => void,
       onComplete: () => void,
       onError: (error: string, errorCode?: string) => void,
-      keyId?: number | null
+      keyId?: number | null,
+      protocol: ResolvedChatApiProtocol = 'openai_chat'
     ) =>
       controllerRef.current?.send(
         payload,
@@ -224,7 +277,8 @@ export function useStreamRequest() {
           onComplete,
           onError,
         },
-        keyId
+        keyId,
+        protocol
       ),
     []
   )

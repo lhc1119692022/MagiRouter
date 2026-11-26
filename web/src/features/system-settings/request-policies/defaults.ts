@@ -35,6 +35,10 @@ export type HealthSettings = {
     | 'scheduled_all'
     | 'auto_ban_only'
     | 'passive_recovery'
+  'monitor_setting.channel_test_model_strategy': 'fixed' | 'random'
+  'monitor_setting.channel_test_sample_percent': number
+  'monitor_setting.channel_test_exclude_models': string
+  'monitor_setting.channel_test_idle_minutes': number
 }
 export type RequestPolicySettings = RetrySettings &
   HealthSettings &
@@ -53,6 +57,10 @@ export const defaultRequestPolicySettings: RequestPolicySettings = {
   'monitor_setting.auto_test_channel_minutes': 10,
   'monitor_setting.channel_test_concurrency': 1,
   'monitor_setting.channel_test_mode': 'scheduled_all',
+  'monitor_setting.channel_test_model_strategy': 'fixed',
+  'monitor_setting.channel_test_sample_percent': 100,
+  'monitor_setting.channel_test_exclude_models': '',
+  'monitor_setting.channel_test_idle_minutes': 30,
   'channel_affinity_setting.enabled': false,
   'channel_affinity_setting.session_mode': '',
   'channel_affinity_setting.switch_on_success': true,

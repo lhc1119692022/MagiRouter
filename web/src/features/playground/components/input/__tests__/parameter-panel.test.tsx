@@ -5,12 +5,14 @@ import { expect, it, vi } from 'vitest'
 
 import { DEFAULT_CONFIG } from '../../../constants'
 import type { PlaygroundParameterKey } from '../../../lib/parameters/playground-parameters'
-import type { PlaygroundConfig } from '../../../types'
+import type { ChatApiProtocol, PlaygroundConfig } from '../../../types'
 import { PlaygroundParameterContent } from '../playground-parameter-panel'
 
 function ParameterPanelFixture(props: {
   initialConfig?: PlaygroundConfig
   disabled?: boolean
+  enableProtocolSelector?: boolean
+  onProtocolChange?: (protocol: ChatApiProtocol) => void
   onValueChange?: (key: PlaygroundParameterKey, value: number | null) => void
 }) {
   const [config, setConfig] = useState(props.initialConfig ?? DEFAULT_CONFIG)
@@ -18,6 +20,14 @@ function ParameterPanelFixture(props: {
     <PlaygroundParameterContent
       config={config}
       disabled={props.disabled}
+      onProtocolChange={
+        props.enableProtocolSelector
+          ? (protocol) => {
+              props.onProtocolChange?.(protocol)
+              setConfig((previous) => ({ ...previous, protocol }))
+            }
+          : undefined
+      }
       onConfigChange={(key, value) => {
         props.onValueChange?.(key, value)
         setConfig((previous) => ({ ...previous, [key]: value }))
@@ -137,4 +147,50 @@ it('locks both the switches and the enabled values while the panel is disabled',
   expect(seed).toBeChecked()
   expect(seed).toHaveAttribute('aria-disabled', 'true')
   expect(screen.getByRole('spinbutton', { name: 'Seed' })).toBeDisabled()
+})
+
+it('renders the API Protocol selector at the top of Parameters with auto-detection and manual options', async () => {
+  const user = userEvent.setup()
+  const onProtocolChange = vi.fn()
+  render(
+    <ParameterPanelFixture
+      enableProtocolSelector
+      initialConfig={{ ...DEFAULT_CONFIG, model: 'claude-sonnet-5-5' }}
+      onProtocolChange={onProtocolChange}
+    />
+  )
+
+  const protocolTrigger = screen.getByRole('combobox', { name: 'API Protocol' })
+  const note = screen.getByRole('note')
+  expect(
+    protocolTrigger.compareDocumentPosition(note) &
+      Node.DOCUMENT_POSITION_FOLLOWING
+  ).toBeTruthy()
+  expect(protocolTrigger).toHaveTextContent('Default (Auto)')
+  expect(screen.getByText('/v1/messages')).toBeVisible()
+
+  await user.click(protocolTrigger)
+  for (const label of [
+    'Default (Auto)',
+    'OpenAI Chat',
+    'OpenAI Responses',
+    'Anthropic Messages',
+    'Google Gemini (v1beta)',
+  ]) {
+    expect(
+      screen.getByRole('option', {
+        name: new RegExp(label.replaceAll(/[()]/g, '\\$&')),
+      })
+    ).toBeVisible()
+  }
+
+  await user.click(
+    screen.getByRole('option', { name: /Google Gemini \(v1beta\)/ })
+  )
+  expect(onProtocolChange).toHaveBeenCalledWith('gemini_v1beta')
+  expect(
+    screen.getByText(
+      '/v1beta/models/claude-sonnet-5-5:streamGenerateContent?alt=sse'
+    )
+  ).toBeVisible()
 })

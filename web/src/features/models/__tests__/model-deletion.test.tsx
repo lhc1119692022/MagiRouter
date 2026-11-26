@@ -225,3 +225,95 @@ it.each([1, 2, 3])(
     expect(screen.getByText('Only available for exact matching')).toBeVisible()
   }
 )
+
+it('removes a single missing-metadata model directly from channels and invalidates channel cache', async () => {
+  const post = vi.spyOn(api, 'post').mockResolvedValue({
+    data: { success: true, data: { deleted_count: 1, updated_channels: 1 } },
+  })
+  const remove = vi.spyOn(api, 'delete')
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  })
+  const onSuccess = vi.fn()
+  const onClose = vi.fn()
+  const invalidate = vi.spyOn(client, 'invalidateQueries')
+  render(
+    <QueryClientProvider client={client}>
+      <ModelDeleteDialog
+        models={[{ id: 0, model_name: 'deepseek-asr', name_rule: 0 }]}
+        onClose={onClose}
+        onSuccess={onSuccess}
+      />
+    </QueryClientProvider>
+  )
+  const user = userEvent.setup()
+  const channelCheckbox = screen.getByRole('checkbox', {
+    name: 'Remove from all channels',
+  })
+  expect(channelCheckbox).toBeChecked()
+  expect(channelCheckbox).toHaveAttribute('aria-disabled', 'true')
+  expect(
+    screen.getByText(
+      'Models without metadata have no saved record and will be removed from all channels.'
+    )
+  ).toBeVisible()
+  await user.click(screen.getByRole('button', { name: 'Delete' }))
+  await waitFor(() => expect(onSuccess).toHaveBeenCalledOnce())
+  expect(remove).not.toHaveBeenCalled()
+  expect(post).toHaveBeenCalledWith('/api/models/delete', {
+    model_ids: [],
+    channel_models: ['deepseek-asr'],
+    remove_from_channels: true,
+    remove_pricing: false,
+  })
+  expect(invalidate).toHaveBeenCalledWith({ queryKey: ['channels'] })
+  expect(onClose).toHaveBeenCalledOnce()
+})
+
+it('supports mixed deletion and super-admin pricing removal for missing-metadata models', async () => {
+  useAuthStore.getState().auth.setUser({ id: 1, username: 'root', role: 100 })
+  const post = vi.spyOn(api, 'post').mockResolvedValue({
+    data: { success: true, data: { deleted_count: 2, updated_channels: 1 } },
+  })
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  })
+  const onSuccess = vi.fn()
+  const invalidate = vi.spyOn(client, 'invalidateQueries')
+  render(
+    <QueryClientProvider client={client}>
+      <ModelDeleteDialog
+        models={[
+          { id: 7, model_name: 'prefix-', name_rule: 1 },
+          { id: 0, model_name: 'deepseek-fetch', name_rule: 0 },
+        ]}
+        onClose={() => {}}
+        onSuccess={onSuccess}
+      />
+    </QueryClientProvider>
+  )
+  const user = userEvent.setup()
+  expect(
+    screen.getByRole('checkbox', { name: /Also remove from all channels/ })
+  ).toHaveAttribute('aria-disabled', 'true')
+  expect(
+    screen.getByText(
+      'Selected models without metadata will always be removed from all channels.'
+    )
+  ).toBeVisible()
+  await user.click(
+    screen.getByRole('checkbox', { name: 'Also remove pricing' })
+  )
+  await user.click(screen.getByRole('button', { name: 'Delete' }))
+  await waitFor(() => expect(onSuccess).toHaveBeenCalledOnce())
+  expect(post).toHaveBeenCalledWith('/api/models/delete', {
+    model_ids: [7],
+    channel_models: ['deepseek-fetch'],
+    remove_from_channels: false,
+    remove_pricing: true,
+  })
+  expect(invalidate).toHaveBeenCalledWith({ queryKey: ['channels'] })
+  expect(invalidate).toHaveBeenCalledWith({
+    queryKey: ['model-pricing-config'],
+  })
+})

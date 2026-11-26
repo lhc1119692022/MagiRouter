@@ -21,11 +21,19 @@ import { useTranslation } from 'react-i18next'
 
 import {
   Field,
+  FieldDescription,
   FieldError,
   FieldGroup,
   FieldLabel,
 } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { toIntlLocale } from '@/i18n/languages'
 import { formatNumber } from '@/lib/format'
@@ -37,11 +45,23 @@ import {
   type PlaygroundParameterControl,
   type PlaygroundParameterKey,
 } from '../../lib/parameters/playground-parameters'
-import type { PlaygroundConfig } from '../../types'
+import {
+  CHAT_API_PROTOCOL_OPTIONS,
+  getProtocolEndpointPath,
+  RESOLVED_PROTOCOL_LABEL_KEYS,
+  resolveChatApiProtocol,
+} from '../../lib/streaming/protocol'
+import type {
+  ChatApiProtocol,
+  PlaygroundConfig,
+  ResolvedChatApiProtocol,
+} from '../../types'
 
 type PlaygroundParameterProps = {
   config: PlaygroundConfig
   disabled?: boolean
+  resolvedProtocol?: ResolvedChatApiProtocol
+  onProtocolChange?: (protocol: ChatApiProtocol) => void
   onConfigChange: (key: PlaygroundParameterKey, value: number | null) => void
   onParameterEnabledChange: (
     key: PlaygroundParameterKey,
@@ -127,9 +147,75 @@ function PlaygroundParameterRow(
 
 export function PlaygroundParameterContent(props: PlaygroundParameterProps) {
   const { t } = useTranslation()
+  const protocolId = useId()
+  const selectedProtocol = props.config.protocol ?? 'auto'
+  const resolvedProtocol =
+    props.resolvedProtocol ??
+    resolveChatApiProtocol(selectedProtocol, props.config.model)
+  const resolvedEndpoint = getProtocolEndpointPath(
+    resolvedProtocol,
+    props.config.model,
+    props.config.stream
+  )
+  const selectedProtocolOption =
+    CHAT_API_PROTOCOL_OPTIONS.find(
+      (option) => option.value === selectedProtocol
+    ) ?? CHAT_API_PROTOCOL_OPTIONS[0]
 
   return (
     <>
+      {props.onProtocolChange && (
+        <div className='pg-parameter-protocol'>
+          <Field data-disabled={props.disabled}>
+            <FieldLabel htmlFor={protocolId}>{t('API Protocol')}</FieldLabel>
+            <Select
+              value={selectedProtocol}
+              disabled={props.disabled}
+              onValueChange={(value) => {
+                if (!value) return
+                const nextOption = CHAT_API_PROTOCOL_OPTIONS.find(
+                  (option) => option.value === value
+                )
+                if (nextOption) {
+                  props.onProtocolChange?.(nextOption.value)
+                }
+              }}
+            >
+              <SelectTrigger
+                id={protocolId}
+                aria-label={t('API Protocol')}
+                className='w-full'
+              >
+                <SelectValue>{t(selectedProtocolOption.labelKey)}</SelectValue>
+              </SelectTrigger>
+              <SelectContent alignItemWithTrigger={false}>
+                {CHAT_API_PROTOCOL_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    <span className='pg-protocol-option'>
+                      <span>{t(option.labelKey)}</span>
+                      {option.endpointLabel && (
+                        <span className='pg-protocol-option-path' lang='en'>
+                          {option.endpointLabel}
+                        </span>
+                      )}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <FieldDescription className='pg-protocol-resolved'>
+              {selectedProtocol === 'auto'
+                ? t('Auto-selected: {{protocol}}', {
+                    protocol: t(RESOLVED_PROTOCOL_LABEL_KEYS[resolvedProtocol]),
+                  })
+                : t('Active endpoint')}
+              <code className='pg-protocol-endpoint' lang='en'>
+                {resolvedEndpoint}
+              </code>
+            </FieldDescription>
+          </Field>
+        </div>
+      )}
       <p
         role='note'
         className='pg-parameter-note text-muted-foreground text-xs'

@@ -153,7 +153,7 @@ export function SiteConfigDialog(props: SiteConfigDialogProps) {
               type='number'
               min={0.0001}
               max={1000}
-              step='0.01'
+              step='any'
               placeholder={t('System default: {{rate}}', {
                 rate: props.defaultExchangeRate,
               })}

@@ -696,12 +696,22 @@ export interface ModelDeleteResult {
 export async function deleteModels(
   modelIds: number[],
   removeFromChannels = false,
-  removePricing = false
+  removePricing = false,
+  channelModels: string[] = []
 ): Promise<{ success: boolean; message?: string; data: ModelDeleteResult }> {
-  const res = await api.post('/api/models/delete', {
+  const payload: {
+    model_ids: number[]
+    channel_models?: string[]
+    remove_from_channels: boolean
+    remove_pricing: boolean
+  } = {
     model_ids: modelIds,
     remove_from_channels: removeFromChannels,
     remove_pricing: removePricing,
-  })
+  }
+  if (channelModels.length > 0) {
+    payload.channel_models = channelModels
+  }
+  const res = await api.post('/api/models/delete', payload)
   return res.data
 }

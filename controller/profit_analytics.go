@@ -1,6 +1,8 @@
 package controller
 
 import (
+	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -114,4 +116,44 @@ func UpdateProfitAnalyticsSettings(c *gin.Context) {
 		"extra_fixed_costs":   len(normalized.ExtraFixedCosts),
 	})
 	common.ApiSuccess(c, operation_setting.GetProfitAnalyticsSettingSnapshot())
+}
+
+func GetProfitDeletedUserRecords(c *gin.Context) {
+	preview, err := model.GetProfitDeletedUserRecordsPreview()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, preview)
+}
+
+func CleanupProfitDeletedUserRecords(c *gin.Context) {
+	var req model.ProfitDeletedUserCleanupRequest
+	if c.Request.Body != nil {
+		if err := common.DecodeJsonBody(c.Request.Body, &req); err != nil && !errors.Is(err, io.EOF) {
+			common.ApiErrorStatus(c, http.StatusBadRequest, common.NewMessage("Invalid parameters"))
+			return
+		}
+	}
+	result, err := model.CleanupProfitDeletedUserRecords(req)
+	if err != nil {
+		var msgErr *common.Message
+		if errors.As(err, &msgErr) {
+			common.ApiErrorStatus(c, http.StatusBadRequest, msgErr)
+			return
+		}
+		common.ApiError(c, err)
+		return
+	}
+	recordManageAuditFor(c, result.TargetUserId, "profit.deleted_user_records_cleanup", map[string]any{
+		"target_user_id":              result.TargetUserId,
+		"topups_deleted":              result.TopUpsDeleted,
+		"subscription_orders_deleted": result.SubOrdersDeleted,
+		"quota_data_deleted":          result.QuotaDataDeleted,
+		"user_subscriptions_deleted":  result.UserSubsDeleted,
+		"used_redemptions_deleted":    result.RedemptionsDeleted,
+		"checkins_deleted":            result.CheckinsDeleted,
+		"total_deleted":               result.TotalDeleted,
+	})
+	common.ApiSuccess(c, result)
 }

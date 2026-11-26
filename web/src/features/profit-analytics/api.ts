@@ -1,7 +1,13 @@
 import { api } from '@/lib/api'
 import { requireServerSuccess } from '@/lib/server-error-message'
 
-import type { ProfitAnalyticsReport, ProfitAnalyticsSetting } from './types'
+import type {
+  ProfitAnalyticsReport,
+  ProfitAnalyticsSetting,
+  ProfitDeletedUserCleanupRequest,
+  ProfitDeletedUserCleanupResult,
+  ProfitDeletedUserRecordsPreview,
+} from './types'
 
 interface ApiEnvelope<T> {
   success: boolean
@@ -35,6 +41,23 @@ export async function updateProfitAnalyticsSettings(
 ) {
   const res = await api.put<ApiEnvelope<ProfitAnalyticsSetting>>(
     '/api/option/profit_analytics',
+    payload
+  )
+  return requireServerSuccess(res.data).data
+}
+
+export async function getProfitDeletedUserRecords() {
+  const res = await api.get<ApiEnvelope<ProfitDeletedUserRecordsPreview>>(
+    '/api/data/profit/deleted-user-records'
+  )
+  return requireServerSuccess(res.data).data
+}
+
+export async function cleanupProfitDeletedUserRecords(
+  payload: ProfitDeletedUserCleanupRequest
+) {
+  const res = await api.post<ApiEnvelope<ProfitDeletedUserCleanupResult>>(
+    '/api/data/profit/deleted-user-records/cleanup',
     payload
   )
   return requireServerSuccess(res.data).data

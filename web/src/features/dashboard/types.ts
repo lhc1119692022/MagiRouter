@@ -280,3 +280,93 @@ export interface FAQItem {
   question: string
   answer: string
 }
+
+// ============================================================================
+// Real-Request Group Channel Status Types
+// ============================================================================
+
+export type GroupChannelHealthStatus =
+  | 'operational'
+  | 'degraded'
+  | 'outage'
+  | 'idle'
+
+export interface GroupChannelStatusPoint {
+  ts: number
+  request_count: number
+  success_count: number
+  success_rate: number
+  avg_latency_ms: number
+  avg_ttft_ms: number
+  avg_tps: number
+}
+
+export interface GroupChannelStatusModel {
+  model_name: string
+  model_kind?: 'text' | 'image' | 'video' | 'audio' | 'transcription' | 'other'
+  metric_focus?: 'cache_rate' | 'duration'
+  request_count: number
+  success_count: number
+  success_rate: number
+  avg_latency_ms: number
+  avg_ttft_ms: number
+  avg_tps: number
+  cache_hit_rate?: number
+}
+
+export interface GroupChannelProbeSummary {
+  last_tested_at: number
+  tested_model: string
+  success: boolean
+  latency_ms: number
+  recent_samples: number
+  recent_success_rate: number
+  recent_models?: string[]
+}
+
+export interface GroupChannelStatusItem {
+  group: string
+  description: string
+  ratio: number
+  is_auto?: boolean
+  status: GroupChannelHealthStatus
+  capabilities?: Array<
+    'text' | 'image' | 'video' | 'audio' | 'transcription' | 'other'
+  >
+  media_only?: boolean
+  metric_focus?: 'cache_rate' | 'duration'
+  enabled_models: number
+  has_active_channels: boolean
+  request_count: number
+  success_count: number
+  success_rate: number
+  avg_latency_ms: number
+  avg_ttft_ms: number
+  avg_tps: number
+  cache_hit_rate?: number
+  series: GroupChannelStatusPoint[]
+  top_models: GroupChannelStatusModel[]
+  recent_probe?: GroupChannelProbeSummary
+}
+
+export interface GroupChannelStatusSummary {
+  total_groups: number
+  operational_groups: number
+  degraded_groups: number
+  outage_groups: number
+  idle_groups: number
+  total_requests: number
+  success_rate: number
+  avg_latency_ms: number
+  avg_ttft_ms: number
+  avg_tps: number
+}
+
+export interface GroupChannelStatusResponse {
+  window_hours: number
+  window_start: number
+  window_end: number
+  bucket_seconds: number
+  summary: GroupChannelStatusSummary
+  groups: GroupChannelStatusItem[]
+}

@@ -22,26 +22,34 @@ import { useTranslation } from 'react-i18next'
 import { handleServerError } from '@/lib/handle-server-error'
 
 import { sendChatCompletion } from '../api'
-import { ERROR_MESSAGES } from '../constants'
+import { ERROR_MESSAGES, MESSAGE_STATUS } from '../constants'
 import {
   applyStreamingChunk,
   buildChatCompletionPayload,
+  completeAssistantTiming,
+  extractProtocolNonStreamResult,
+  finalizeMessage,
   updateAssistantMessageWithError,
   updateLastAssistantMessage,
   parseRequestErrorDetails,
-  applyChatCompletionResponse,
   completeAssistantMessage,
-  hasChatCompletionChoice,
   isAssistantMessageFinal,
   isAssistantMessagePending,
+  updateCurrentVersionContent,
 } from '../lib'
-import type { ChatCompletionRequest, Message, PlaygroundConfig } from '../types'
+import type {
+  ChatCompletionRequest,
+  Message,
+  PlaygroundConfig,
+  ResolvedChatApiProtocol,
+} from '../types'
 import { useStreamRequest } from './use-stream-request'
 
 interface UseChatHandlerOptions {
   config: PlaygroundConfig
   billingKeyId?: number | null
   acceptsChatImages?: boolean
+  protocol?: ResolvedChatApiProtocol
   onMessageUpdate: (updater: (prev: Message[]) => Message[]) => void
 }
 
@@ -72,6 +80,7 @@ export function useChatHandler({
   config,
   billingKeyId,
   acceptsChatImages,
+  protocol = 'openai_chat',
   onMessageUpdate,
 }: UseChatHandlerOptions) {
   const { t } = useTranslation()
@@ -257,12 +266,14 @@ export function useChatHandler({
         (type, chunk) => handleStreamUpdate(generation, type, chunk),
         () => handleStreamComplete(generation),
         (error, errorCode) => handleStreamError(generation, error, errorCode),
-        billingKeyId
+        billingKeyId,
+        protocol
       )
     },
     [
       sendStreamRequest,
       billingKeyId,
+      protocol,
       discardPendingStreamUpdates,
       handleStreamUpdate,
       handleStreamComplete,
@@ -287,7 +298,8 @@ export function useChatHandler({
         const response = await sendChatCompletion(
           payload,
           abortController.signal,
-          billingKeyId
+          billingKeyId,
+          protocol
         )
         if (
           abortController.signal.aborted ||
@@ -296,21 +308,23 @@ export function useChatHandler({
           return
         }
 
-        if (!hasChatCompletionChoice(response)) {
+        const extracted = extractProtocolNonStreamResult(protocol, response)
+        if (!extracted) {
           handleStreamError(generation, ERROR_MESSAGES.API_REQUEST_ERROR)
           return
         }
 
         onMessageUpdate((prev) => {
           if (requestGenerationRef.current !== generation) return prev
-          return updateLastAssistantMessage(prev, (message) => {
-            const updatedMessage = applyChatCompletionResponse(
-              message,
-              response
-            )
-
-            return updatedMessage ?? message
-          })
+          return updateLastAssistantMessage(prev, (message) =>
+            completeAssistantTiming({
+              ...finalizeMessage(
+                updateCurrentVersionContent(message, extracted.content),
+                extracted.reasoning
+              ),
+              status: MESSAGE_STATUS.COMPLETE,
+            })
+          )
         })
       } catch (error: unknown) {
         if (
@@ -332,6 +346,7 @@ export function useChatHandler({
     [
       stopStream,
       billingKeyId,
+      protocol,
       discardPendingStreamUpdates,
       onMessageUpdate,
       handleStreamError,

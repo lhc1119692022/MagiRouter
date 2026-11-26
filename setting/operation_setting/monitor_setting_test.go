@@ -89,3 +89,35 @@ func TestValidateChannelTestConcurrency(t *testing.T) {
 	assert.Error(t, ValidateChannelTestConcurrency("33"))
 	assert.Error(t, ValidateChannelTestConcurrency("1.5"))
 }
+
+func TestMonitorSettingModelStrategyAndSampling(t *testing.T) {
+	orig := monitorSetting
+	t.Cleanup(func() { monitorSetting = orig })
+
+	monitorSetting = MonitorSetting{
+		ChannelTestModelStrategy: ChannelTestModelStrategyRandom,
+		ChannelTestSamplePercent: 35,
+		ChannelTestExcludeModels: "sora, o1-pro\nopus",
+	}
+	setting := GetMonitorSetting()
+	assert.Equal(t, ChannelTestModelStrategyRandom, setting.ChannelTestModelStrategy)
+	assert.Equal(t, 35, setting.ChannelTestSamplePercent)
+	assert.Equal(t, []string{"sora", "o1-pro", "opus"}, ParseChannelTestExcludeKeywords(setting.ChannelTestExcludeModels))
+
+	require.NoError(t, ValidateChannelTestModelStrategy("fixed"))
+	require.NoError(t, ValidateChannelTestModelStrategy("random"))
+	assert.Error(t, ValidateChannelTestModelStrategy("invalid"))
+
+	require.NoError(t, ValidateChannelTestSamplePercent("1"))
+	require.NoError(t, ValidateChannelTestSamplePercent("100"))
+	assert.Error(t, ValidateChannelTestSamplePercent("0"))
+	assert.Error(t, ValidateChannelTestSamplePercent("101"))
+
+	require.NoError(t, ValidateChannelTestIdleMinutes("0"))
+	require.NoError(t, ValidateChannelTestIdleMinutes("30"))
+	require.NoError(t, ValidateChannelTestIdleMinutes("1440"))
+	assert.Error(t, ValidateChannelTestIdleMinutes("-1"))
+	assert.Error(t, ValidateChannelTestIdleMinutes("1441"))
+	assert.Equal(t, 0, NormalizeChannelTestIdleMinutes(-5))
+	assert.Equal(t, 1440, NormalizeChannelTestIdleMinutes(2000))
+}

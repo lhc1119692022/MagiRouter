@@ -168,15 +168,23 @@ export function ApiKeysMutateDrawer({
   const models = modelsData?.data || []
   const requireExplicitGroup = groupsData?.require_explicit_group === true
   const accountUserGroup = groupsData?.user_group || ''
+  const currentKeyGroup = isUpdate
+    ? (apiKeyData?.data?.group ?? currentRow?.group ?? '')
+    : ''
   const groups = useMemo<ApiKeyGroupOption[]>(
     () =>
-      Object.entries(groupsData?.data || {}).map(([key, info]) => ({
-        value: key,
-        label: key,
-        desc: info.desc ? translateServerText(t, info.desc) : key,
-        ratio: info.ratio,
-      })),
-    [groupsData, t]
+      Object.entries(groupsData?.data || {})
+        .filter(
+          ([key, info]) =>
+            info.has_models !== false || (isUpdate && key === currentKeyGroup)
+        )
+        .map(([key, info]) => ({
+          value: key,
+          label: key,
+          desc: info.desc ? translateServerText(t, info.desc) : key,
+          ratio: info.ratio,
+        })),
+    [groupsData, isUpdate, currentKeyGroup, t]
   )
   const backendHasAuto = groups.some((g) => g.value === 'auto')
   const availableAutoGroupNames = useMemo(

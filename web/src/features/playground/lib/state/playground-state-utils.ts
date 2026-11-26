@@ -47,6 +47,7 @@ export function getInitialPlaygroundConfig(
   return {
     ...DEFAULT_CONFIG,
     group: config.group,
+    protocol: config.protocol,
     stream: config.stream,
     historyTurns: config.historyTurns,
     model: preset.model,

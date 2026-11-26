@@ -7,8 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
+	"math/rand/v2"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,6 +24,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	"github.com/QuantumNous/new-api/pkg/jsplugin"
+	perfmetrics "github.com/QuantumNous/new-api/pkg/perf_metrics"
 	"github.com/QuantumNous/new-api/relay"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
@@ -129,17 +133,7 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 
 	testModel = strings.TrimSpace(testModel)
 	if testModel == "" {
-		if channel.TestModel != nil && *channel.TestModel != "" {
-			testModel = strings.TrimSpace(*channel.TestModel)
-		} else {
-			models := channel.GetModels()
-			if len(models) > 0 {
-				testModel = strings.TrimSpace(models[0])
-			}
-			if testModel == "" {
-				testModel = "gpt-4o-mini"
-			}
-		}
+		testModel = selectChannelTestModel(channel, "", operation_setting.ChannelTestModelStrategyFixed, "")
 	}
 
 	endpointType = normalizeChannelTestEndpoint(channel, endpointType)
@@ -886,6 +880,23 @@ func buildTestRequest(model string, endpointType string, channel *model.Channel,
 	return testRequest
 }
 
+var inFlightChannelTests sync.Map
+
+func tryAcquireChannelTestSlot(channelID int) bool {
+	if channelID <= 0 {
+		return true
+	}
+	_, loaded := inFlightChannelTests.LoadOrStore(channelID, struct{}{})
+	return !loaded
+}
+
+func releaseChannelTestSlot(channelID int) {
+	if channelID <= 0 {
+		return
+	}
+	inFlightChannelTests.Delete(channelID)
+}
+
 func TestChannel(c *gin.Context) {
 	channelId, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
@@ -913,12 +924,21 @@ func TestChannel(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	resolvedModel := selectChannelTestModel(channel, testModel, operation_setting.ChannelTestModelStrategyFixed, "")
+	if !tryAcquireChannelTestSlot(channel.Id) {
+		c.JSON(http.StatusConflict, gin.H{
+			"success": false,
+			"message": "Channel is currently being tested",
+		})
+		return
+	}
+	defer releaseChannelTestSlot(channel.Id)
 	tik := time.Now()
 	requestCtx := context.Background()
 	if c.Request != nil {
 		requestCtx = c.Request.Context()
 	}
-	result := testChannel(requestCtx, channel, testUserID, testModel, endpointType, isStream)
+	result := testChannel(requestCtx, channel, testUserID, resolvedModel, endpointType, isStream)
 	if result.localErr != nil {
 		resp := gin.H{
 			"success": false,
@@ -934,6 +954,12 @@ func TestChannel(c *gin.Context) {
 	tok := time.Now()
 	milliseconds := tok.Sub(tik).Milliseconds()
 	go channel.UpdateResponseTime(milliseconds)
+	perfmetrics.RecordChannelProbe(channel.GetGroups(), perfmetrics.ProbeSample{
+		Timestamp: tok.Unix(),
+		Model:     resolvedModel,
+		Success:   result.newAPIError == nil,
+		LatencyMs: milliseconds,
+	})
 	consumedTime := float64(milliseconds) / 1000.0
 	if result.newAPIError != nil {
 		c.JSON(http.StatusOK, gin.H{
@@ -963,9 +989,20 @@ type channelTestSummary struct {
 
 func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, testUserID int, allowDisable bool, disableThreshold int64) channelTestSummary {
 	summary := channelTestSummary{}
+	if !tryAcquireChannelTestSlot(channel.Id) {
+		return summary
+	}
+	defer releaseChannelTestSlot(channel.Id)
 	isChannelEnabled := channel.Status == common.ChannelStatusEnabled
+	monitorSetting := operation_setting.GetMonitorSetting()
+	chosenModel := selectChannelTestModel(
+		channel,
+		"",
+		monitorSetting.ChannelTestModelStrategy,
+		monitorSetting.ChannelTestExcludeModels,
+	)
 	tik := time.Now()
-	result := testChannel(ctx, channel, testUserID, "", "", shouldUseStreamForAutomaticChannelTest(channel))
+	result := testChannel(ctx, channel, testUserID, chosenModel, "", shouldUseStreamForAutomaticChannelTest(channel))
 	milliseconds := time.Since(tik).Milliseconds()
 	if ctx.Err() != nil {
 		return summary
@@ -996,6 +1033,15 @@ func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, test
 		summary.Succeeded++
 	} else {
 		summary.Failed++
+	}
+
+	if result.localErr == nil {
+		perfmetrics.RecordChannelProbe(channel.GetGroups(), perfmetrics.ProbeSample{
+			Timestamp: time.Now().Unix(),
+			Model:     chosenModel,
+			Success:   newAPIError == nil,
+			LatencyMs: milliseconds,
+		})
 	}
 
 	if allowDisable && isChannelEnabled && shouldBanChannel && channel.GetAutoBan() {
@@ -1149,6 +1195,12 @@ func runChannelTestTask(ctx context.Context, mode string, notify bool, report fu
 		mode = operation_setting.GetMonitorSetting().ChannelTestMode
 	}
 	selected := selectChannelsForAutomaticTest(channels, mode)
+	if !notify {
+		monitorSetting := operation_setting.GetMonitorSetting()
+		selected = filterChannelsByScheduledCooldown(selected, mode, monitorSetting.AutoTestChannelMinutes, time.Now().Unix())
+		selected = filterChannelsByIdleTraffic(selected, mode, monitorSetting.ChannelTestIdleMinutes, time.Now().Unix())
+		selected = sampleChannelsForScheduledTest(selected, monitorSetting.ChannelTestSamplePercent)
+	}
 	allowDisable := mode != operation_setting.ChannelTestModePassiveRecovery
 	concurrency := operation_setting.GetMonitorSetting().ChannelTestConcurrency
 	summary := performChannelTests(ctx, selected, testUserID, allowDisable, concurrency, report)
@@ -1175,6 +1227,125 @@ func selectChannelsForAutomaticTest(channels []*model.Channel, mode string) []*m
 		selected = append(selected, channel)
 	}
 	return selected
+}
+
+func shouldExcludeFromRandomChannelTest(modelName string, customKeywords []string) bool {
+	lower := strings.ToLower(strings.TrimSpace(modelName))
+	if lower == "" {
+		return true
+	}
+	if perfmetrics.IsRandomTestExcludedByDefault(lower) {
+		return true
+	}
+	for _, keyword := range customKeywords {
+		if keyword != "" && strings.Contains(lower, keyword) {
+			return true
+		}
+	}
+	return false
+}
+
+// filterChannelsByScheduledCooldown skips enabled channels that were already
+// tested (manually in Channel Management or in a recent bulk test) within 80%
+// of the scheduled interval so manual and scheduled probes cooperate instead
+// of double-testing the same channel.
+func filterChannelsByScheduledCooldown(channels []*model.Channel, mode string, intervalMinutes float64, nowUnix int64) []*model.Channel {
+	if mode == operation_setting.ChannelTestModePassiveRecovery || intervalMinutes <= 0 {
+		return channels
+	}
+	cooldownSeconds := int64(intervalMinutes * 60.0 * 0.8)
+	if cooldownSeconds <= 0 {
+		return channels
+	}
+	filtered := make([]*model.Channel, 0, len(channels))
+	for _, channel := range channels {
+		if channel == nil {
+			continue
+		}
+		if channel.Status == common.ChannelStatusEnabled && channel.TestTime > 0 && nowUnix-channel.TestTime < cooldownSeconds {
+			continue
+		}
+		filtered = append(filtered, channel)
+	}
+	return filtered
+}
+
+// filterChannelsByIdleTraffic skips enabled channels that have already served
+// at least one successful real user request within idleMinutes, because active
+// user traffic already verifies channel health. Auto-disabled channels are
+// never skipped so recovery probing keeps working.
+func filterChannelsByIdleTraffic(channels []*model.Channel, mode string, idleMinutes int, nowUnix int64) []*model.Channel {
+	if mode == operation_setting.ChannelTestModePassiveRecovery || idleMinutes <= 0 {
+		return channels
+	}
+	idleSeconds := int64(idleMinutes) * 60
+	filtered := make([]*model.Channel, 0, len(channels))
+	for _, channel := range channels {
+		if channel == nil {
+			continue
+		}
+		if channel.Status == common.ChannelStatusEnabled {
+			lastTraffic := perfmetrics.GetChannelLastTrafficTime(channel.Id)
+			if lastTraffic > 0 && nowUnix-lastTraffic < idleSeconds {
+				continue
+			}
+		}
+		filtered = append(filtered, channel)
+	}
+	return filtered
+}
+
+func selectChannelTestModel(channel *model.Channel, explicitModel string, strategy string, excludeRaw string) string {
+	if trimmed := strings.TrimSpace(explicitModel); trimmed != "" {
+		return trimmed
+	}
+	if channel == nil {
+		return "gpt-4o-mini"
+	}
+	if operation_setting.NormalizeChannelTestModelStrategy(strategy) == operation_setting.ChannelTestModelStrategyRandom {
+		customExcludes := operation_setting.ParseChannelTestExcludeKeywords(excludeRaw)
+		rawModels := channel.GetModels()
+		candidates := make([]string, 0, len(rawModels))
+		for _, raw := range rawModels {
+			candidate := strings.TrimSpace(raw)
+			if candidate == "" || slices.Contains(candidates, candidate) {
+				continue
+			}
+			if shouldExcludeFromRandomChannelTest(candidate, customExcludes) {
+				continue
+			}
+			candidates = append(candidates, candidate)
+		}
+		if len(candidates) > 0 {
+			return candidates[rand.IntN(len(candidates))]
+		}
+	}
+	if channel.TestModel != nil && strings.TrimSpace(*channel.TestModel) != "" {
+		return strings.TrimSpace(*channel.TestModel)
+	}
+	models := channel.GetModels()
+	for _, raw := range models {
+		if trimmed := strings.TrimSpace(raw); trimmed != "" {
+			return trimmed
+		}
+	}
+	return "gpt-4o-mini"
+}
+
+func sampleChannelsForScheduledTest(channels []*model.Channel, samplePercent int) []*model.Channel {
+	normalized := operation_setting.NormalizeChannelTestSamplePercent(samplePercent)
+	if normalized >= operation_setting.MaxChannelTestSamplePercent || len(channels) <= 1 {
+		return channels
+	}
+	count := max(1, int(math.Ceil(float64(len(channels))*float64(normalized)/100.0)))
+	if count >= len(channels) {
+		return channels
+	}
+	shuffled := append([]*model.Channel(nil), channels...)
+	rand.Shuffle(len(shuffled), func(i, j int) {
+		shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
+	})
+	return shuffled[:count]
 }
 
 // TestAllChannels enqueues a channel_test system task instead of running the

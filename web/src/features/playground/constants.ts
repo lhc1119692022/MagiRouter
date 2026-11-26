@@ -66,6 +66,7 @@ export const DEFAULT_NUMERIC_PARAMETERS = {
 export const DEFAULT_CONFIG: PlaygroundConfig = {
   ...DEFAULT_NUMERIC_PARAMETERS,
   model: '',
+  protocol: 'auto',
   reasoning_effort: '',
   web_search: false,
   historyTurns: 0,

@@ -365,4 +365,58 @@ describe('UpstreamBalance page', () => {
       screen.queryByRole('button', { name: 'Set as Sub2API' })
     ).not.toBeInTheDocument()
   })
+
+  it('accepts integer and decimal CNY exchange rates in the site config dialog', async () => {
+    const user = userEvent.setup()
+    const fixture = buildOverviewFixture()
+
+    vi.spyOn(api, 'get').mockResolvedValue({
+      data: { success: true, message: '', data: fixture },
+    })
+    const putSpy = vi.spyOn(api, 'put').mockResolvedValue({
+      data: { success: true, message: '', data: fixture },
+    })
+
+    renderWithQuery(<UpstreamBalance />)
+
+    await screen.findByText('Relay A')
+    const configureButtons = screen.getAllByRole('button', {
+      name: 'Configure',
+    })
+    await user.click(configureButtons[0])
+
+    const rateInput = (await screen.findByLabelText(
+      'CNY exchange rate (1 USD = ¥)'
+    )) as HTMLInputElement
+    expect(rateInput).toHaveAttribute('step', 'any')
+
+    await user.clear(rateInput)
+    await user.type(rateInput, '0.1')
+    expect(rateInput.checkValidity()).toBe(true)
+    expect(rateInput.validity.stepMismatch).toBe(false)
+
+    await user.clear(rateInput)
+    await user.type(rateInput, '0')
+    expect(rateInput.checkValidity()).toBe(false)
+    expect(rateInput.validity.rangeUnderflow).toBe(true)
+
+    await user.clear(rateInput)
+    await user.type(rateInput, '10')
+    expect(rateInput.checkValidity()).toBe(true)
+    expect(rateInput.validity.stepMismatch).toBe(false)
+
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => {
+      expect(putSpy).toHaveBeenCalledWith(
+        '/api/option/upstream_balance',
+        expect.objectContaining({
+          sites: expect.objectContaining({
+            'https://relay-a.example.com': expect.objectContaining({
+              cny_rate: 10,
+            }),
+          }),
+        })
+      )
+    })
+  })
 })

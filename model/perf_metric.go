@@ -113,6 +113,179 @@ func GetPerfMetricsModelGroupCounts(startTs int64, endTs int64, groups []string)
 	return counts, err
 }
 
+type PerfMetricGroupBucket struct {
+	Group          string `gorm:"column:group_name" json:"group"`
+	BucketTs       int64  `gorm:"column:bucket_ts" json:"bucket_ts"`
+	RequestCount   int64  `gorm:"column:request_count" json:"request_count"`
+	SuccessCount   int64  `gorm:"column:success_count" json:"success_count"`
+	TotalLatencyMs int64  `gorm:"column:total_latency_ms" json:"total_latency_ms"`
+	TtftSumMs      int64  `gorm:"column:ttft_sum_ms" json:"ttft_sum_ms"`
+	TtftCount      int64  `gorm:"column:ttft_count" json:"ttft_count"`
+	OutputTokens   int64  `gorm:"column:output_tokens" json:"output_tokens"`
+	GenerationMs   int64  `gorm:"column:generation_ms" json:"generation_ms"`
+	PromptTokens   int64  `gorm:"column:prompt_tokens" json:"prompt_tokens"`
+	CachedTokens   int64  `gorm:"column:cached_tokens" json:"cached_tokens"`
+}
+
+func perfMetricGroupCol() string {
+	if commonGroupCol != "" {
+		return commonGroupCol
+	}
+	if DB != nil && DB.Dialector != nil && DB.Dialector.Name() == "postgres" {
+		return `"group"`
+	}
+	return "`group`"
+}
+
+func GetPerfMetricsGroupBuckets(startTs int64, endTs int64, groups []string) ([]PerfMetricGroupBucket, error) {
+	var rows []PerfMetricGroupBucket
+	if DB == nil {
+		return rows, nil
+	}
+	groupCol := perfMetricGroupCol()
+	query := DB.Model(&PerfMetric{}).
+		Select(groupCol+" AS group_name, bucket_ts, SUM(request_count) AS request_count, SUM(success_count) AS success_count, SUM(total_latency_ms) AS total_latency_ms, SUM(ttft_sum_ms) AS ttft_sum_ms, SUM(ttft_count) AS ttft_count, SUM(output_tokens) AS output_tokens, SUM(generation_ms) AS generation_ms, SUM(prompt_tokens) AS prompt_tokens, SUM(cached_tokens) AS cached_tokens").
+		Where("bucket_ts >= ? AND bucket_ts <= ?", startTs, endTs)
+	if groups != nil {
+		if len(groups) == 0 {
+			return rows, nil
+		}
+		query = query.Where(groupCol+" IN ?", groups)
+	}
+	err := query.
+		Group(groupCol + ", bucket_ts").
+		Having("SUM(request_count) > 0").
+		Order("bucket_ts ASC").
+		Find(&rows).Error
+	return rows, err
+}
+
+type PerfMetricGroupModelSummary struct {
+	Group          string `gorm:"column:group_name" json:"group"`
+	ModelName      string `gorm:"column:model_name" json:"model_name"`
+	RequestCount   int64  `gorm:"column:request_count" json:"request_count"`
+	SuccessCount   int64  `gorm:"column:success_count" json:"success_count"`
+	TotalLatencyMs int64  `gorm:"column:total_latency_ms" json:"total_latency_ms"`
+	TtftSumMs      int64  `gorm:"column:ttft_sum_ms" json:"ttft_sum_ms"`
+	TtftCount      int64  `gorm:"column:ttft_count" json:"ttft_count"`
+	OutputTokens   int64  `gorm:"column:output_tokens" json:"output_tokens"`
+	GenerationMs   int64  `gorm:"column:generation_ms" json:"generation_ms"`
+	PromptTokens   int64  `gorm:"column:prompt_tokens" json:"prompt_tokens"`
+	CachedTokens   int64  `gorm:"column:cached_tokens" json:"cached_tokens"`
+}
+
+func GetPerfMetricsGroupModelSummaries(startTs int64, endTs int64, groups []string) ([]PerfMetricGroupModelSummary, error) {
+	var rows []PerfMetricGroupModelSummary
+	if DB == nil {
+		return rows, nil
+	}
+	groupCol := perfMetricGroupCol()
+	query := DB.Model(&PerfMetric{}).
+		Select(groupCol+" AS group_name, model_name, SUM(request_count) AS request_count, SUM(success_count) AS success_count, SUM(total_latency_ms) AS total_latency_ms, SUM(ttft_sum_ms) AS ttft_sum_ms, SUM(ttft_count) AS ttft_count, SUM(output_tokens) AS output_tokens, SUM(generation_ms) AS generation_ms, SUM(prompt_tokens) AS prompt_tokens, SUM(cached_tokens) AS cached_tokens").
+		Where("bucket_ts >= ? AND bucket_ts <= ?", startTs, endTs)
+	if groups != nil {
+		if len(groups) == 0 {
+			return rows, nil
+		}
+		query = query.Where(groupCol+" IN ?", groups)
+	}
+	err := query.
+		Group(groupCol + ", model_name").
+		Having("SUM(request_count) > 0").
+		Find(&rows).Error
+	return rows, err
+}
+
+type groupEnabledModelCountRow struct {
+	Group      string `gorm:"column:group_name"`
+	ModelCount int    `gorm:"column:model_count"`
+}
+
+func GetEnabledModelCountsByGroup(groups []string) (map[string]int, error) {
+	result := make(map[string]int)
+	if DB == nil {
+		return result, nil
+	}
+	groupCol := perfMetricGroupCol()
+	query := DB.Model(&Ability{}).
+		Select(groupCol+" AS group_name, COUNT(DISTINCT model) AS model_count").
+		Where("enabled = ?", true)
+	if groups != nil {
+		if len(groups) == 0 {
+			return result, nil
+		}
+		query = query.Where(groupCol+" IN ?", groups)
+	}
+	var rows []groupEnabledModelCountRow
+	if err := query.Group(groupCol).Find(&rows).Error; err != nil {
+		return result, err
+	}
+	for _, row := range rows {
+		result[row.Group] = row.ModelCount
+	}
+	return result, nil
+}
+
+type groupEnabledModelRow struct {
+	Group string `gorm:"column:group_name"`
+	Model string `gorm:"column:model"`
+}
+
+func GetEnabledModelsByGroup(groups []string) (map[string][]string, error) {
+	result := make(map[string][]string)
+	if DB == nil {
+		return result, nil
+	}
+	groupCol := perfMetricGroupCol()
+	query := DB.Model(&Ability{}).
+		Select(groupCol+" AS group_name, model").
+		Where("enabled = ?", true)
+	if groups != nil {
+		if len(groups) == 0 {
+			return result, nil
+		}
+		query = query.Where(groupCol+" IN ?", groups)
+	}
+	var rows []groupEnabledModelRow
+	if err := query.Group(groupCol + ", model").Find(&rows).Error; err != nil {
+		return result, err
+	}
+	for _, row := range rows {
+		result[row.Group] = append(result[row.Group], row.Model)
+	}
+	return result, nil
+}
+
+type ModelCapabilityHint struct {
+	Tags      string
+	Endpoints []string
+}
+
+// GetModelCapabilityHintsByNames resolves optional Model metadata tags and
+// declared endpoints for the requested model names, matching Model Plaza rules.
+func GetModelCapabilityHintsByNames(names []string) map[string]ModelCapabilityHint {
+	hints := make(map[string]ModelCapabilityHint)
+	if DB == nil || len(names) == 0 || !DB.Migrator().HasTable(&Model{}) {
+		return hints
+	}
+	var allMeta []Model
+	if err := DB.Select("id", "model_name", "tags", "endpoints", "name_rule", "status").Find(&allMeta).Error; err != nil || len(allMeta) == 0 {
+		return hints
+	}
+	resolved := resolveModelMetadata(allMeta, names)
+	for modelName, meta := range resolved {
+		if meta == nil {
+			continue
+		}
+		endpoints, _ := declaredEndpointNames(meta.Endpoints)
+		hints[modelName] = ModelCapabilityHint{
+			Tags:      meta.Tags,
+			Endpoints: endpoints,
+		}
+	}
+	return hints
+}
+
 func GetPerfMetricsSummaryAll(startTs int64, endTs int64, groups []string) ([]PerfMetricSummary, error) {
 	var summaries []PerfMetricSummary
 	query := DB.Model(&PerfMetric{}).

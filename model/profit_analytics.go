@@ -112,6 +112,7 @@ type ProfitChannelBreakdown struct {
 	Group                   string   `json:"group"`
 	Tag                     string   `json:"tag"`
 	Status                  int      `json:"status"`
+	ChannelDeleted          bool     `json:"channel_deleted,omitempty"`
 	Balance                 float64  `json:"balance"`
 	Requests                int64    `json:"requests"`
 	Tokens                  int64    `json:"tokens"`
@@ -176,6 +177,7 @@ type ProfitRecentOrderItem struct {
 	UserId          int     `json:"user_id"`
 	Username        string  `json:"username"`
 	DisplayName     string  `json:"display_name"`
+	UserDeleted     bool    `json:"user_deleted"`
 	PaymentMethod   string  `json:"payment_method"`
 	PaymentProvider string  `json:"payment_provider"`
 	Money           float64 `json:"money"`
@@ -185,18 +187,87 @@ type ProfitRecentOrderItem struct {
 	IsInternal      bool    `json:"is_internal"`
 }
 
+type ProfitDeletedUserOrphanSummary struct {
+	UserCount            int     `json:"user_count"`
+	TopUpOrders          int64   `json:"topup_orders"`
+	CompletedTopUpOrders int64   `json:"completed_topup_orders"`
+	CompletedTopUpMoney  float64 `json:"completed_topup_money"`
+	SubscriptionOrders   int64   `json:"subscription_orders"`
+	CompletedSubOrders   int64   `json:"completed_subscription_orders"`
+	CompletedSubMoney    float64 `json:"completed_subscription_money"`
+	QuotaDataRecords     int64   `json:"quota_data_records"`
+	QuotaDataRequests    int64   `json:"quota_data_requests"`
+	BilledQuota          int64   `json:"billed_quota"`
+	BilledUSD            float64 `json:"billed_usd"`
+	BilledLocal          float64 `json:"billed_local"`
+	UserSubscriptions    int64   `json:"user_subscriptions"`
+	UsedRedemptions      int64   `json:"used_redemptions"`
+	Checkins             int64   `json:"checkins"`
+	TotalRecords         int64   `json:"total_records"`
+}
+
+type ProfitDeletedUserOrphanUserItem struct {
+	UserId               int     `json:"user_id"`
+	Username             string  `json:"username"`
+	DisplayName          string  `json:"display_name"`
+	SoftDeleted          bool    `json:"soft_deleted"`
+	TopUpOrders          int64   `json:"topup_orders"`
+	CompletedTopUpOrders int64   `json:"completed_topup_orders"`
+	CompletedTopUpMoney  float64 `json:"completed_topup_money"`
+	SubscriptionOrders   int64   `json:"subscription_orders"`
+	CompletedSubOrders   int64   `json:"completed_subscription_orders"`
+	CompletedSubMoney    float64 `json:"completed_subscription_money"`
+	QuotaDataRecords     int64   `json:"quota_data_records"`
+	QuotaDataRequests    int64   `json:"quota_data_requests"`
+	BilledQuota          int64   `json:"billed_quota"`
+	BilledLocal          float64 `json:"billed_local"`
+	UserSubscriptions    int64   `json:"user_subscriptions"`
+	UsedRedemptions      int64   `json:"used_redemptions"`
+	Checkins             int64   `json:"checkins"`
+	TotalRecords         int64   `json:"total_records"`
+	LatestActivityAt     int64   `json:"latest_activity_at"`
+}
+
+type ProfitDeletedUserRecordsPreview struct {
+	Currency ProfitCurrencyMeta                `json:"currency"`
+	Summary  ProfitDeletedUserOrphanSummary    `json:"summary"`
+	Users    []ProfitDeletedUserOrphanUserItem `json:"users"`
+}
+
+type ProfitDeletedUserCleanupRequest struct {
+	UserId                    int   `json:"user_id"`
+	IncludeTopUps             *bool `json:"include_topups"`
+	IncludeSubscriptionOrders *bool `json:"include_subscription_orders"`
+	IncludeQuotaData          *bool `json:"include_quota_data"`
+	IncludeUserSubscriptions  *bool `json:"include_user_subscriptions"`
+	IncludeUsedRedemptions    *bool `json:"include_used_redemptions"`
+	IncludeCheckins           *bool `json:"include_checkins"`
+}
+
+type ProfitDeletedUserCleanupResult struct {
+	TargetUserId       int   `json:"target_user_id"`
+	TopUpsDeleted      int64 `json:"topups_deleted"`
+	SubOrdersDeleted   int64 `json:"subscription_orders_deleted"`
+	QuotaDataDeleted   int64 `json:"quota_data_deleted"`
+	UserSubsDeleted    int64 `json:"user_subscriptions_deleted"`
+	RedemptionsDeleted int64 `json:"used_redemptions_deleted"`
+	CheckinsDeleted    int64 `json:"checkins_deleted"`
+	TotalDeleted       int64 `json:"total_deleted"`
+}
+
 type ProfitAnalyticsReport struct {
-	Currency       ProfitCurrencyMeta                       `json:"currency"`
-	PricingRef     ProfitPricingReference                   `json:"pricing_ref"`
-	CostSettings   operation_setting.ProfitAnalyticsSetting `json:"cost_settings"`
-	Summary        ProfitSummary                            `json:"summary"`
-	Liability      ProfitLiabilitySnapshot                  `json:"liability"`
-	DailyTrend     []ProfitDailyTrendPoint                  `json:"daily_trend"`
-	Channels       []ProfitChannelBreakdown                 `json:"channels"`
-	Models         []ProfitModelBreakdown                   `json:"models"`
-	Groups         []ProfitGroupBreakdown                   `json:"groups"`
-	PaymentMethods []ProfitPaymentMethodBreakdown           `json:"payment_methods"`
-	RecentOrders   []ProfitRecentOrderItem                  `json:"recent_orders"`
+	Currency             ProfitCurrencyMeta                       `json:"currency"`
+	PricingRef           ProfitPricingReference                   `json:"pricing_ref"`
+	CostSettings         operation_setting.ProfitAnalyticsSetting `json:"cost_settings"`
+	Summary              ProfitSummary                            `json:"summary"`
+	Liability            ProfitLiabilitySnapshot                  `json:"liability"`
+	OrphanedDeletedUsers ProfitDeletedUserOrphanSummary           `json:"orphaned_deleted_users"`
+	DailyTrend           []ProfitDailyTrendPoint                  `json:"daily_trend"`
+	Channels             []ProfitChannelBreakdown                 `json:"channels"`
+	Models               []ProfitModelBreakdown                   `json:"models"`
+	Groups               []ProfitGroupBreakdown                   `json:"groups"`
+	PaymentMethods       []ProfitPaymentMethodBreakdown           `json:"payment_methods"`
+	RecentOrders         []ProfitRecentOrderItem                  `json:"recent_orders"`
 }
 
 func roundMoney(value float64) float64 {
@@ -558,10 +629,53 @@ func GetProfitAnalytics(startTime, endTime int64, opts ProfitAnalyticsOptions) (
 				for _, user := range users {
 					userLookup[user.Id] = user
 				}
+				missingUserIds := make([]int, 0)
+				for _, uid := range userIds {
+					if _, exists := userLookup[uid]; !exists {
+						missingUserIds = append(missingUserIds, uid)
+					}
+				}
+				deletedLookup := make(map[int]User, len(missingUserIds))
+				if len(missingUserIds) > 0 {
+					var softDeletedUsers []User
+					if err := DB.Unscoped().Select("id, username, display_name").Where("id IN ?", missingUserIds).Find(&softDeletedUsers).Error; err == nil {
+						for _, user := range softDeletedUsers {
+							deletedLookup[user.Id] = user
+						}
+					}
+					hardDeletedIds := make([]int, 0, len(missingUserIds))
+					for _, uid := range missingUserIds {
+						if _, found := deletedLookup[uid]; !found {
+							hardDeletedIds = append(hardDeletedIds, uid)
+						}
+					}
+					if len(hardDeletedIds) > 0 {
+						type quotaUserNameRow struct {
+							UserID   int
+							Username string
+						}
+						var quotaNames []quotaUserNameRow
+						if err := DB.Model(&QuotaData{}).
+							Select("user_id, MAX(username) AS username").
+							Where("user_id IN ? AND username != ''", hardDeletedIds).
+							Group("user_id").
+							Scan(&quotaNames).Error; err == nil {
+							for _, row := range quotaNames {
+								deletedLookup[row.UserID] = User{Id: row.UserID, Username: row.Username}
+							}
+						}
+					}
+				}
 				for idx := range recentOrders {
 					if user, ok := userLookup[recentOrders[idx].UserId]; ok {
 						recentOrders[idx].Username = user.Username
 						recentOrders[idx].DisplayName = user.DisplayName
+					} else if recentOrders[idx].UserId > 0 {
+						recentOrders[idx].UserDeleted = true
+						if deletedUser, ok := deletedLookup[recentOrders[idx].UserId]; ok {
+							recentOrders[idx].Username = deletedUser.Username
+							recentOrders[idx].DisplayName = deletedUser.DisplayName
+						}
 					}
 				}
 			}
@@ -680,6 +794,8 @@ func GetProfitAnalytics(startTime, endTime int64, opts ProfitAnalyticsOptions) (
 			}
 			entry.Status = meta.Status
 			entry.Balance = meta.Balance
+		} else {
+			entry.ChannelDeleted = true
 		}
 		channelBreakdownMap[channelID] = entry
 		return entry
@@ -1094,17 +1210,406 @@ func GetProfitAnalytics(startTime, endTime int64, opts ProfitAnalyticsOptions) (
 		liability.CheckinLocal = roundMoney(local)
 	}
 
+	orphanPreview, err := buildProfitDeletedUserRecordsPreview(currency)
+	if err != nil {
+		return nil, err
+	}
+
 	return &ProfitAnalyticsReport{
-		Currency:       currency,
-		PricingRef:     pricingRef,
-		CostSettings:   costCfg,
-		Summary:        summary,
-		Liability:      liability,
-		DailyTrend:     dailyTrend,
-		Channels:       channels,
-		Models:         models,
-		Groups:         groups,
-		PaymentMethods: paymentMethods,
-		RecentOrders:   recentOrders,
+		Currency:             currency,
+		PricingRef:           pricingRef,
+		CostSettings:         costCfg,
+		Summary:              summary,
+		Liability:            liability,
+		OrphanedDeletedUsers: orphanPreview.Summary,
+		DailyTrend:           dailyTrend,
+		Channels:             channels,
+		Models:               models,
+		Groups:               groups,
+		PaymentMethods:       paymentMethods,
+		RecentOrders:         recentOrders,
 	}, nil
+}
+
+func activeUserIDsSubQuery(tx *gorm.DB) *gorm.DB {
+	return tx.Session(&gorm.Session{NewDB: true}).
+		Unscoped().
+		Model(&User{}).
+		Select("id").
+		Where("deleted_at IS NULL")
+}
+
+func subscriptionOrderTradeNosSubQuery(tx *gorm.DB) *gorm.DB {
+	return tx.Session(&gorm.Session{NewDB: true}).
+		Model(&SubscriptionOrder{}).
+		Select("trade_no").
+		Where("trade_no IS NOT NULL AND trade_no != ''")
+}
+
+func applyDeletedUserScope(query *gorm.DB, tx *gorm.DB, userID int, column string) *gorm.DB {
+	if userID > 0 {
+		return query.Where(column+" = ?", userID)
+	}
+	return query.Where(column+" > 0 AND "+column+" NOT IN (?)", activeUserIDsSubQuery(tx))
+}
+
+func boolValueOrDefault(value *bool, fallback bool) bool {
+	if value == nil {
+		return fallback
+	}
+	return *value
+}
+
+func GetProfitDeletedUserRecordsPreview() (*ProfitDeletedUserRecordsPreview, error) {
+	if DB == nil {
+		return nil, errors.New("database is not initialized")
+	}
+	return buildProfitDeletedUserRecordsPreview(profitCurrencyMeta())
+}
+
+func buildProfitDeletedUserRecordsPreview(currency ProfitCurrencyMeta) (*ProfitDeletedUserRecordsPreview, error) {
+	userMap := make(map[int]*ProfitDeletedUserOrphanUserItem)
+	ensureUser := func(userID int) *ProfitDeletedUserOrphanUserItem {
+		if item, ok := userMap[userID]; ok {
+			return item
+		}
+		item := &ProfitDeletedUserOrphanUserItem{UserId: userID}
+		userMap[userID] = item
+		return item
+	}
+	updateLatest := func(item *ProfitDeletedUserOrphanUserItem, ts int64) {
+		if ts > item.LatestActivityAt {
+			item.LatestActivityAt = ts
+		}
+	}
+
+	type orderAggRow struct {
+		UserId         int
+		TotalCount     int64
+		CompletedCount int64
+		CompletedMoney float64
+		LatestAt       int64
+	}
+
+	var subOrderRows []orderAggRow
+	if err := DB.Model(&SubscriptionOrder{}).
+		Select(
+			"user_id, COUNT(*) AS total_count, "+
+				"SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS completed_count, "+
+				"COALESCE(SUM(CASE WHEN status = ? THEN money ELSE 0 END), 0) AS completed_money, "+
+				"COALESCE(MAX(CASE WHEN complete_time > 0 THEN complete_time ELSE create_time END), 0) AS latest_at",
+			common.TopUpStatusSuccess, common.TopUpStatusSuccess,
+		).
+		Where("user_id > 0 AND user_id NOT IN (?)", activeUserIDsSubQuery(DB)).
+		Group("user_id").
+		Scan(&subOrderRows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range subOrderRows {
+		entry := ensureUser(row.UserId)
+		entry.SubscriptionOrders += row.TotalCount
+		entry.CompletedSubOrders += row.CompletedCount
+		entry.CompletedSubMoney += row.CompletedMoney
+		updateLatest(entry, row.LatestAt)
+	}
+
+	var topUpRows []orderAggRow
+	if err := DB.Model(&TopUp{}).
+		Select(
+			"user_id, COUNT(*) AS total_count, "+
+				"SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS completed_count, "+
+				"COALESCE(SUM(CASE WHEN status = ? THEN money ELSE 0 END), 0) AS completed_money, "+
+				"COALESCE(MAX(CASE WHEN complete_time > 0 THEN complete_time ELSE create_time END), 0) AS latest_at",
+			common.TopUpStatusSuccess, common.TopUpStatusSuccess,
+		).
+		Where("user_id > 0 AND user_id NOT IN (?)", activeUserIDsSubQuery(DB)).
+		Where("(trade_no IS NULL OR trade_no = '' OR trade_no NOT IN (?))", subscriptionOrderTradeNosSubQuery(DB)).
+		Group("user_id").
+		Scan(&topUpRows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range topUpRows {
+		entry := ensureUser(row.UserId)
+		entry.TopUpOrders += row.TotalCount
+		entry.CompletedTopUpOrders += row.CompletedCount
+		entry.CompletedTopUpMoney += row.CompletedMoney
+		updateLatest(entry, row.LatestAt)
+	}
+
+	type quotaOrphanRow struct {
+		UserId       int
+		Username     string
+		RecordCount  int64
+		RequestCount int64
+		TotalQuota   int64
+		LatestAt     int64
+	}
+	var quotaRows []quotaOrphanRow
+	if err := DB.Model(&QuotaData{}).
+		Select("user_id, MAX(username) AS username, COUNT(*) AS record_count, COALESCE(SUM(count), 0) AS request_count, COALESCE(SUM(quota), 0) AS total_quota, COALESCE(MAX(created_at), 0) AS latest_at").
+		Where("user_id > 0 AND user_id NOT IN (?)", activeUserIDsSubQuery(DB)).
+		Group("user_id").
+		Scan(&quotaRows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range quotaRows {
+		entry := ensureUser(row.UserId)
+		if entry.Username == "" && strings.TrimSpace(row.Username) != "" {
+			entry.Username = strings.TrimSpace(row.Username)
+		}
+		entry.QuotaDataRecords += row.RecordCount
+		entry.QuotaDataRequests += row.RequestCount
+		entry.BilledQuota += row.TotalQuota
+		updateLatest(entry, row.LatestAt)
+	}
+
+	type countAggRow struct {
+		UserId      int
+		RecordCount int64
+		LatestAt    int64
+	}
+	var userSubRows []countAggRow
+	if err := DB.Model(&UserSubscription{}).
+		Select("user_id, COUNT(*) AS record_count, COALESCE(MAX(start_time), 0) AS latest_at").
+		Where("user_id > 0 AND user_id NOT IN (?)", activeUserIDsSubQuery(DB)).
+		Group("user_id").
+		Scan(&userSubRows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range userSubRows {
+		entry := ensureUser(row.UserId)
+		entry.UserSubscriptions += row.RecordCount
+		updateLatest(entry, row.LatestAt)
+	}
+
+	var redemptionRows []countAggRow
+	if err := DB.Model(&Redemption{}).
+		Select("used_user_id AS user_id, COUNT(*) AS record_count, COALESCE(MAX(redeemed_time), 0) AS latest_at").
+		Where("status = ? AND used_user_id > 0 AND used_user_id NOT IN (?)", common.RedemptionCodeStatusUsed, activeUserIDsSubQuery(DB)).
+		Group("used_user_id").
+		Scan(&redemptionRows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range redemptionRows {
+		entry := ensureUser(row.UserId)
+		entry.UsedRedemptions += row.RecordCount
+		updateLatest(entry, row.LatestAt)
+	}
+
+	var checkinRows []countAggRow
+	if err := DB.Model(&Checkin{}).
+		Select("user_id, COUNT(*) AS record_count, COALESCE(MAX(created_at), 0) AS latest_at").
+		Where("user_id > 0 AND user_id NOT IN (?)", activeUserIDsSubQuery(DB)).
+		Group("user_id").
+		Scan(&checkinRows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range checkinRows {
+		entry := ensureUser(row.UserId)
+		entry.Checkins += row.RecordCount
+		updateLatest(entry, row.LatestAt)
+	}
+
+	userIDs := make([]int, 0, len(userMap))
+	for uid := range userMap {
+		userIDs = append(userIDs, uid)
+	}
+	if len(userIDs) > 0 {
+		var softDeletedUsers []User
+		if err := DB.Unscoped().
+			Select("id, username, display_name").
+			Where("id IN ? AND deleted_at IS NOT NULL", userIDs).
+			Find(&softDeletedUsers).Error; err == nil {
+			for _, deletedUser := range softDeletedUsers {
+				if entry, ok := userMap[deletedUser.Id]; ok {
+					entry.SoftDeleted = true
+					if strings.TrimSpace(deletedUser.Username) != "" {
+						entry.Username = deletedUser.Username
+					}
+					entry.DisplayName = deletedUser.DisplayName
+				}
+			}
+		}
+	}
+
+	summary := ProfitDeletedUserOrphanSummary{
+		UserCount: len(userMap),
+	}
+	users := make([]ProfitDeletedUserOrphanUserItem, 0, len(userMap))
+	for _, entry := range userMap {
+		_, billedLocal := quotaToUSDAndLocal(entry.BilledQuota, currency)
+		entry.BilledLocal = roundMoney(billedLocal)
+		entry.CompletedTopUpMoney = roundMoney(entry.CompletedTopUpMoney)
+		entry.CompletedSubMoney = roundMoney(entry.CompletedSubMoney)
+		entry.TotalRecords = entry.TopUpOrders +
+			entry.SubscriptionOrders +
+			entry.QuotaDataRecords +
+			entry.UserSubscriptions +
+			entry.UsedRedemptions +
+			entry.Checkins
+
+		summary.TopUpOrders += entry.TopUpOrders
+		summary.CompletedTopUpOrders += entry.CompletedTopUpOrders
+		summary.CompletedTopUpMoney += entry.CompletedTopUpMoney
+		summary.SubscriptionOrders += entry.SubscriptionOrders
+		summary.CompletedSubOrders += entry.CompletedSubOrders
+		summary.CompletedSubMoney += entry.CompletedSubMoney
+		summary.QuotaDataRecords += entry.QuotaDataRecords
+		summary.QuotaDataRequests += entry.QuotaDataRequests
+		summary.BilledQuota += entry.BilledQuota
+		summary.UserSubscriptions += entry.UserSubscriptions
+		summary.UsedRedemptions += entry.UsedRedemptions
+		summary.Checkins += entry.Checkins
+		summary.TotalRecords += entry.TotalRecords
+		users = append(users, *entry)
+	}
+	billedUSD, billedLocal := quotaToUSDAndLocal(summary.BilledQuota, currency)
+	summary.BilledUSD = roundMoney(billedUSD)
+	summary.BilledLocal = roundMoney(billedLocal)
+	summary.CompletedTopUpMoney = roundMoney(summary.CompletedTopUpMoney)
+	summary.CompletedSubMoney = roundMoney(summary.CompletedSubMoney)
+
+	slices.SortFunc(users, func(left, right ProfitDeletedUserOrphanUserItem) int {
+		if res := cmp.Compare(right.LatestActivityAt, left.LatestActivityAt); res != 0 {
+			return res
+		}
+		leftImpact := left.CompletedTopUpMoney + left.CompletedSubMoney + left.BilledLocal
+		rightImpact := right.CompletedTopUpMoney + right.CompletedSubMoney + right.BilledLocal
+		if res := cmp.Compare(rightImpact, leftImpact); res != 0 {
+			return res
+		}
+		return cmp.Compare(left.UserId, right.UserId)
+	})
+
+	return &ProfitDeletedUserRecordsPreview{
+		Currency: currency,
+		Summary:  summary,
+		Users:    users,
+	}, nil
+}
+
+func CleanupProfitDeletedUserRecords(req ProfitDeletedUserCleanupRequest) (*ProfitDeletedUserCleanupResult, error) {
+	if DB == nil {
+		return nil, errors.New("database is not initialized")
+	}
+	if req.UserId < 0 {
+		return nil, common.NewMessage("Invalid user ID")
+	}
+	includeTopUps := boolValueOrDefault(req.IncludeTopUps, true)
+	includeSubOrders := boolValueOrDefault(req.IncludeSubscriptionOrders, true)
+	includeQuotaData := boolValueOrDefault(req.IncludeQuotaData, true)
+	includeUserSubs := boolValueOrDefault(req.IncludeUserSubscriptions, true)
+	includeUsedRedemptions := boolValueOrDefault(req.IncludeUsedRedemptions, true)
+	includeCheckins := boolValueOrDefault(req.IncludeCheckins, true)
+	if !includeTopUps && !includeSubOrders && !includeQuotaData && !includeUserSubs && !includeUsedRedemptions && !includeCheckins {
+		return nil, common.NewMessage("Select at least one record category to clean up")
+	}
+
+	result := &ProfitDeletedUserCleanupResult{
+		TargetUserId: req.UserId,
+	}
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		if req.UserId > 0 {
+			var activeCount int64
+			if err := tx.Session(&gorm.Session{NewDB: true}).
+				Unscoped().
+				Model(&User{}).
+				Where("id = ? AND deleted_at IS NULL", req.UserId).
+				Count(&activeCount).Error; err != nil {
+				return err
+			}
+			if activeCount > 0 {
+				return common.NewMessage("Cannot clean up records for an active user")
+			}
+		}
+
+		if includeSubOrders {
+			mirroredSubQuery := applyDeletedUserScope(
+				tx.Session(&gorm.Session{NewDB: true}).
+					Model(&SubscriptionOrder{}).
+					Select("trade_no").
+					Where("trade_no IS NOT NULL AND trade_no != ''"),
+				tx, req.UserId, "user_id",
+			)
+			if err := applyDeletedUserScope(
+				tx.Session(&gorm.Session{NewDB: true}).
+					Where("trade_no IS NOT NULL AND trade_no != '' AND trade_no IN (?)", mirroredSubQuery),
+				tx, req.UserId, "user_id",
+			).Delete(&TopUp{}).Error; err != nil {
+				return err
+			}
+			subRes := applyDeletedUserScope(tx.Session(&gorm.Session{NewDB: true}), tx, req.UserId, "user_id").
+				Delete(&SubscriptionOrder{})
+			if subRes.Error != nil {
+				return subRes.Error
+			}
+			result.SubOrdersDeleted = subRes.RowsAffected
+		}
+
+		if includeTopUps {
+			topUpQuery := applyDeletedUserScope(tx.Session(&gorm.Session{NewDB: true}), tx, req.UserId, "user_id")
+			if !includeSubOrders {
+				topUpQuery = topUpQuery.Where(
+					"(trade_no IS NULL OR trade_no = '' OR trade_no NOT IN (?))",
+					subscriptionOrderTradeNosSubQuery(tx),
+				)
+			}
+			topUpRes := topUpQuery.Delete(&TopUp{})
+			if topUpRes.Error != nil {
+				return topUpRes.Error
+			}
+			result.TopUpsDeleted = topUpRes.RowsAffected
+		}
+
+		if includeQuotaData {
+			quotaRes := applyDeletedUserScope(tx.Session(&gorm.Session{NewDB: true}), tx, req.UserId, "user_id").
+				Delete(&QuotaData{})
+			if quotaRes.Error != nil {
+				return quotaRes.Error
+			}
+			result.QuotaDataDeleted = quotaRes.RowsAffected
+		}
+
+		if includeUserSubs {
+			userSubRes := applyDeletedUserScope(tx.Session(&gorm.Session{NewDB: true}), tx, req.UserId, "user_id").
+				Delete(&UserSubscription{})
+			if userSubRes.Error != nil {
+				return userSubRes.Error
+			}
+			result.UserSubsDeleted = userSubRes.RowsAffected
+		}
+
+		if includeUsedRedemptions {
+			redemptionRes := applyDeletedUserScope(
+				tx.Session(&gorm.Session{NewDB: true}).Where("status = ?", common.RedemptionCodeStatusUsed),
+				tx, req.UserId, "used_user_id",
+			).Delete(&Redemption{})
+			if redemptionRes.Error != nil {
+				return redemptionRes.Error
+			}
+			result.RedemptionsDeleted = redemptionRes.RowsAffected
+		}
+
+		if includeCheckins {
+			checkinRes := applyDeletedUserScope(tx.Session(&gorm.Session{NewDB: true}), tx, req.UserId, "user_id").
+				Delete(&Checkin{})
+			if checkinRes.Error != nil {
+				return checkinRes.Error
+			}
+			result.CheckinsDeleted = checkinRes.RowsAffected
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	result.TotalDeleted = result.TopUpsDeleted +
+		result.SubOrdersDeleted +
+		result.QuotaDataDeleted +
+		result.UserSubsDeleted +
+		result.RedemptionsDeleted +
+		result.CheckinsDeleted
+	return result, nil
 }

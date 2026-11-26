@@ -51,12 +51,28 @@ export function usePlaygroundState(
     getInitialPlaygroundConfig(preset, initialGroup)
   )
   const presetMode = preset?.mode
-  const { model, group, stream, historyTurns, reasoning_effort } = config
+  const { model, group, protocol, stream, historyTurns, reasoning_effort } =
+    config
   useEffect(() => {
     if (presetMode !== 'chat') {
-      saveConfig({ model, group, stream, historyTurns, reasoning_effort })
+      saveConfig({
+        model,
+        group,
+        protocol,
+        stream,
+        historyTurns,
+        reasoning_effort,
+      })
     }
-  }, [model, group, stream, historyTurns, reasoning_effort, presetMode])
+  }, [
+    model,
+    group,
+    protocol,
+    stream,
+    historyTurns,
+    reasoning_effort,
+    presetMode,
+  ])
 
   const [messages, setMessages] = useState<Message[]>([])
   const [isLoadingMessages, setIsLoadingMessages] = useState(true)
@@ -124,6 +140,7 @@ export function usePlaygroundState(
             ...DEFAULT_CONFIG,
             model: prev.model,
             group: prev.group,
+            protocol: prev.protocol,
             stream: prev.stream,
             historyTurns: prev.historyTurns,
             [key]: value,
@@ -178,6 +195,7 @@ export function usePlaygroundState(
       ...DEFAULT_CONFIG,
       model: previous.model,
       group: previous.group,
+      protocol: previous.protocol,
       stream: previous.stream,
       historyTurns: previous.historyTurns,
     }))

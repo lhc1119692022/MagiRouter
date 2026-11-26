@@ -3,12 +3,15 @@ package controller
 import (
 	"context"
 	"errors"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
+	perfmetrics "github.com/QuantumNous/new-api/pkg/perf_metrics"
 	"github.com/QuantumNous/new-api/setting/console_setting"
 
 	"github.com/gin-gonic/gin"
@@ -171,4 +174,103 @@ func GetUptimeKumaStatus(c *gin.Context) {
 
 	g.Wait()
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": results})
+}
+
+// GetUptimeHealth is a zero-token aggregate health endpoint designed for
+// external probes such as Uptime Kuma. It evaluates active channel presence and
+// recent real-request success rate without sending any upstream AI requests or
+// exposing internal channel identifiers.
+func GetUptimeHealth(c *gin.Context) {
+	group := strings.TrimSpace(c.Query("group"))
+	hours := 1
+	if rawHours := c.Query("hours"); rawHours != "" {
+		if parsed, err := strconv.Atoi(rawHours); err == nil && parsed > 0 {
+			hours = min(parsed, 24)
+		}
+	}
+	minSuccessRate := 85.0
+	if rawRate := c.Query("min_success_rate"); rawRate != "" {
+		if parsed, err := strconv.ParseFloat(rawRate, 64); err == nil && parsed >= 0 && parsed <= 100 {
+			minSuccessRate = parsed
+		}
+	}
+	minRequests := int64(5)
+	if rawMinReq := c.Query("min_requests"); rawMinReq != "" {
+		if parsed, err := strconv.ParseInt(rawMinReq, 10, 64); err == nil && parsed >= 0 {
+			minRequests = parsed
+		}
+	}
+
+	var filterGroups []string
+	if group != "" {
+		filterGroups = []string{group}
+	}
+
+	enabledCounts, err := model.GetEnabledModelCountsByGroup(filterGroups)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"status": "outage",
+			"reason": "database_unavailable",
+		})
+		return
+	}
+
+	enabledModels := 0
+	activeGroups := 0
+	for _, count := range enabledCounts {
+		if count > 0 {
+			enabledModels += count
+			activeGroups++
+		}
+	}
+
+	metricsResult, err := perfmetrics.QueryGroupStatus(hours, filterGroups)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"status": "outage",
+			"reason": "metrics_unavailable",
+		})
+		return
+	}
+
+	var totalRequests int64
+	var totalSuccess int64
+	for _, snap := range metricsResult.Groups {
+		totalRequests += snap.RequestCount
+		totalSuccess += snap.SuccessCount
+	}
+
+	var successRate *float64
+	if totalRequests > 0 {
+		rate := math.Round(float64(totalSuccess)/float64(totalRequests)*10000) / 100
+		successRate = &rate
+	}
+
+	status := "ok"
+	reason := ""
+	httpStatus := http.StatusOK
+
+	if enabledModels == 0 {
+		status = "outage"
+		reason = "no_active_channels"
+		httpStatus = http.StatusServiceUnavailable
+	} else if totalRequests >= minRequests && successRate != nil && *successRate < minSuccessRate {
+		status = "degraded"
+		reason = "success_rate_below_threshold"
+		httpStatus = http.StatusServiceUnavailable
+	}
+
+	c.JSON(httpStatus, gin.H{
+		"status":           status,
+		"reason":           reason,
+		"group":            group,
+		"window_hours":     hours,
+		"active_groups":    activeGroups,
+		"enabled_models":   enabledModels,
+		"request_count":    totalRequests,
+		"success_count":    totalSuccess,
+		"success_rate":     successRate,
+		"min_success_rate": minSuccessRate,
+		"min_requests":     minRequests,
+	})
 }

@@ -20,6 +20,7 @@ import { api } from '@/lib/api'
 
 import type {
   FlowQuotaDataItem,
+  GroupChannelStatusResponse,
   QuotaDataItem,
   UptimeGroupResult,
 } from './types'
@@ -89,5 +90,14 @@ export async function getUptimeStatus() {
   const res = await api.get<{ success: boolean; data: UptimeGroupResult[] }>(
     '/api/uptime/status'
   )
+  return res.data
+}
+
+// Get sanitized real-request group channel status metrics
+export async function getGroupChannelStatus(hours = 24) {
+  const res = await api.get<{
+    success: boolean
+    data: GroupChannelStatusResponse
+  }>('/api/perf-metrics/groups', { params: { hours } })
   return res.data
 }

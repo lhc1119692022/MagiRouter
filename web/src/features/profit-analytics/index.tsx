@@ -1,10 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  AlertTriangle,
   Coins,
   CreditCard,
   RefreshCw,
   Search,
   Settings2,
+  Trash2,
   TrendingUp,
   Wallet,
 } from 'lucide-react'
@@ -16,6 +18,7 @@ import { EmptyState } from '@/components/empty-state'
 import { ErrorState } from '@/components/error-state'
 import { GroupBadge } from '@/components/group-badge'
 import { SectionPageLayout } from '@/components/layout'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -46,6 +49,7 @@ import { useAuthStore } from '@/stores/auth-store'
 
 import { getProfitAnalytics, updateProfitAnalyticsSettings } from './api'
 import { ProfitCostSettingsDialog } from './components/profit-cost-settings-dialog'
+import { ProfitDeletedUserCleanupDialog } from './components/profit-deleted-user-cleanup-dialog'
 import {
   ProfitTrendChart,
   type ProfitChartBasis,
@@ -119,6 +123,8 @@ export function ProfitAnalytics() {
   const [keyword, setKeyword] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [focusChannelId, setFocusChannelId] = useState<number | null>(null)
+  const [cleanupOpen, setCleanupOpen] = useState(false)
+  const [cleanupUserId, setCleanupUserId] = useState<number | null>(null)
 
   const reportQuery = useQuery({
     queryKey: ['profit-analytics', days, excludeAdminsOverride],
@@ -151,6 +157,8 @@ export function ProfitAnalytics() {
   const symbol = report?.currency.symbol ?? '$'
   const summary = report?.summary
   const liability = report?.liability
+  const orphanedDeletedUsers = report?.orphaned_deleted_users
+  const hasOrphanedDeletedUsers = (orphanedDeletedUsers?.total_records ?? 0) > 0
   const effectiveExcludeAdmins =
     excludeAdminsOverride ??
     summary?.exclude_admin_users ??
@@ -232,6 +240,11 @@ export function ProfitAnalytics() {
   const openChannelCostEditor = (channelId: number | null) => {
     setFocusChannelId(channelId)
     setSettingsOpen(true)
+  }
+
+  const openDeletedUserCleanup = (userId: number | null) => {
+    setCleanupUserId(userId)
+    setCleanupOpen(true)
   }
 
   const orderTypeLabel = (
@@ -332,6 +345,60 @@ export function ProfitAnalytics() {
           />
         ) : (
           <div className='space-y-5'>
+            {isRoot && hasOrphanedDeletedUsers && orphanedDeletedUsers && (
+              <Alert className='border-amber-500/40 bg-amber-500/5'>
+                <AlertTriangle className='text-amber-600 dark:text-amber-400' />
+                <AlertTitle className='flex flex-wrap items-center justify-between gap-2'>
+                  <span>
+                    {t('Residual records from deleted users detected')}
+                  </span>
+                  <Button
+                    type='button'
+                    size='sm'
+                    variant='outline'
+                    className='border-amber-500/40 hover:bg-amber-500/10'
+                    onClick={() => openDeletedUserCleanup(null)}
+                  >
+                    <Trash2 className='mr-1.5 h-3.5 w-3.5' />
+                    {t('Review & clean up')}
+                  </Button>
+                </AlertTitle>
+                <AlertDescription>
+                  {t(
+                    '{{users}} deleted user(s) still have {{total}} residual records (top-ups: {{topups}} / {{topupAmount}}, usage stats: {{usage}} / {{billedAmount}}). You can review and permanently clean them up.',
+                    {
+                      users: formatNumber(
+                        orphanedDeletedUsers.user_count,
+                        locale
+                      ),
+                      total: formatNumber(
+                        orphanedDeletedUsers.total_records,
+                        locale
+                      ),
+                      topups: formatNumber(
+                        orphanedDeletedUsers.topup_orders,
+                        locale
+                      ),
+                      topupAmount: formatMoney(
+                        orphanedDeletedUsers.completed_topup_money,
+                        symbol,
+                        locale
+                      ),
+                      usage: formatNumber(
+                        orphanedDeletedUsers.quota_data_records,
+                        locale
+                      ),
+                      billedAmount: formatMoney(
+                        orphanedDeletedUsers.billed_local,
+                        symbol,
+                        locale
+                      ),
+                    }
+                  )}
+                </AlertDescription>
+              </Alert>
+            )}
+
             <div className='grid gap-4 sm:grid-cols-2 xl:grid-cols-4'>
               <StatCard
                 title={t('Cash revenue')}
@@ -752,11 +819,22 @@ export function ProfitAnalytics() {
                             {filteredChannels.map((item) => (
                               <TableRow key={item.channel_id}>
                                 <TableCell>
-                                  <div className='font-medium'>
-                                    {item.channel_name}
+                                  <div className='flex flex-wrap items-center gap-1.5 font-medium'>
+                                    <span>{item.channel_name}</span>
+                                    {item.channel_deleted && (
+                                      <Badge
+                                        variant='outline'
+                                        className='text-muted-foreground text-[11px] font-normal'
+                                      >
+                                        {t('Deleted channel')}
+                                      </Badge>
+                                    )}
                                   </div>
                                   <div className='text-muted-foreground flex flex-wrap items-center gap-1.5 text-xs'>
-                                    <span>#{item.channel_id}</span>
+                                    {item.channel_name !==
+                                      `#${item.channel_id}` && (
+                                      <span>#{item.channel_id}</span>
+                                    )}
                                     {item.group && <span>· {item.group}</span>}
                                     {item.note && <span>· {item.note}</span>}
                                   </div>
@@ -1098,6 +1176,11 @@ export function ProfitAnalytics() {
                               <TableHead className='text-right'>
                                 {t('Completed at')}
                               </TableHead>
+                              {isRoot && (
+                                <TableHead className='text-right'>
+                                  {t('Actions')}
+                                </TableHead>
+                              )}
                             </TableRow>
                           </TableHeader>
                           <TableBody>
@@ -1109,12 +1192,24 @@ export function ProfitAnalytics() {
                                   {order.trade_no}
                                 </TableCell>
                                 <TableCell>
-                                  <div className='font-medium'>
-                                    {order.username || `#${order.user_id}`}
+                                  <div className='flex flex-wrap items-center gap-1.5 font-medium'>
+                                    <span>
+                                      {order.username || `#${order.user_id}`}
+                                    </span>
+                                    {order.user_deleted && (
+                                      <Badge
+                                        variant='outline'
+                                        className='border-amber-500/40 text-[11px] font-normal text-amber-700 dark:text-amber-400'
+                                      >
+                                        {t('Deleted user')}
+                                      </Badge>
+                                    )}
                                   </div>
-                                  {order.display_name && (
+                                  {(order.display_name ||
+                                    (order.user_deleted && order.username)) && (
                                     <div className='text-muted-foreground text-xs'>
-                                      {order.display_name}
+                                      {order.display_name ||
+                                        `#${order.user_id}`}
                                     </div>
                                   )}
                                 </TableCell>
@@ -1143,6 +1238,28 @@ export function ProfitAnalytics() {
                                 <TableCell className='text-muted-foreground text-right text-xs tabular-nums'>
                                   {formatDateTime(order.completed_at, locale)}
                                 </TableCell>
+                                {isRoot && (
+                                  <TableCell className='text-right'>
+                                    {order.user_deleted ? (
+                                      <Button
+                                        type='button'
+                                        variant='ghost'
+                                        size='sm'
+                                        className='text-destructive hover:text-destructive'
+                                        onClick={() =>
+                                          openDeletedUserCleanup(order.user_id)
+                                        }
+                                      >
+                                        <Trash2 className='mr-1 h-3.5 w-3.5' />
+                                        {t('Clean up')}
+                                      </Button>
+                                    ) : (
+                                      <span className='text-muted-foreground text-xs'>
+                                        -
+                                      </span>
+                                    )}
+                                  </TableCell>
+                                )}
                               </TableRow>
                             ))}
                           </TableBody>
@@ -1172,6 +1289,18 @@ export function ProfitAnalytics() {
             onSave={async (payload) => {
               await saveSettingsMutation.mutateAsync(payload)
             }}
+          />
+        )}
+
+        {isRoot && (
+          <ProfitDeletedUserCleanupDialog
+            open={cleanupOpen}
+            onOpenChange={(open) => {
+              setCleanupOpen(open)
+              if (!open) setCleanupUserId(null)
+            }}
+            initialUserId={cleanupUserId}
+            symbol={symbol}
           />
         )}
       </SectionPageLayout.Content>

@@ -57,6 +57,9 @@ func RecordRelayResult(ctx context.Context, info *relaycommon.RelayInfo, apiErr 
 	if generationMs <= 0 {
 		generationMs = latencyMs
 	}
+	if outcome == OutcomeSuccess && info.HasChannelMeta() && info.ChannelId > 0 {
+		RecordChannelTraffic(info.ChannelId, now.Unix())
+	}
 	Record(Sample{
 		Model:        info.OriginModelName,
 		Group:        info.UsingGroup,
@@ -103,12 +106,15 @@ func RecordTaskResult(task *model.Task, result *relaycommon.TaskInfo) {
 			sample.GenerationMs = (endTs - genStart) * 1000
 		}
 	}
+	if sample.Success && task.ChannelId > 0 {
+		RecordChannelTraffic(task.ChannelId, endTs)
+	}
 	Record(sample)
 }
 
 // Immediate failures are submit failures, which are not health samples.
 func RecordImmediateTaskResult(info *relaycommon.RelayInfo, result *relaycommon.TaskInfo) {
-	if result == nil || result.Status != model.TaskStatusSuccess {
+	if info == nil || result == nil || result.Status != model.TaskStatusSuccess {
 		return
 	}
 	sample := Sample{
@@ -120,6 +126,9 @@ func RecordImmediateTaskResult(info *relaycommon.RelayInfo, result *relaycommon.
 	if tokens := int64(cmp.Or(result.TotalTokens, result.CompletionTokens)); tokens > 0 {
 		sample.OutputTokens = tokens
 		sample.GenerationMs = sample.LatencyMs
+	}
+	if info.HasChannelMeta() && info.ChannelId > 0 {
+		RecordChannelTraffic(info.ChannelId, time.Now().Unix())
 	}
 	Record(sample)
 }

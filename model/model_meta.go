@@ -283,56 +283,116 @@ type ModelDeleteResult struct {
 // Channel removal requires exact-match metadata records. Pricing removal
 // clears the selected names without expanding metadata matching rules.
 func DeleteModelMetadata(ids []int, removeFromChannels, removePricing bool) (ModelDeleteResult, error) {
+	return DeleteModels(ids, nil, removeFromChannels, removePricing)
+}
+
+// DeleteModels deletes selected metadata records and removes channel-only model
+// names (rows without exact-match metadata) from every channel in one atomic
+// transaction. removeFromChannels applies to metadata records; channelModels
+// are always removed from channels. Pricing removal clears all selected names
+// without expanding metadata matching rules.
+func DeleteModels(ids []int, channelModels []string, removeFromChannels, removePricing bool) (ModelDeleteResult, error) {
 	result := ModelDeleteResult{}
-	if len(ids) == 0 || len(ids) > 1000 {
+	totalRequested := len(ids) + len(channelModels)
+	if totalRequested == 0 || totalRequested > 1000 {
 		return result, errors.New("select between 1 and 1000 models")
 	}
-	selected := make(map[int]struct{}, len(ids))
+	selectedIDs := make(map[int]struct{}, len(ids))
 	for _, id := range ids {
 		if id <= 0 {
 			return result, errors.New("invalid model ID")
 		}
-		selected[id] = struct{}{}
+		selectedIDs[id] = struct{}{}
 	}
-	modelIDs := make([]int, 0, len(selected))
-	for id := range selected {
+	modelIDs := make([]int, 0, len(selectedIDs))
+	for id := range selectedIDs {
 		modelIDs = append(modelIDs, id)
 	}
 	sort.Ints(modelIDs)
-	names := make(map[string]struct{}, len(modelIDs))
+
+	channelModelSet := make(map[string]struct{}, len(channelModels))
+	for _, rawName := range channelModels {
+		name := strings.TrimSpace(rawName)
+		if name == "" {
+			return result, errors.New("invalid model name")
+		}
+		channelModelSet[name] = struct{}{}
+	}
+	channelModelNames := make([]string, 0, len(channelModelSet))
+	for name := range channelModelSet {
+		channelModelNames = append(channelModelNames, name)
+	}
+	sort.Strings(channelModelNames)
+
+	pricingNames := make(map[string]struct{}, len(modelIDs)+len(channelModelNames))
 	deleteRecords := func(tx *gorm.DB) error {
+		clear(pricingNames)
+		result = ModelDeleteResult{}
+		channelRemovalNames := make(map[string]struct{}, len(modelIDs)+len(channelModelNames))
 		var records []Model
-		if err := lockForUpdate(tx).Where("id IN ?", modelIDs).Order("id").Find(&records).Error; err != nil {
-			return err
-		}
-		if len(records) != len(modelIDs) {
-			return errors.New("selected models changed; reload before deleting")
-		}
-		for _, record := range records {
-			if removeFromChannels && record.NameRule != NameRuleExact {
-				return errors.New("only exact-match models can be removed from channels")
+		if len(modelIDs) > 0 {
+			if err := lockForUpdate(tx).Where("id IN ?", modelIDs).Order("id").Find(&records).Error; err != nil {
+				return err
 			}
-			names[record.ModelName] = struct{}{}
+			if len(records) != len(modelIDs) {
+				return errors.New("selected models changed; reload before deleting")
+			}
+			for _, record := range records {
+				if removeFromChannels && record.NameRule != NameRuleExact {
+					return errors.New("only exact-match models can be removed from channels")
+				}
+				pricingNames[record.ModelName] = struct{}{}
+				if removeFromChannels {
+					channelRemovalNames[record.ModelName] = struct{}{}
+				}
+			}
 		}
-		if removeFromChannels {
+		if len(channelModelNames) > 0 {
+			var existing []Model
+			if err := lockForUpdate(tx).Select("id").Where("name_rule = ? AND model_name IN ?", NameRuleExact, channelModelNames).Limit(1).Find(&existing).Error; err != nil {
+				return err
+			}
+			if len(existing) > 0 {
+				return errors.New("selected models changed; reload before deleting")
+			}
+			for _, name := range channelModelNames {
+				pricingNames[name] = struct{}{}
+				channelRemovalNames[name] = struct{}{}
+			}
+		}
+		if len(channelRemovalNames) > 0 {
 			var channels []Channel
 			// Read only routing fields. Lock channels in a consistent order, then
 			// update models and abilities in the same transaction as metadata.
 			if err := lockForUpdate(tx).Select("id", "models", "status", "group", "priority", "weight", "tag").Order("id").Find(&channels).Error; err != nil {
 				return err
 			}
+			matchedChannelModels := make(map[string]struct{}, len(channelModelNames))
+			updatedChannels := make([]Channel, 0)
 			for _, channel := range channels {
 				models := channel.GetModels()
 				remaining := make([]string, 0, len(models))
 				for _, name := range models {
-					if _, remove := names[strings.TrimSpace(name)]; !remove {
-						remaining = append(remaining, name)
+					trimmed := strings.TrimSpace(name)
+					if _, remove := channelRemovalNames[trimmed]; remove {
+						if _, isChannelModel := channelModelSet[trimmed]; isChannelModel {
+							matchedChannelModels[trimmed] = struct{}{}
+						}
+						continue
 					}
+					remaining = append(remaining, name)
 				}
 				if len(remaining) == len(models) {
 					continue
 				}
 				channel.Models = strings.Join(remaining, ",")
+				updatedChannels = append(updatedChannels, channel)
+			}
+			if len(matchedChannelModels) != len(channelModelNames) {
+				return errors.New("selected models changed; reload before deleting")
+			}
+			for index := range updatedChannels {
+				channel := &updatedChannels[index]
 				if err := tx.Model(&Channel{}).Where("id = ?", channel.Id).Update("models", channel.Models).Error; err != nil {
 					return err
 				}
@@ -342,10 +402,12 @@ func DeleteModelMetadata(ids []int, removeFromChannels, removePricing bool) (Mod
 				result.UpdatedChannels++
 			}
 		}
-		if err := tx.Where("id IN ?", modelIDs).Delete(&Model{}).Error; err != nil {
-			return err
+		if len(modelIDs) > 0 {
+			if err := tx.Where("id IN ?", modelIDs).Delete(&Model{}).Error; err != nil {
+				return err
+			}
 		}
-		result.DeletedCount = len(records)
+		result.DeletedCount = len(records) + len(channelModelNames)
 		return nil
 	}
 	var err error
@@ -363,7 +425,7 @@ func DeleteModelMetadata(ids []int, removeFromChannels, removePricing bool) (Mod
 				return err
 			}
 			for _, entries := range values {
-				for name := range names {
+				for name := range pricingNames {
 					delete(entries, name)
 				}
 			}

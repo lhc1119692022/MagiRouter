@@ -70,6 +70,12 @@ import {
   buildChatCompletionPayload,
   getChatParameterOverrides,
 } from './lib/streaming/payload-builder'
+import {
+  buildProtocolRequestBody,
+  getProtocolEndpointPath,
+  getProtocolPreviewHeaders,
+  resolveChatApiProtocol,
+} from './lib/streaming/protocol'
 import type { PlaygroundSearch } from './lib/workspace-search'
 import type { ModelOption } from './types'
 
@@ -213,10 +219,20 @@ export function Playground(props: {
   const chatReady =
     activeTab === 'chat' && canGenerate && config.model === activeModel
   const acceptsChatImages = chatReady && profile?.image_input === true
+  const resolvedProtocol = useMemo(
+    () =>
+      resolveChatApiProtocol(
+        controls.config.protocol,
+        activeModel,
+        metadata?.supported_endpoint_types
+      ),
+    [controls.config.protocol, activeModel, metadata?.supported_endpoint_types]
+  )
   const { sendChat, stopGeneration, isGenerating } = useChatHandler({
     config: controls.config,
     billingKeyId: chatReady ? scope?.keyId : null,
     acceptsChatImages,
+    protocol: resolvedProtocol,
     onMessageUpdate: updateMessages,
   })
 
@@ -256,8 +272,28 @@ export function Playground(props: {
         : undefined
     )
     delete body.group
-    return body
-  }, [messages, controls, draft, acceptsChatImages, imageCount])
+    return buildProtocolRequestBody(resolvedProtocol, body)
+  }, [
+    messages,
+    controls,
+    draft,
+    acceptsChatImages,
+    imageCount,
+    resolvedProtocol,
+  ])
+  const requestPreviewPath = useMemo(
+    () =>
+      getProtocolEndpointPath(
+        resolvedProtocol,
+        activeModel,
+        controls.config.stream
+      ),
+    [resolvedProtocol, activeModel, controls.config.stream]
+  )
+  const requestPreviewHeaders = useMemo(
+    () => getProtocolPreviewHeaders(resolvedProtocol),
+    [resolvedProtocol]
+  )
 
   let modelHint = executionModels.length
     ? t('Select model')
@@ -763,8 +799,12 @@ export function Playground(props: {
                 </div>
                 <PlaygroundParameterContent
                   config={controls.config}
+                  resolvedProtocol={resolvedProtocol}
                   disabled={
                     isGenerating || !activeModel || activeModel !== config.model
+                  }
+                  onProtocolChange={(protocol) =>
+                    updateConfig('protocol', protocol)
                   }
                   onConfigChange={updateConfig}
                   onParameterEnabledChange={updateParameterEnabled}
@@ -775,6 +815,8 @@ export function Playground(props: {
               <PlaygroundCodeDrawer
                 open={codeOpen && !!activeModel && activeModel === config.model}
                 payload={requestPayload}
+                requestPath={requestPreviewPath}
+                previewHeaders={requestPreviewHeaders}
               />
               <PlaygroundChat
                 messages={messages}

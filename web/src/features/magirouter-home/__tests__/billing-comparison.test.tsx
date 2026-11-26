@@ -5,9 +5,15 @@ import {
   createRouter,
   RouterProvider,
 } from '@tanstack/react-router'
-import { cleanup, render, screen } from '@testing-library/react'
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, expect, test } from 'vitest'
+import { afterEach, expect, test, vi } from 'vitest'
 
 import type { PricingModel } from '@/features/pricing/types'
 
@@ -81,7 +87,8 @@ test('toggles interactively between your discounted price and official price and
   expect(conversionPanel).toHaveTextContent('充 ¥1 = $1 站内额度')
   expect(conversionPanel).toHaveTextContent('0.3折')
   expect(conversionPanel).toHaveTextContent('97%')
-  expect(conversionPanel).toHaveTextContent(
+  expect(screen.queryByText('换算防误解')).not.toBeInTheDocument()
+  expect(conversionPanel).not.toHaveTextContent(
     '「本站站内额度 $」≠「官方真实美元 $」'
   )
 
@@ -104,13 +111,127 @@ test('toggles interactively between your discounted price and official price and
   expect(enterpriseGroupBtn).toHaveAttribute('aria-pressed', 'true')
   expect(conversionPanel).toHaveTextContent('1.6折')
   expect(conversionPanel).toHaveTextContent('83.6%')
-  expect(conversionPanel).toHaveTextContent('并非比官方贵')
   expect(table).toHaveTextContent('¥2.2')
   expect(screen.getByText('计费案例')).toBeVisible()
 
   await user.click(screen.getByRole('button', { name: '7.2' }))
   expect(conversionPanel).toHaveTextContent('1.5折')
   expect(conversionPanel).toHaveTextContent('84.7%')
+})
+
+test('supports single-row horizontal pagination and keyboard navigation for overflowing group strip', async () => {
+  const user = userEvent.setup()
+  const manyGroupNames = [
+    'promo-1',
+    'promo-2',
+    'promo-3',
+    'promo-4',
+    'promo-5',
+    'promo-6',
+    'promo-7',
+    'promo-8',
+  ]
+  const multiGroupModels: PricingModel[] = [
+    {
+      ...models[0],
+      enable_groups: manyGroupNames,
+    },
+  ]
+  const usable: Record<string, { desc: string; ratio: number }> = {}
+  const ratios: Record<string, number> = {}
+  for (const [index, name] of manyGroupNames.entries()) {
+    const ratio = Number((0.05 * (index + 1)).toFixed(2))
+    usable[name] = { desc: `线路 ${index + 1}`, ratio }
+    ratios[name] = ratio
+  }
+
+  const comparison = buildBillingComparisonData(
+    multiGroupModels,
+    usable,
+    ratios
+  )
+  const root = createRootRoute()
+  const home = createRoute({
+    getParentRoute: () => root,
+    path: '/',
+    component: () => (
+      <RoutesSection
+        comparison={comparison}
+        loading={false}
+        failed={false}
+        priceRate={1}
+      />
+    ),
+  })
+  const router = createRouter({
+    routeTree: root.addChildren([home]),
+    history: createMemoryHistory({ initialEntries: ['/'] }),
+  })
+  await router.load()
+  render(<RouterProvider router={router} />)
+
+  const strip = await screen.findByRole('group', { name: '分组线路选择' })
+  expect(
+    screen.queryByRole('button', { name: '上一页分组' })
+  ).not.toBeInTheDocument()
+  expect(
+    screen.queryByRole('button', { name: '下一页分组' })
+  ).not.toBeInTheDocument()
+
+  let currentScrollLeft = 0
+  Object.defineProperty(strip, 'clientWidth', {
+    configurable: true,
+    value: 600,
+  })
+  Object.defineProperty(strip, 'scrollWidth', {
+    configurable: true,
+    value: 1440,
+  })
+  Object.defineProperty(strip, 'scrollLeft', {
+    configurable: true,
+    get: () => currentScrollLeft,
+    set: (value: number) => {
+      currentScrollLeft = value
+    },
+  })
+  const scrollToSpy = vi.fn((options?: ScrollToOptions | number) => {
+    if (typeof options === 'object' && typeof options.left === 'number') {
+      currentScrollLeft = options.left
+    }
+    fireEvent.scroll(strip)
+  })
+  Object.defineProperty(strip, 'scrollTo', {
+    configurable: true,
+    value: scrollToSpy,
+  })
+
+  fireEvent(window, new Event('resize'))
+
+  const prevBtn = await screen.findByRole('button', { name: '上一页分组' })
+  const nextBtn = screen.getByRole('button', { name: '下一页分组' })
+  expect(prevBtn).toBeDisabled()
+  expect(nextBtn).toBeEnabled()
+
+  await user.click(nextBtn)
+  expect(scrollToSpy).toHaveBeenCalledWith({ left: 480, behavior: 'smooth' })
+  expect(prevBtn).toBeEnabled()
+  expect(nextBtn).toBeEnabled()
+
+  await user.click(nextBtn)
+  expect(scrollToSpy).toHaveBeenCalledWith({ left: 840, behavior: 'smooth' })
+  expect(prevBtn).toBeEnabled()
+  expect(nextBtn).toBeDisabled()
+
+  await user.click(prevBtn)
+  expect(scrollToSpy).toHaveBeenCalledWith({ left: 360, behavior: 'smooth' })
+  expect(nextBtn).toBeEnabled()
+
+  const groupButtons = within(strip).getAllByRole('button')
+  groupButtons[0].focus()
+  await user.keyboard('{ArrowRight}')
+  expect(groupButtons[1]).toHaveFocus()
+  await user.keyboard('{ArrowLeft}')
+  expect(groupButtons[0]).toHaveFocus()
 })
 
 test('computes accurate effective zhe and savings at 6.7 exchange rate across group multipliers', () => {

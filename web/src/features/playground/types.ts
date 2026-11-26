@@ -31,6 +31,16 @@ export const CHAT_REASONING_EFFORTS = [
 export type ChatReasoningEffort = (typeof CHAT_REASONING_EFFORTS)[number]
 export const CHAT_HISTORY_TURNS = [0, 1, 4, 12] as const
 
+export const CHAT_API_PROTOCOLS = [
+  'auto',
+  'openai_chat',
+  'openai_responses',
+  'anthropic_messages',
+  'gemini_v1beta',
+] as const
+export type ChatApiProtocol = (typeof CHAT_API_PROTOCOLS)[number]
+export type ResolvedChatApiProtocol = Exclude<ChatApiProtocol, 'auto'>
+
 export type MessageStatus = 'loading' | 'streaming' | 'complete' | 'error'
 
 export type PlaygroundMessageLayoutMode = 'alternating' | 'left'
@@ -136,6 +146,7 @@ export interface ChatCompletionResponse {
 // Configuration types
 export interface PlaygroundConfig {
   model: string
+  protocol: ChatApiProtocol
   reasoning_effort: ChatReasoningEffort | ''
   web_search: boolean
   historyTurns: (typeof CHAT_HISTORY_TURNS)[number]

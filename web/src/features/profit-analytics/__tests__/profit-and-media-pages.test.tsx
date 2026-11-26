@@ -640,6 +640,24 @@ describe('ProfitAnalytics page', () => {
           groups: [],
           payment_methods: [],
           recent_orders: [],
+          orphaned_deleted_users: {
+            user_count: 1,
+            topup_orders: 1,
+            completed_topup_orders: 1,
+            completed_topup_money: 1,
+            subscription_orders: 0,
+            completed_subscription_orders: 0,
+            completed_subscription_money: 0,
+            quota_data_records: 1,
+            quota_data_requests: 2,
+            billed_quota: 10000,
+            billed_usd: 0.02,
+            billed_local: 0.02,
+            user_subscriptions: 0,
+            used_redemptions: 0,
+            checkins: 0,
+            total_records: 2,
+          },
         },
       },
     })
@@ -649,6 +667,271 @@ describe('ProfitAnalytics page', () => {
     expect(
       screen.queryByRole('button', { name: 'Cost model' })
     ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Review & clean up' })
+    ).not.toBeInTheDocument()
+  })
+
+  it('surfaces deleted-user residual records and lets root review and clean up a deleted user from orders', async () => {
+    const user = userEvent.setup()
+    const getSpy = vi.spyOn(api, 'get').mockImplementation(async (url) => {
+      if (url === '/api/data/profit') {
+        return {
+          data: {
+            success: true,
+            message: '',
+            data: {
+              currency: {
+                quota_per_unit: 500000,
+                display_type: 'USD',
+                symbol: '$',
+                usd_exchange_rate: 1,
+                usd_to_currency_rate: 1,
+                topup_price: 1,
+              },
+              cost_settings: {
+                exclude_admin_users: true,
+                default_cost_ratio: 0.5,
+                payment_fee_rate: 0,
+                payment_fee_rates: {},
+                channel_costs: {},
+                extra_fixed_costs: [],
+              },
+              summary: {
+                range_days: 30,
+                start_time: 1700000000,
+                end_time: 1702592000,
+                exclude_admin_users: true,
+                excluded_admin_count: 1,
+                cash_revenue: 1,
+                wallet_topup_money: 1,
+                wallet_topup_orders: 1,
+                subscription_direct_money: 0,
+                subscription_direct_orders: 0,
+                subscription_balance_money: 0,
+                subscription_balance_orders: 0,
+                payment_fee_cost: 0,
+                net_cash_inflow: 1,
+                billed_quota: 10000,
+                billed_usd: 0.02,
+                billed_local: 0.02,
+                total_requests: 2,
+                total_tokens: 64000,
+                paying_users: 1,
+                active_users: 1,
+                upstream_variable_cost: 0.01,
+                channel_fixed_cost: 0,
+                platform_fixed_cost: 0,
+                total_estimated_cost: 0.01,
+                cash_net_profit: 0.99,
+                cash_net_margin: 99,
+                billed_gross_profit: 0.01,
+                billed_gross_margin: 50,
+                billed_net_profit: 0.01,
+                billed_net_margin: 50,
+              },
+              liability: {
+                user_remaining_quota: 0,
+                user_remaining_usd: 0,
+                user_remaining_local: 0,
+                subscription_remaining_quota: 0,
+                subscription_remaining_usd: 0,
+                subscription_remaining_local: 0,
+                redeemed_quota: 0,
+                redeemed_usd: 0,
+                redeemed_local: 0,
+                redeemed_count: 0,
+                checkin_quota: 0,
+                checkin_usd: 0,
+                checkin_local: 0,
+                checkin_count: 0,
+              },
+              orphaned_deleted_users: {
+                user_count: 1,
+                topup_orders: 1,
+                completed_topup_orders: 1,
+                completed_topup_money: 1,
+                subscription_orders: 0,
+                completed_subscription_orders: 0,
+                completed_subscription_money: 0,
+                quota_data_records: 1,
+                quota_data_requests: 2,
+                billed_quota: 10000,
+                billed_usd: 0.02,
+                billed_local: 0.02,
+                user_subscriptions: 0,
+                used_redemptions: 0,
+                checkins: 0,
+                total_records: 2,
+              },
+              daily_trend: [],
+              channels: [
+                {
+                  channel_id: 6,
+                  channel_name: '#6',
+                  channel_type: 0,
+                  group: '',
+                  tag: '',
+                  status: 0,
+                  channel_deleted: true,
+                  balance: 0,
+                  requests: 2,
+                  tokens: 64000,
+                  billed_quota: 10000,
+                  billed_usd: 0.02,
+                  billed_local: 0.02,
+                  cost_ratio: 0.5,
+                  custom_cost_ratio: false,
+                  suggested_group_ratio: 1,
+                  variable_cost: 0.01,
+                  monthly_fixed_cost: 0,
+                  amortized_fixed_cost: 0,
+                  gross_profit: 0.01,
+                  net_profit: 0.01,
+                  margin_rate: 50,
+                  note: '',
+                },
+              ],
+              models: [],
+              groups: [],
+              payment_methods: [],
+              recent_orders: [
+                {
+                  order_type: 'topup',
+                  trade_no: 'TOPUP-DEL-1',
+                  user_id: 42,
+                  username: 'ghost_user',
+                  display_name: '',
+                  user_deleted: true,
+                  payment_method: 'alipay',
+                  payment_provider: 'epay',
+                  money: 1,
+                  amount: 1,
+                  completed_at: 1702500000,
+                  is_internal: false,
+                },
+              ],
+            },
+          },
+        }
+      }
+      if (url === '/api/data/profit/deleted-user-records') {
+        return {
+          data: {
+            success: true,
+            message: '',
+            data: {
+              currency: {
+                quota_per_unit: 500000,
+                display_type: 'USD',
+                symbol: '$',
+                usd_exchange_rate: 1,
+                usd_to_currency_rate: 1,
+                topup_price: 1,
+              },
+              summary: {
+                user_count: 1,
+                topup_orders: 1,
+                completed_topup_orders: 1,
+                completed_topup_money: 1,
+                subscription_orders: 0,
+                completed_subscription_orders: 0,
+                completed_subscription_money: 0,
+                quota_data_records: 1,
+                quota_data_requests: 2,
+                billed_quota: 10000,
+                billed_usd: 0.02,
+                billed_local: 0.02,
+                user_subscriptions: 0,
+                used_redemptions: 0,
+                checkins: 0,
+                total_records: 2,
+              },
+              users: [
+                {
+                  user_id: 42,
+                  username: 'ghost_user',
+                  display_name: '',
+                  soft_deleted: false,
+                  topup_orders: 1,
+                  completed_topup_orders: 1,
+                  completed_topup_money: 1,
+                  subscription_orders: 0,
+                  completed_subscription_orders: 0,
+                  completed_subscription_money: 0,
+                  quota_data_records: 1,
+                  quota_data_requests: 2,
+                  billed_quota: 10000,
+                  billed_local: 0.02,
+                  user_subscriptions: 0,
+                  used_redemptions: 0,
+                  checkins: 0,
+                  total_records: 2,
+                  latest_activity_at: 1702500000,
+                },
+              ],
+            },
+          },
+        }
+      }
+      throw new Error(`Unexpected GET ${url}`)
+    })
+
+    const postSpy = vi.spyOn(api, 'post').mockResolvedValue({
+      data: {
+        success: true,
+        message: '',
+        data: {
+          target_user_id: 42,
+          topups_deleted: 1,
+          subscription_orders_deleted: 0,
+          quota_data_deleted: 1,
+          user_subscriptions_deleted: 0,
+          used_redemptions_deleted: 0,
+          checkins_deleted: 0,
+          total_deleted: 2,
+        },
+      },
+    })
+
+    renderWithQuery(<ProfitAnalytics />)
+
+    expect(
+      await screen.findByText('Residual records from deleted users detected')
+    ).toBeInTheDocument()
+    expect(screen.getByText('Deleted channel')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('tab', { name: /Payments & orders/ }))
+    expect(await screen.findByText('TOPUP-DEL-1')).toBeInTheDocument()
+    expect(screen.getByText('Deleted user')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Clean up' }))
+    const scopeSelect = await screen.findByLabelText('Cleanup scope')
+    expect(scopeSelect).toHaveValue('42')
+
+    await user.click(
+      screen.getByRole('button', { name: 'Clean up selected (2)' })
+    )
+
+    await waitFor(() => {
+      expect(postSpy).toHaveBeenCalledWith(
+        '/api/data/profit/deleted-user-records/cleanup',
+        {
+          user_id: 42,
+          include_topups: true,
+          include_subscription_orders: true,
+          include_quota_data: true,
+          include_user_subscriptions: true,
+          include_used_redemptions: true,
+          include_checkins: true,
+        }
+      )
+    })
+    await waitFor(() => {
+      expect(getSpy).toHaveBeenCalledWith(
+        '/api/data/profit/deleted-user-records'
+      )
+    })
   })
 })
 

@@ -29,11 +29,13 @@ var accessTokenExemptRoutes = []string{
 	"POST /api/setup",
 	"GET /api/status",
 	"GET /api/uptime/status",
+	"GET /api/uptime/health",
 	"GET /api/notice",
 	"GET /api/user-agreement",
 	"GET /api/privacy-policy",
 	"GET /api/about",
 	"GET /api/home_page_content",
+	"GET /api/docs_config",
 	"GET /api/ratio_config",
 	"GET /api/user/groups",
 

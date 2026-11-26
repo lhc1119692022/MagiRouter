@@ -44,7 +44,10 @@ afterEach(() => {
 })
 
 type GroupsFixture = {
-  data: Record<string, { desc: string; ratio: number | string }>
+  data: Record<
+    string,
+    { desc: string; ratio: number | string; has_models?: boolean }
+  >
   user_group?: string
   require_explicit_group?: boolean
 }
@@ -281,6 +284,93 @@ describe('ApiKeysMutateDrawer explicit billing group flow', () => {
         'Select a billing group (required)'
       )
     })
+  })
+
+  test('hides groups without available models when creating a new API key', async () => {
+    const user = userEvent.setup()
+    await renderDrawerWithGroups({
+      groupsFixture: {
+        data: {
+          'Claude AWS': {
+            desc: 'AWS line',
+            ratio: 0.55,
+            has_models: true,
+          },
+          'Claude Cursor': {
+            desc: 'Temporarily empty',
+            ratio: 0.5,
+            has_models: false,
+          },
+          auto: {
+            desc: 'Auto route',
+            ratio: 'auto',
+            has_models: false,
+          },
+        },
+        user_group: 'default',
+        require_explicit_group: true,
+      },
+    })
+
+    await user.click(screen.getByRole('combobox'))
+    expect(await screen.findByText('Claude AWS')).toBeVisible()
+    expect(screen.queryByText('Claude Cursor')).not.toBeInTheDocument()
+    expect(screen.queryByText('Auto route')).not.toBeInTheDocument()
+  })
+
+  test('preserves an existing key group on edit even when it temporarily has no models while hiding other empty groups', async () => {
+    const user = userEvent.setup()
+    const existingKey: ApiKey = {
+      id: 9,
+      key: 'sk-existing',
+      status: 1,
+      name: 'Existing Key',
+      remain_quota: 0,
+      used_quota: 0,
+      unlimited_quota: true,
+      expired_time: -1,
+      created_time: 1,
+      accessed_time: 0,
+      group: 'Paused Group',
+      auto_groups: [],
+      cross_group_retry: false,
+      model_limits_enabled: false,
+      model_limits: '',
+      allow_ips: '',
+      allow_user_quota_query: true,
+    }
+
+    await renderDrawerWithGroups({
+      currentRow: existingKey,
+      groupsFixture: {
+        data: {
+          'Paused Group': {
+            desc: 'Temporarily paused',
+            ratio: 0.5,
+            has_models: false,
+          },
+          'Other Empty Group': {
+            desc: 'No models',
+            ratio: 0.4,
+            has_models: false,
+          },
+          'Active Group': {
+            desc: 'Has models',
+            ratio: 0.8,
+            has_models: true,
+          },
+        },
+        user_group: 'default',
+        require_explicit_group: true,
+      },
+    })
+
+    const groupCombobox = screen.getByRole('combobox')
+    expect(groupCombobox).toHaveTextContent('Paused Group')
+
+    await user.click(groupCombobox)
+    expect(await screen.findByText('Active Group')).toBeVisible()
+    expect(screen.queryByText('Other Empty Group')).not.toBeInTheDocument()
   })
 })
 

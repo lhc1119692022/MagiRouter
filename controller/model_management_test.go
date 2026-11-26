@@ -1773,6 +1773,151 @@ func TestModelDeletionDatabaseMatrix(t *testing.T) {
 				_, err := model.DeleteModelMetadata(ids, true, false)
 				assert.Error(t, err)
 			}
+
+			t.Run("channel_only_and_mixed_deletion", func(t *testing.T) {
+				prefixRule := model.Model{ModelName: "orphan-prefix-", NameRule: model.NameRulePrefix, Status: 1}
+				require.NoError(t, prefixRule.Insert())
+				keptMetadata := model.Model{ModelName: "mixed-metadata-keep-channel", Status: 1}
+				require.NoError(t, keptMetadata.Insert())
+				existingExact := model.Model{ModelName: "already-has-metadata", Status: 1}
+				require.NoError(t, existingExact.Insert())
+
+				channelA := model.Channel{
+					Name:   "Channel Only A",
+					Type:   1,
+					Key:    "fixture-key",
+					Models: "orphan-prefix-one,orphan-two,mixed-metadata-keep-channel,keep-me",
+					Group:  "default",
+					Status: common.ChannelStatusEnabled,
+				}
+				channelB := model.Channel{
+					Name:   "Channel Only B",
+					Type:   1,
+					Key:    "fixture-key",
+					Models: "orphan-two,mixed-channel-only,already-has-metadata",
+					Group:  "disabled-group",
+					Status: common.ChannelStatusManuallyDisabled,
+				}
+				for _, ch := range []*model.Channel{&channelA, &channelB} {
+					require.NoError(t, db.Create(ch).Error)
+					require.NoError(t, ch.UpdateAbilities(db))
+				}
+				common.MemoryCacheEnabled = true
+				model.InitChannelCache()
+				cached, err := model.GetRandomSatisfiedChannel("default", "orphan-prefix-one", 0, nil)
+				require.NoError(t, err)
+				require.NotNil(t, cached)
+
+				baseline, err := model.GetModelPricingSnapshot([]string{"orphan-prefix-one", "keep-me"})
+				require.NoError(t, err)
+				require.NoError(t, model.UpdateModelPricing([]model.ModelPricingChange{
+					{ModelName: "orphan-prefix-one", ExpectedVersion: baseline.EmptyVersion, Pricing: model.PricingValues{"ModelPrice": float64(3)}},
+					{ModelName: "keep-me", ExpectedVersion: baseline.EmptyVersion, Pricing: model.PricingValues{"ModelPrice": float64(5)}},
+				}))
+
+				// Ordinary admin cannot remove pricing for channel-only models.
+				forbidden := modelManagementRequest(t, func(c *gin.Context) {
+					c.Set("role", common.RoleAdminUser)
+					BatchDeleteModelMeta(c)
+				}, http.MethodPost, "/api/models/delete", map[string]any{
+					"model_ids":            []int{},
+					"channel_models":       []string{"orphan-prefix-one"},
+					"remove_from_channels": true,
+					"remove_pricing":       true,
+				}, nil)
+				assert.Equal(t, http.StatusForbidden, forbidden.Code)
+
+				// Deleting a channel model that already has exact metadata fails without mutating channels.
+				_, err = model.DeleteModels(nil, []string{"already-has-metadata"}, true, false)
+				require.EqualError(t, err, "selected models changed; reload before deleting")
+				var channelBAfter model.Channel
+				require.NoError(t, db.First(&channelBAfter, channelB.Id).Error)
+				assert.Equal(t, channelB.Models, channelBAfter.Models)
+
+				// Deleting a channel model absent from all channels fails.
+				_, err = model.DeleteModels(nil, []string{"not-in-any-channel"}, true, false)
+				require.EqualError(t, err, "selected models changed; reload before deleting")
+
+				// Invalid channel model names and oversized combined requests fail.
+				_, err = model.DeleteModels(nil, []string{"   "}, true, false)
+				require.EqualError(t, err, "invalid model name")
+				_, err = model.DeleteModels(make([]int, 500), make([]string, 501), true, false)
+				require.EqualError(t, err, "select between 1 and 1000 models")
+
+				// Delete channel-only models (including one matched by a prefix rule) with pricing removal.
+				var deleteResp struct {
+					Success bool
+					Data    model.ModelDeleteResult
+				}
+				recorder := modelManagementRequest(t, BatchDeleteModelMeta, http.MethodPost, "/api/models/delete", map[string]any{
+					"model_ids":            []int{},
+					"channel_models":       []string{"orphan-prefix-one", "orphan-two", " orphan-two "},
+					"remove_from_channels": true,
+					"remove_pricing":       true,
+				}, &deleteResp)
+				require.True(t, deleteResp.Success, recorder.Body.String())
+				assert.Equal(t, model.ModelDeleteResult{DeletedCount: 2, UpdatedChannels: 2}, deleteResp.Data)
+
+				var channelAAfter model.Channel
+				require.NoError(t, db.First(&channelAAfter, channelA.Id).Error)
+				assert.Equal(t, "mixed-metadata-keep-channel,keep-me", channelAAfter.Models)
+				require.NoError(t, db.First(&channelBAfter, channelB.Id).Error)
+				assert.Equal(t, "mixed-channel-only,already-has-metadata", channelBAfter.Models)
+
+				var orphanAbilityCount int64
+				require.NoError(t, db.Model(&model.Ability{}).Where("model IN ?", []string{"orphan-prefix-one", "orphan-two"}).Count(&orphanAbilityCount).Error)
+				assert.Zero(t, orphanAbilityCount)
+				cached, _ = model.GetRandomSatisfiedChannel("default", "orphan-prefix-one", 0, nil)
+				assert.Nil(t, cached, "channel cache should drop removed channel-only models")
+
+				pricingAfter, err := model.GetModelPricingSnapshot([]string{"orphan-prefix-one", "keep-me"})
+				require.NoError(t, err)
+				configuredByName := make(map[string]model.PricingValues, len(pricingAfter.Entries))
+				for _, entry := range pricingAfter.Entries {
+					configuredByName[entry.ModelName] = entry.Configured
+				}
+				assert.Empty(t, configuredByName["orphan-prefix-one"])
+				assert.NotEmpty(t, configuredByName["keep-me"])
+
+				listed, _, err := model.SearchModelsWithChannels("orphan-", "", "", "", 0, 50)
+				require.NoError(t, err)
+				for _, item := range listed {
+					assert.NotEqual(t, "orphan-prefix-one", item.ModelName)
+					assert.NotEqual(t, "orphan-two", item.ModelName)
+				}
+
+				// Failure during mixed metadata deletion must roll back channel-only removal too.
+				require.NoError(t, db.Callback().Delete().Before("gorm:delete").Register("fail_mixed_model_deletion", func(tx *gorm.DB) {
+					if tx.Statement.Table == "models" {
+						tx.AddError(errors.New("injected mixed deletion failure"))
+					}
+				}))
+				rollbackResult, err := model.DeleteModels([]int{keptMetadata.Id}, []string{"mixed-channel-only"}, false, false)
+				require.Error(t, err)
+				assert.Zero(t, rollbackResult)
+				require.NoError(t, db.Callback().Delete().Remove("fail_mixed_model_deletion"))
+				require.NoError(t, db.First(&channelBAfter, channelB.Id).Error)
+				assert.Equal(t, "mixed-channel-only,already-has-metadata", channelBAfter.Models)
+
+				// Mixed deletion: exact metadata + prefix rule + channel-only model with remove_from_channels=false.
+				// Metadata rows are deleted (exact metadata stays in channelA), while mixed-channel-only is removed from channelB.
+				recorder = modelManagementRequest(t, BatchDeleteModelMeta, http.MethodPost, "/api/models/delete", map[string]any{
+					"model_ids":            []int{keptMetadata.Id, prefixRule.Id},
+					"channel_models":       []string{"mixed-channel-only"},
+					"remove_from_channels": false,
+					"remove_pricing":       false,
+				}, &deleteResp)
+				require.True(t, deleteResp.Success, recorder.Body.String())
+				assert.Equal(t, model.ModelDeleteResult{DeletedCount: 3, UpdatedChannels: 1}, deleteResp.Data)
+
+				require.NoError(t, db.First(&channelAAfter, channelA.Id).Error)
+				assert.Equal(t, "mixed-metadata-keep-channel,keep-me", channelAAfter.Models)
+				require.NoError(t, db.First(&channelBAfter, channelB.Id).Error)
+				assert.Equal(t, "already-has-metadata", channelBAfter.Models)
+				var remainingMeta int64
+				require.NoError(t, db.Model(&model.Model{}).Where("id IN ?", []int{keptMetadata.Id, prefixRule.Id}).Count(&remainingMeta).Error)
+				assert.Zero(t, remainingMeta)
+			})
 		})
 	}
 }

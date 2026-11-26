@@ -21,11 +21,17 @@ import { useTranslation } from 'react-i18next'
 
 import { useStatus } from '@/hooks/use-status'
 
-import { buildCurlPreview, buildJsonPreview } from '../../lib/request-preview'
+import {
+  buildCurlPreview,
+  buildJsonPreview,
+  REQUEST_PREVIEW_PATH,
+} from '../../lib/request-preview'
 
 type PlaygroundCodeDrawerProps = {
   open: boolean
-  payload: import('../../types').ChatCompletionRequest
+  payload: unknown
+  requestPath?: string
+  previewHeaders?: Record<string, string>
 }
 
 type CodeTab = 'json' | 'curl'
@@ -37,13 +43,14 @@ export function PlaygroundCodeDrawer(props: PlaygroundCodeDrawerProps) {
 
   const baseUrl =
     typeof status?.server_address === 'string' ? status.server_address : ''
+  const requestPath = props.requestPath ?? REQUEST_PREVIEW_PATH
   const content =
     tab === 'json'
       ? buildJsonPreview(props.payload)
-      : buildCurlPreview(
-          { ...props.payload, group: undefined },
-          baseUrl || undefined
-        )
+      : buildCurlPreview(props.payload, baseUrl || undefined, {
+          path: requestPath,
+          headers: props.previewHeaders,
+        })
 
   return (
     <div className='pg-chat-drawer' hidden={!props.open}>
@@ -70,6 +77,9 @@ export function PlaygroundCodeDrawer(props: PlaygroundCodeDrawerProps) {
           ))}
         </div>
         <span className='console-head-meta'>
+          <code className='mr-2 font-mono text-[11px]' lang='en'>
+            POST {requestPath}
+          </code>
           {tab === 'curl'
             ? t('The API example uses your key’s billing group.')
             : t('Only enabled parameters are sent with the request.')}

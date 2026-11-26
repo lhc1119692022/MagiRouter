@@ -1,5 +1,16 @@
+import { ArrowLeft01Icon, ArrowRight01Icon } from '@hugeicons/core-free-icons'
+import { HugeiconsIcon } from '@hugeicons/react'
 import { Link } from '@tanstack/react-router'
-import { useMemo, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type MouseEvent,
+  type PointerEvent,
+} from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { toIntlLocale } from '@/i18n/languages'
@@ -52,6 +63,82 @@ export function RoutesSection(props: RoutesSectionProps) {
   const [rateInput, setRateInput] = useState<string>(
     formatRateValue(initialReferenceRate)
   )
+  const groupStripRef = useRef<HTMLDivElement | null>(null)
+  const dragStateRef = useRef<{
+    pointerId: number | null
+    startX: number
+    startScrollLeft: number
+    didDrag: boolean
+  }>({
+    pointerId: null,
+    startX: 0,
+    startScrollLeft: 0,
+    didDrag: false,
+  })
+  const suppressNextClickRef = useRef(false)
+  const suppressClickTimerRef = useRef<number | null>(null)
+  const [canScrollPrev, setCanScrollPrev] = useState(false)
+  const [canScrollNext, setCanScrollNext] = useState(false)
+  const [isDraggingGroups, setIsDraggingGroups] = useState(false)
+
+  const updateGroupScrollState = useCallback(() => {
+    const strip = groupStripRef.current
+    if (!strip) return
+    const maxScrollLeft = Math.max(0, strip.scrollWidth - strip.clientWidth)
+    const nextCanScrollPrev = strip.scrollLeft > 2
+    const nextCanScrollNext = maxScrollLeft - strip.scrollLeft > 2
+    setCanScrollPrev((prev) =>
+      prev === nextCanScrollPrev ? prev : nextCanScrollPrev
+    )
+    setCanScrollNext((prev) =>
+      prev === nextCanScrollNext ? prev : nextCanScrollNext
+    )
+  }, [])
+
+  const scrollGroupsBy = useCallback(
+    (direction: -1 | 1) => {
+      const strip = groupStripRef.current
+      if (!strip) return
+      const pageStep = Math.max(Math.round(strip.clientWidth * 0.8), 220)
+      const maxScrollLeft = Math.max(0, strip.scrollWidth - strip.clientWidth)
+      const targetLeft = Math.min(
+        Math.max(0, strip.scrollLeft + direction * pageStep),
+        maxScrollLeft
+      )
+      if (typeof strip.scrollTo === 'function') {
+        strip.scrollTo({ left: targetLeft, behavior: 'smooth' })
+      } else {
+        strip.scrollLeft = targetLeft
+      }
+      updateGroupScrollState()
+    },
+    [updateGroupScrollState]
+  )
+
+  useEffect(() => {
+    const strip = groupStripRef.current
+    if (!strip) return
+    updateGroupScrollState()
+    const handleResize = () => updateGroupScrollState()
+    window.addEventListener('resize', handleResize)
+    let observer: ResizeObserver | null = null
+    if (typeof ResizeObserver === 'function') {
+      observer = new ResizeObserver(updateGroupScrollState)
+      observer.observe(strip)
+    }
+    return () => {
+      window.removeEventListener('resize', handleResize)
+      observer?.disconnect()
+    }
+  }, [groups, updateGroupScrollState])
+
+  useEffect(() => {
+    return () => {
+      if (suppressClickTimerRef.current !== null) {
+        window.clearTimeout(suppressClickTimerRef.current)
+      }
+    }
+  }, [])
 
   const activeGroup = useMemo(() => {
     if (groups.length === 0) return undefined
@@ -170,35 +257,98 @@ export function RoutesSection(props: RoutesSectionProps) {
   const rateText = formatRateValue(referenceUsdRate)
   const priceRateText = formatRateValue(priceRate)
   const bestSavingsLabel = bestRowDiscount?.savingsLabel ?? null
-  const activeGroupNoticeSuffix = (() => {
+  const hasGroupOverflow = canScrollPrev || canScrollNext
+
+  const handleGroupStripPointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    suppressNextClickRef.current = false
     if (
-      !activeGroup ||
-      !activeGroupDiscount?.isDiscounted ||
-      !activeGroupDiscount.savingsLabel
+      !hasGroupOverflow ||
+      event.pointerType !== 'mouse' ||
+      event.button !== 0
     ) {
-      return null
+      return
     }
-    if (activeGroup.ratio > 1) {
-      return (
-        <>
-          {' '}
-          即使 <strong>{activeGroup.name}</strong> 分组倍率为{' '}
-          <strong>{activeGroup.ratio}×</strong>，叠加充值换算后实付仅相当于官方{' '}
-          <strong>{activeGroupDiscount.zheLabel}</strong>，仍可立省{' '}
-          <strong>{activeGroupDiscount.savingsLabel}</strong>
-          （并非比官方贵）。
-        </>
-      )
+    const strip = groupStripRef.current
+    if (!strip) return
+    dragStateRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startScrollLeft: strip.scrollLeft,
+      didDrag: false,
     }
-    return (
-      <>
-        {' '}
-        叠加分组倍率 <strong>{activeGroup.ratio}×</strong>{' '}
-        后，当前分组相当于官方 <strong>{activeGroupDiscount.zheLabel}</strong>
-        ，实际节省 <strong>{activeGroupDiscount.savingsLabel}</strong>。
-      </>
+  }
+
+  const handleGroupStripPointerMove = (event: PointerEvent<HTMLDivElement>) => {
+    const drag = dragStateRef.current
+    if (drag.pointerId !== event.pointerId || event.buttons !== 1) return
+    const strip = groupStripRef.current
+    if (!strip) return
+    const deltaX = event.clientX - drag.startX
+    if (!drag.didDrag) {
+      if (Math.abs(deltaX) < 6) return
+      drag.didDrag = true
+      setIsDraggingGroups(true)
+      strip.setPointerCapture?.(event.pointerId)
+    }
+    strip.scrollLeft = drag.startScrollLeft - deltaX
+    updateGroupScrollState()
+  }
+
+  const handleGroupStripPointerEnd = (event: PointerEvent<HTMLDivElement>) => {
+    const drag = dragStateRef.current
+    if (drag.pointerId !== event.pointerId) return
+    const strip = groupStripRef.current
+    if (strip?.hasPointerCapture?.(event.pointerId)) {
+      strip.releasePointerCapture(event.pointerId)
+    }
+    const didDrag = drag.didDrag
+    dragStateRef.current.pointerId = null
+    dragStateRef.current.didDrag = false
+    setIsDraggingGroups(false)
+    if (didDrag) {
+      suppressNextClickRef.current = true
+      if (suppressClickTimerRef.current !== null) {
+        window.clearTimeout(suppressClickTimerRef.current)
+      }
+      suppressClickTimerRef.current = window.setTimeout(() => {
+        suppressNextClickRef.current = false
+        suppressClickTimerRef.current = null
+      }, 0)
+    }
+  }
+
+  const handleGroupStripClickCapture = (event: MouseEvent<HTMLDivElement>) => {
+    if (!suppressNextClickRef.current) return
+    event.preventDefault()
+    event.stopPropagation()
+    suppressNextClickRef.current = false
+  }
+
+  const handleGroupStripKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+    const strip = groupStripRef.current
+    if (!strip) return
+    const buttons = [
+      ...strip.querySelectorAll<HTMLButtonElement>('.billing-group-pill'),
+    ]
+    const currentIndex = buttons.indexOf(
+      document.activeElement as HTMLButtonElement
     )
-  })()
+    if (currentIndex < 0) return
+    const nextIndex =
+      event.key === 'ArrowRight'
+        ? Math.min(buttons.length - 1, currentIndex + 1)
+        : Math.max(0, currentIndex - 1)
+    if (nextIndex === currentIndex) return
+    event.preventDefault()
+    const targetButton = buttons[nextIndex]
+    targetButton.focus()
+    targetButton.scrollIntoView?.({
+      behavior: 'smooth',
+      block: 'nearest',
+      inline: 'nearest',
+    })
+  }
 
   return (
     <section id='home-billing' className='el-section-md'>
@@ -410,64 +560,113 @@ export function RoutesSection(props: RoutesSectionProps) {
                   </p>
                 </div>
               </div>
-
-              <div className='billing-conversion-notice' role='note'>
-                <span className='billing-notice-tag'>换算防误解</span>
-                <p className='billing-notice-text tabular-nums'>
-                  <strong>「本站站内额度 $」≠「官方真实美元 $」</strong>：本站按{' '}
-                  <strong>¥{priceRateText} = $1 额度</strong>{' '}
-                  充值，实际人民币成本 = 站内额度 × ¥{priceRateText}
-                  ；官方价格为真实美元，按汇率 <strong>{rateText}</strong>{' '}
-                  折合人民币（官方 $ × ¥{rateText}
-                  ）。
-                  {activeGroupNoticeSuffix}
-                </p>
-              </div>
             </div>
 
             {groups.length > 1 && (
-              <div
-                className='billing-group-strip'
-                role='group'
-                aria-label='分组线路选择'
-              >
-                {groups.map((group) => {
-                  const selected = group.name === activeGroup.name
-                  const groupDiscount = computeEffectiveDiscount({
-                    yourUsd: group.ratio,
-                    officialUsd: 1,
-                    priceRate,
-                    referenceUsdRate,
-                  })
-                  return (
-                    <button
-                      key={group.name}
-                      type='button'
-                      className={`billing-group-pill${selected ? ' is-selected' : ''}`}
-                      aria-pressed={selected}
-                      onClick={() => {
-                        setSelectedGroupName(group.name)
-                        setPriceView('yours')
-                      }}
-                    >
-                      <div className='billing-group-pill-top'>
-                        <span className='billing-group-name'>{group.name}</span>
-                        <span
-                          className={`billing-group-tag tabular-nums${groupDiscount.isDiscounted ? ' is-discount' : ''}`}
-                        >
-                          {groupDiscount.zheLabel}
-                        </span>
-                      </div>
-                      <div className='billing-group-meta tabular-nums'>
-                        {formatRatioText(group.ratio)}
-                        {groupDiscount.savingsLabel
+              <div className='billing-group-bar'>
+                {hasGroupOverflow && (
+                  <button
+                    type='button'
+                    className='billing-group-nav-btn'
+                    aria-label='上一页分组'
+                    disabled={!canScrollPrev}
+                    onClick={() => scrollGroupsBy(-1)}
+                  >
+                    <HugeiconsIcon
+                      icon={ArrowLeft01Icon}
+                      size={16}
+                      strokeWidth={2}
+                      aria-hidden='true'
+                    />
+                  </button>
+                )}
+
+                <div
+                  className={`billing-group-viewport${canScrollPrev ? ' has-left-fade' : ''}${canScrollNext ? ' has-right-fade' : ''}`}
+                >
+                  <div
+                    ref={groupStripRef}
+                    className={`billing-group-strip${hasGroupOverflow ? ' is-scrollable' : ''}${isDraggingGroups ? ' is-dragging' : ''}`}
+                    role='group'
+                    aria-label='分组线路选择'
+                    onScroll={updateGroupScrollState}
+                    onPointerDown={handleGroupStripPointerDown}
+                    onPointerMove={handleGroupStripPointerMove}
+                    onPointerUp={handleGroupStripPointerEnd}
+                    onPointerCancel={handleGroupStripPointerEnd}
+                    onClickCapture={handleGroupStripClickCapture}
+                    onKeyDown={handleGroupStripKeyDown}
+                  >
+                    {groups.map((group) => {
+                      const selected = group.name === activeGroup.name
+                      const groupDiscount = computeEffectiveDiscount({
+                        yourUsd: group.ratio,
+                        officialUsd: 1,
+                        priceRate,
+                        referenceUsdRate,
+                      })
+                      const metaText = `${formatRatioText(group.ratio)}${
+                        groupDiscount.savingsLabel
                           ? ` · 省 ${groupDiscount.savingsLabel}`
-                          : ''}
-                        {group.desc ? ` · ${group.desc}` : ''}
-                      </div>
-                    </button>
-                  )
-                })}
+                          : ''
+                      }${group.desc ? ` · ${group.desc}` : ''}`
+                      return (
+                        <button
+                          key={group.name}
+                          type='button'
+                          className={`billing-group-pill${selected ? ' is-selected' : ''}`}
+                          aria-pressed={selected}
+                          onClick={(event) => {
+                            setSelectedGroupName(group.name)
+                            setPriceView('yours')
+                            event.currentTarget.scrollIntoView?.({
+                              behavior: 'smooth',
+                              block: 'nearest',
+                              inline: 'nearest',
+                            })
+                          }}
+                        >
+                          <div className='billing-group-pill-top'>
+                            <span
+                              className='billing-group-name'
+                              title={group.name}
+                            >
+                              {group.name}
+                            </span>
+                            <span
+                              className={`billing-group-tag tabular-nums${groupDiscount.isDiscounted ? ' is-discount' : ''}`}
+                            >
+                              {groupDiscount.zheLabel}
+                            </span>
+                          </div>
+                          <div
+                            className='billing-group-meta tabular-nums'
+                            title={metaText}
+                          >
+                            {metaText}
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {hasGroupOverflow && (
+                  <button
+                    type='button'
+                    className='billing-group-nav-btn'
+                    aria-label='下一页分组'
+                    disabled={!canScrollNext}
+                    onClick={() => scrollGroupsBy(1)}
+                  >
+                    <HugeiconsIcon
+                      icon={ArrowRight01Icon}
+                      size={16}
+                      strokeWidth={2}
+                      aria-hidden='true'
+                    />
+                  </button>
+                )}
               </div>
             )}
 
@@ -491,7 +690,7 @@ export function RoutesSection(props: RoutesSectionProps) {
                         {isYourPrice ? '缓存读取' : '官方缓存读取'}
                       </th>
                     )}
-                    <th scope='col' className='text-right'>
+                    <th scope='col' className='billing-savings-col text-right'>
                       {isYourPrice
                         ? `实际优惠（汇率 ${rateText}）`
                         : '对比状态'}
@@ -534,7 +733,18 @@ export function RoutesSection(props: RoutesSectionProps) {
                     if (isYourPrice && rowDiscount?.savingsLabel) {
                       savingsBadge = (
                         <span className='billing-savings-badge is-discount'>
-                          {rowDiscount.zheLabel} · 省 {rowDiscount.savingsLabel}
+                          <span className='billing-savings-zhe'>
+                            {rowDiscount.zheLabel}
+                          </span>{' '}
+                          <span
+                            className='billing-savings-sep'
+                            aria-hidden='true'
+                          >
+                            ·
+                          </span>{' '}
+                          <span className='billing-savings-pct'>
+                            省 {rowDiscount.savingsLabel}
+                          </span>
                         </span>
                       )
                     } else if (isYourPrice) {
@@ -647,7 +857,7 @@ export function RoutesSection(props: RoutesSectionProps) {
                             )}
                           </td>
                         )}
-                        <td className='text-right tabular-nums'>
+                        <td className='billing-savings-col text-right tabular-nums'>
                           {savingsBadge}
                         </td>
                       </tr>

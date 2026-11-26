@@ -1,8 +1,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { createInstance } from 'i18next'
+import { I18nextProvider } from 'react-i18next'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
+import zh from '@/i18n/locales/zh.json'
 import { api } from '@/lib/api'
 import {
   DEFAULT_CURRENCY_CONFIG,
@@ -140,6 +143,31 @@ test.each([
     })
   }
 )
+
+test('the catalog card renders 创建 instead of 新建 in Simplified Chinese', async () => {
+  const zhI18n = createInstance()
+  await zhI18n.init({
+    lng: 'zh',
+    fallbackLng: 'zh',
+    resources: { zh },
+  })
+
+  render(
+    <I18nextProvider i18n={zhI18n}>
+      <QueryClientProvider client={client}>
+        <ZmModelCardGrid
+          models={[{ ...model, output_modalities: ['text'] }]}
+          onModelClick={vi.fn()}
+          tokenUnit='M'
+        />
+      </QueryClientProvider>
+    </I18nextProvider>
+  )
+
+  const card = screen.getByRole('article')
+  expect(within(card).getByRole('button', { name: '创建' })).toBeVisible()
+  expect(within(card).queryByRole('button', { name: '新建' })).toBeNull()
+})
 
 test('displays the lowest group starting price for token and tiered models, and prefers the lowest per-request price for mixed billing', () => {
   const tokenEntry: PricingModel = {

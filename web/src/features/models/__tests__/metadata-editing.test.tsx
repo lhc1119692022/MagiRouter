@@ -218,9 +218,14 @@ describe('model pricing entry', () => {
     const client = renderModelActions(channelModel)
     const user = userEvent.setup()
     expect(screen.getByRole('button', { name: 'Add metadata' })).toBeVisible()
+    const menuButton = screen.getByRole('button', { name: 'Open menu' })
+    expect(menuButton).toBeVisible()
+    await user.click(menuButton)
     expect(
-      screen.queryByRole('button', { name: 'Open menu' })
+      screen.queryByRole('menuitem', { name: /model square/i })
     ).not.toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Delete' })).toBeVisible()
+    await user.keyboard('{Escape}')
     await user.click(screen.getByRole('button', { name: 'Pricing' }))
     expect(screen.getByRole('tab', { name: 'Pricing' })).not.toHaveAttribute(
       'aria-disabled',

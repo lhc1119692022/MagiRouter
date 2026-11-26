@@ -60,7 +60,10 @@ export async function getUserModels(): Promise<{
 export async function getUserGroups(): Promise<{
   success: boolean
   message?: string
-  data?: Record<string, { desc: string; ratio: number | string }>
+  data?: Record<
+    string,
+    { desc: string; ratio: number | string; has_models?: boolean }
+  >
   user_group?: string
   require_explicit_group?: boolean
 }> {

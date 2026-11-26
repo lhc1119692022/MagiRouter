@@ -21,11 +21,16 @@ import { api } from '@/lib/api'
 import { requireServerSuccess } from '@/lib/server-error-message'
 
 import { API_ENDPOINTS } from './constants'
+import {
+  buildProtocolRequestBody,
+  getProtocolEndpointPath,
+  getProtocolRequestHeaders,
+} from './lib/streaming/protocol'
 import type {
   ChatCompletionRequest,
-  ChatCompletionResponse,
   ModelOption,
   GroupOption,
+  ResolvedChatApiProtocol,
 } from './types'
 
 /**
@@ -34,22 +39,25 @@ import type {
 export async function sendChatCompletion(
   payload: ChatCompletionRequest,
   signal?: AbortSignal,
-  keyId?: number | null
-): Promise<ChatCompletionResponse> {
+  keyId?: number | null,
+  protocol: ResolvedChatApiProtocol = 'openai_chat'
+): Promise<unknown> {
   if (keyId == null || !Number.isSafeInteger(keyId) || keyId <= 0) {
     throw new Error('Select an API key')
   }
   const key = await resolveApiKeyValue(keyId)
-  const response = await fetch('/v1/chat/completions', {
+  const endpointPath = getProtocolEndpointPath(protocol, payload.model, false)
+  const wireBody = buildProtocolRequestBody(protocol, {
+    ...payload,
+    stream: false,
+  })
+  const response = await fetch(endpointPath, {
     method: 'POST',
     redirect: 'error',
     credentials: 'omit',
     signal,
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${key}`,
-    },
-    body: JSON.stringify(payload),
+    headers: getProtocolRequestHeaders(protocol, key),
+    body: JSON.stringify(wireBody),
   })
   const result = await response.json()
   if (!response.ok) {

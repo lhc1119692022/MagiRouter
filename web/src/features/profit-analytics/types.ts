@@ -118,6 +118,7 @@ export interface ProfitChannelBreakdown {
   group: string
   tag: string
   status: number
+  channel_deleted?: boolean
   balance: number
   requests: number
   tokens: number
@@ -182,6 +183,7 @@ export interface ProfitRecentOrderItem {
   user_id: number
   username: string
   display_name: string
+  user_deleted?: boolean
   payment_method: string
   payment_provider: string
   money: number
@@ -191,12 +193,81 @@ export interface ProfitRecentOrderItem {
   is_internal: boolean
 }
 
+export interface ProfitDeletedUserOrphanSummary {
+  user_count: number
+  topup_orders: number
+  completed_topup_orders: number
+  completed_topup_money: number
+  subscription_orders: number
+  completed_subscription_orders: number
+  completed_subscription_money: number
+  quota_data_records: number
+  quota_data_requests: number
+  billed_quota: number
+  billed_usd: number
+  billed_local: number
+  user_subscriptions: number
+  used_redemptions: number
+  checkins: number
+  total_records: number
+}
+
+export interface ProfitDeletedUserOrphanUserItem {
+  user_id: number
+  username: string
+  display_name: string
+  soft_deleted: boolean
+  topup_orders: number
+  completed_topup_orders: number
+  completed_topup_money: number
+  subscription_orders: number
+  completed_subscription_orders: number
+  completed_subscription_money: number
+  quota_data_records: number
+  quota_data_requests: number
+  billed_quota: number
+  billed_local: number
+  user_subscriptions: number
+  used_redemptions: number
+  checkins: number
+  total_records: number
+  latest_activity_at: number
+}
+
+export interface ProfitDeletedUserRecordsPreview {
+  currency: ProfitCurrencyMeta
+  summary: ProfitDeletedUserOrphanSummary
+  users: ProfitDeletedUserOrphanUserItem[]
+}
+
+export interface ProfitDeletedUserCleanupRequest {
+  user_id?: number
+  include_topups?: boolean
+  include_subscription_orders?: boolean
+  include_quota_data?: boolean
+  include_user_subscriptions?: boolean
+  include_used_redemptions?: boolean
+  include_checkins?: boolean
+}
+
+export interface ProfitDeletedUserCleanupResult {
+  target_user_id: number
+  topups_deleted: number
+  subscription_orders_deleted: number
+  quota_data_deleted: number
+  user_subscriptions_deleted: number
+  used_redemptions_deleted: number
+  checkins_deleted: number
+  total_deleted: number
+}
+
 export interface ProfitAnalyticsReport {
   currency: ProfitCurrencyMeta
   pricing_ref?: ProfitPricingReference
   cost_settings: ProfitAnalyticsSetting
   summary: ProfitSummary
   liability: ProfitLiabilitySnapshot
+  orphaned_deleted_users?: ProfitDeletedUserOrphanSummary
   daily_trend: ProfitDailyTrendPoint[]
   channels: ProfitChannelBreakdown[]
   models: ProfitModelBreakdown[]

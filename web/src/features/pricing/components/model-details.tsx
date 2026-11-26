@@ -604,7 +604,7 @@ function OverviewSummaryGrid(props: {
         {t('All visible groups')} · {t('Monitored relay requests')}{' '}
         {monitoringWindowLabel(props.monitoringData ?? undefined)}
       </p>
-      <div className='bg-muted/20 border-border/70 grid grid-cols-2 divide-x divide-y overflow-hidden rounded-xl border sm:grid-cols-4 sm:divide-y-0'>
+      <div className='bg-muted/35 divide-border/50 grid grid-cols-2 divide-x divide-y overflow-hidden rounded-xl sm:grid-cols-4 sm:divide-y-0'>
         <OverviewMetricCell
           icon={HeartPulse}
           label={t('Availability')}
@@ -734,7 +734,8 @@ function CompactBasePriceStrip(props: {
 
     const primaryEntries = dynamicSummary.primaryEntries
     const secondaryEntries = dynamicSummary.secondaryEntries
-    const hasAnyEntries = primaryEntries.length > 0 || secondaryEntries.length > 0
+    const hasAnyEntries =
+      primaryEntries.length > 0 || secondaryEntries.length > 0
     const showDynamicCacheFallback =
       !dynamicSummary.isTaskUsage &&
       isTokenBased &&
@@ -744,8 +745,8 @@ function CompactBasePriceStrip(props: {
       : t('Prices shown per {{unit}} tokens', { unit: tokenUnitLabel })
 
     return (
-      <div className='bg-muted/25 border-border/80 overflow-hidden rounded-xl border'>
-        <div className='bg-muted/45 border-border/60 flex flex-wrap items-center justify-between gap-2 border-b px-3.5 py-2'>
+      <div className='bg-muted/40 space-y-2 rounded-xl px-3.5 py-3'>
+        <div className='flex flex-wrap items-center justify-between gap-2'>
           <div className='flex flex-wrap items-center gap-2'>
             <span className='text-foreground inline-flex items-center gap-1.5 text-xs font-semibold'>
               <Tag className='text-primary size-3.5 shrink-0' />
@@ -769,7 +770,7 @@ function CompactBasePriceStrip(props: {
           </span>
         </div>
 
-        <div className='space-y-2 px-3.5 py-2.5'>
+        <div className='space-y-1.5'>
           {hasAnyEntries ? (
             <>
               {primaryEntries.length > 0 && (
@@ -801,7 +802,7 @@ function CompactBasePriceStrip(props: {
                 </div>
               )}
               {(secondaryEntries.length > 0 || showDynamicCacheFallback) && (
-                <div className='border-border/50 flex flex-wrap items-baseline gap-x-3.5 gap-y-1 border-t pt-2 text-[11px]'>
+                <div className='flex flex-wrap items-baseline gap-x-3.5 gap-y-1 text-[11px]'>
                   {secondaryEntries.map((entry) => {
                     const unitLabelKey = getDynamicPriceUnitLabelKey(entry)
                     const unitLabel = taskUsageUnitLabel(
@@ -828,7 +829,9 @@ function CompactBasePriceStrip(props: {
                   })}
                   {showDynamicCacheFallback && (
                     <span className='inline-flex items-baseline gap-1'>
-                      <span className='text-muted-foreground'>{t('Cache')}</span>
+                      <span className='text-muted-foreground'>
+                        {t('Cache')}
+                      </span>
                       <span className='text-muted-foreground font-mono tabular-nums'>
                         —
                       </span>
@@ -855,8 +858,8 @@ function CompactBasePriceStrip(props: {
 
   if (!isTokenBased) {
     return (
-      <div className='bg-muted/25 border-border/80 overflow-hidden rounded-xl border'>
-        <div className='bg-muted/45 border-border/60 flex flex-wrap items-center justify-between gap-2 border-b px-3.5 py-2'>
+      <div className='bg-muted/40 space-y-2 rounded-xl px-3.5 py-3'>
+        <div className='flex flex-wrap items-center justify-between gap-2'>
           <div className='flex flex-wrap items-center gap-2'>
             <span className='text-foreground inline-flex items-center gap-1.5 text-xs font-semibold'>
               <Tag className='text-primary size-3.5 shrink-0' />
@@ -870,7 +873,7 @@ function CompactBasePriceStrip(props: {
             </span>
           </div>
         </div>
-        <div className='flex items-baseline gap-2 px-3.5 py-2.5'>
+        <div className='flex items-baseline gap-2'>
           <span className='text-muted-foreground text-xs'>
             {t('Per request')}
           </span>
@@ -934,8 +937,8 @@ function CompactBasePriceStrip(props: {
     )
 
   return (
-    <div className='bg-muted/25 border-border/80 overflow-hidden rounded-xl border'>
-      <div className='bg-muted/45 border-border/60 flex flex-wrap items-center justify-between gap-2 border-b px-3.5 py-2'>
+    <div className='bg-muted/40 space-y-2 rounded-xl px-3.5 py-3'>
+      <div className='flex flex-wrap items-center justify-between gap-2'>
         <div className='flex flex-wrap items-center gap-2'>
           <span className='text-foreground inline-flex items-center gap-1.5 text-xs font-semibold'>
             <Tag className='text-primary size-3.5 shrink-0' />
@@ -953,7 +956,7 @@ function CompactBasePriceStrip(props: {
         </span>
       </div>
 
-      <div className='space-y-2 px-3.5 py-2.5'>
+      <div className='space-y-1.5'>
         <div className='flex flex-wrap items-baseline gap-x-4 gap-y-1 text-xs'>
           <span className='inline-flex items-baseline gap-1.5'>
             <span className='text-muted-foreground font-medium'>
@@ -983,15 +986,13 @@ function CompactBasePriceStrip(props: {
                   : 'text-muted-foreground'
               )}
             >
-              {props.model.cache_ratio != null
-                ? renderBasePrice('cache')
-                : '—'}
+              {props.model.cache_ratio != null ? renderBasePrice('cache') : '—'}
             </span>
           </span>
         </div>
 
         {secondaryPriceTypes.length > 0 && (
-          <div className='border-border/50 flex flex-wrap items-center gap-x-3.5 gap-y-1 border-t pt-2 text-[11px]'>
+          <div className='flex flex-wrap items-center gap-x-3.5 gap-y-1 text-[11px]'>
             {secondaryPriceTypes.map((item) => (
               <span
                 key={item.type}
@@ -1048,7 +1049,7 @@ function GroupPerfStrip(props: {
   const cacheDisplay = formatCacheHitRate(perf?.cache_hit_rate)
 
   return (
-    <div className='bg-muted/25 border-border/50 mt-2.5 grid grid-cols-2 gap-x-3 gap-y-2 rounded-lg border px-2.5 py-2 text-[11px] sm:grid-cols-[minmax(158px,1.55fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]'>
+    <div className='border-border/45 mt-3 grid grid-cols-2 gap-x-3 gap-y-2 border-t pt-2.5 text-[11px] sm:grid-cols-[minmax(158px,1.55fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]'>
       <div className='col-span-2 flex min-w-0 flex-col gap-1 sm:col-span-1'>
         <span className='text-muted-foreground/80 truncate text-[10px]'>
           {t('Availability')}
@@ -1402,15 +1403,19 @@ function UnifiedProviderPricingSection(props: UnifiedPricingSectionProps) {
       props.groupRatio
     )
 
-  const renderGroupPriceNode = (group: string) => {
+  const renderGroupPriceSlots = (
+    group: string
+  ): { primary: React.ReactNode; secondary?: React.ReactNode } => {
     const groupDynamicSummary = dynamicSummariesByGroup.get(group)
     if (isDynamic && groupDynamicSummary) {
       if (groupDynamicSummary.isSpecialExpression) {
-        return (
-          <span className='text-muted-foreground text-xs'>
-            {t('Special billing expression')}
-          </span>
-        )
+        return {
+          primary: (
+            <span className='text-muted-foreground text-xs'>
+              {t('Special billing expression')}
+            </span>
+          ),
+        }
       }
       const primaryEntries = groupDynamicSummary.primaryEntries
       const secondaryEntries = groupDynamicSummary.secondaryEntries
@@ -1418,36 +1423,34 @@ function UnifiedProviderPricingSection(props: UnifiedPricingSectionProps) {
         !groupDynamicSummary.isTaskUsage &&
         isTokenBased &&
         secondaryEntries.length === 0
-      return (
-        <div className='space-y-1'>
-          <div className='flex flex-wrap items-baseline justify-end gap-x-3 gap-y-0.5'>
-            {primaryEntries.map((entry) => {
-              const unitLabelKey = getDynamicPriceUnitLabelKey(entry)
-              const unitLabel = taskUsageUnitLabel(
-                entry,
-                i18n.language,
-                unitLabelKey ? t(unitLabelKey) : tokenUnitLabel
-              )
-              return (
-                <span
-                  key={entry.key}
-                  className='inline-flex items-baseline gap-1 text-xs'
-                >
-                  <span className='text-muted-foreground'>
-                    <DynamicPriceEntryLabel entry={entry} />
-                  </span>
-                  <span className='text-foreground font-mono text-sm font-semibold tabular-nums'>
-                    {entry.formattedRange ?? entry.formatted}
-                  </span>
-                  <span className='text-muted-foreground/60 text-[11px]'>
-                    / {unitLabel}
-                  </span>
-                </span>
-              )
-            })}
-          </div>
-          {(secondaryEntries.length > 0 || showDynamicCacheFallback) && (
-            <div className='flex flex-wrap items-baseline justify-end gap-x-3 gap-y-0.5 text-[11px]'>
+      return {
+        primary: primaryEntries.map((entry) => {
+          const unitLabelKey = getDynamicPriceUnitLabelKey(entry)
+          const unitLabel = taskUsageUnitLabel(
+            entry,
+            i18n.language,
+            unitLabelKey ? t(unitLabelKey) : tokenUnitLabel
+          )
+          return (
+            <span
+              key={entry.key}
+              className='inline-flex items-baseline gap-1 text-xs'
+            >
+              <span className='text-muted-foreground'>
+                <DynamicPriceEntryLabel entry={entry} />
+              </span>
+              <span className='text-foreground font-mono text-sm font-semibold tabular-nums'>
+                {entry.formattedRange ?? entry.formatted}
+              </span>
+              <span className='text-muted-foreground/60 text-[11px]'>
+                / {unitLabel}
+              </span>
+            </span>
+          )
+        }),
+        secondary:
+          secondaryEntries.length > 0 || showDynamicCacheFallback ? (
+            <>
               {secondaryEntries.map((entry) => {
                 const unitLabelKey = getDynamicPriceUnitLabelKey(entry)
                 const unitLabel = taskUsageUnitLabel(
@@ -1480,29 +1483,28 @@ function UnifiedProviderPricingSection(props: UnifiedPricingSectionProps) {
                   </span>
                 </span>
               )}
-            </div>
-          )}
-        </div>
-      )
+            </>
+          ) : undefined,
+      }
     }
     if (isTokenBased) {
       const hasCache = props.model.cache_ratio != null
-      return (
-        <div className='space-y-1'>
-          <div className='flex flex-wrap items-baseline justify-end gap-x-3 gap-y-0.5 text-xs'>
-            <span className='inline-flex items-baseline gap-1'>
+      return {
+        primary: (
+          <>
+            <span className='inline-flex items-baseline gap-1 text-xs'>
               <span className='text-muted-foreground'>{t('Input')}</span>
               <span className='text-foreground font-mono text-sm font-semibold tabular-nums'>
                 {renderGroupPrice(group, 'input')}
               </span>
             </span>
-            <span className='inline-flex items-baseline gap-1'>
+            <span className='inline-flex items-baseline gap-1 text-xs'>
               <span className='text-muted-foreground'>{t('Output')}</span>
               <span className='text-foreground font-mono text-sm font-semibold tabular-nums'>
                 {renderGroupPrice(group, 'output')}
               </span>
             </span>
-            <span className='inline-flex items-baseline gap-1'>
+            <span className='inline-flex items-baseline gap-1 text-xs'>
               <span className='text-muted-foreground'>{t('Cache')}</span>
               <span
                 className={cn(
@@ -1513,10 +1515,11 @@ function UnifiedProviderPricingSection(props: UnifiedPricingSectionProps) {
                 {hasCache ? renderGroupPrice(group, 'cache') : '—'}
               </span>
             </span>
-          </div>
-          {extraPriceTypes.length > 0 && (
-            <div className='flex flex-wrap items-baseline justify-end gap-x-2.5 gap-y-0.5 text-[11px]'>
-              {extraPriceTypes.map((extra) => (
+          </>
+        ),
+        secondary:
+          extraPriceTypes.length > 0
+            ? extraPriceTypes.map((extra) => (
                 <span
                   key={extra.type}
                   className='inline-flex items-baseline gap-1'
@@ -1528,17 +1531,17 @@ function UnifiedProviderPricingSection(props: UnifiedPricingSectionProps) {
                     {renderGroupPrice(group, extra.type)}
                   </span>
                 </span>
-              ))}
-            </div>
-          )}
-        </div>
-      )
+              ))
+            : undefined,
+      }
     }
-    return (
-      <span className='text-foreground font-mono text-sm font-semibold tabular-nums'>
-        {renderFixedGroupPrice(group)}
-      </span>
-    )
+    return {
+      primary: (
+        <span className='text-foreground font-mono text-sm font-semibold tabular-nums'>
+          {renderFixedGroupPrice(group)}
+        </span>
+      ),
+    }
   }
 
   return (
@@ -1757,12 +1760,13 @@ function UnifiedProviderPricingSection(props: UnifiedPricingSectionProps) {
             )}
           </div>
 
-          <div className='space-y-2'>
+          <div className='space-y-2.5'>
             {availableGroups.map((group) => {
               const ratio = props.groupRatio[group] || 1
               const perf = props.perfByGroup.get(group)
               const isSelectedForTiers =
                 showUnifiedTierTable && effectiveTierGroup === group
+              const groupPrices = renderGroupPriceSlots(group)
 
               return (
                 <div
@@ -1773,29 +1777,35 @@ function UnifiedProviderPricingSection(props: UnifiedPricingSectionProps) {
                       : undefined
                   }
                   className={cn(
-                    'bg-card border-border/70 rounded-xl border p-3 transition-colors',
+                    'bg-card border-border/70 rounded-xl border px-3.5 py-3 transition-colors',
                     showUnifiedTierTable &&
                       'hover:border-primary/40 cursor-pointer',
                     isSelectedForTiers && 'border-primary/60 bg-primary/[0.02]'
                   )}
                 >
-                  <div className='flex flex-wrap items-start justify-between gap-2'>
-                    <div className='flex items-center gap-2'>
+                  <div className='flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5'>
+                    <div className='flex min-w-0 items-center gap-2'>
                       <GroupBadge group={group} size='sm' />
-                      <span className='bg-muted/70 text-muted-foreground rounded px-1.5 py-0.5 font-mono text-[11px] font-medium'>
+                      <span className='bg-muted/70 text-muted-foreground shrink-0 rounded px-1.5 py-0.5 font-mono text-[11px] font-medium'>
                         {ratio}x
                       </span>
                       {isSelectedForTiers && (
-                        <span className='bg-primary/10 text-primary rounded px-1.5 py-0.5 text-[10px] font-medium'>
+                        <span className='bg-primary/10 text-primary shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium'>
                           {t('Selected')}
                         </span>
                       )}
                     </div>
 
-                    <div className='text-right'>
-                      {renderGroupPriceNode(group)}
+                    <div className='flex flex-wrap items-baseline gap-x-3 gap-y-0.5'>
+                      {groupPrices.primary}
                     </div>
                   </div>
+
+                  {groupPrices.secondary && (
+                    <div className='mt-1.5 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-[11px]'>
+                      {groupPrices.secondary}
+                    </div>
+                  )}
 
                   <GroupPerfStrip
                     perf={perf}
@@ -1830,7 +1840,7 @@ function ModelCapabilitiesFooter(props: { model: PricingModel }) {
   }
 
   return (
-    <section className='bg-card/50 border-border/70 space-y-3 rounded-xl border p-3.5'>
+    <section className='border-border/60 space-y-3 border-t pt-4'>
       {capabilities.length > 0 && (
         <div className='space-y-1.5'>
           <SectionTitle>{t('Capabilities')}</SectionTitle>
@@ -1948,14 +1958,14 @@ export function ModelDetailsContent(props: ModelDetailsContentProps) {
           })}
         </TabsList>
 
-        <TabsContent value='overview' className='space-y-4 outline-none'>
+        <TabsContent value='overview' className='space-y-5 outline-none'>
           <OverviewSummaryGrid
             monitoringData={monitoringData}
             isPending={metricsQuery.isPending}
             isError={metricsQuery.isError}
           />
 
-          <section className='bg-card/60 border-border/70 space-y-3.5 rounded-xl border p-3.5 shadow-xs sm:p-4'>
+          <section className='space-y-3.5'>
             <div className='flex flex-wrap items-center justify-between gap-2'>
               <SectionTitle>{t('Pricing & Routes')}</SectionTitle>
               {hasTrendCharts && (

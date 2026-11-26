@@ -46,26 +46,37 @@ export function ModelDeleteDialog(props: ModelDeleteDialogProps) {
   const checkboxId = useId()
   const pricingCheckboxId = useId()
   const canEditPricing = useCanEditModelPricing()
-  const supportsChannelRemoval = props.models.every(
+  const metadataModels = props.models.filter((model) => model.id > 0)
+  const channelModels = props.models.filter((model) => !(model.id > 0))
+  const hasMetadataModels = metadataModels.length > 0
+  const hasChannelModels = channelModels.length > 0
+  const allChannelModels = hasChannelModels && !hasMetadataModels
+  const supportsChannelRemoval = metadataModels.every(
     (model) => model.name_rule === 0
   )
   const [removePricing, setRemovePricing] = useState(false)
   const [removeFromChannels, setRemoveFromChannels] = useState(false)
   const client = useQueryClient()
+  const effectiveRemoveFromChannels = allChannelModels
+    ? true
+    : removeFromChannels && supportsChannelRemoval
+  const willUpdateChannels = hasChannelModels || effectiveRemoveFromChannels
   const mutation = useMutation({
     mutationFn: async () => {
-      const ids = props.models.map((model) => model.id)
+      const ids = metadataModels.map((model) => model.id)
+      const channelNames = channelModels.map((model) => model.model_name)
       const response =
-        ids.length === 1
+        ids.length === 1 && channelNames.length === 0
           ? await deleteModel(
               ids[0],
-              removeFromChannels && supportsChannelRemoval,
+              effectiveRemoveFromChannels,
               removePricing && canEditPricing
             )
           : await deleteModels(
               ids,
-              removeFromChannels && supportsChannelRemoval,
-              removePricing && canEditPricing
+              effectiveRemoveFromChannels,
+              removePricing && canEditPricing,
+              channelNames
             )
       if (!response.success) {
         throw createServerError(response, t('Failed to delete model'))
@@ -74,8 +85,8 @@ export function ModelDeleteDialog(props: ModelDeleteDialogProps) {
     },
     onSuccess: async (result) => {
       await invalidateVendorData(client)
-      if (removePricing) await invalidateModelPricing(client)
-      if (removeFromChannels) {
+      if (removePricing && canEditPricing) await invalidateModelPricing(client)
+      if (willUpdateChannels) {
         await client.invalidateQueries({ queryKey: ['channels'] })
       }
       toast.success(
@@ -115,21 +126,36 @@ export function ModelDeleteDialog(props: ModelDeleteDialogProps) {
           <Checkbox
             id={checkboxId}
             className='mt-0.5'
-            checked={removeFromChannels && supportsChannelRemoval}
-            disabled={mutation.isPending || !supportsChannelRemoval}
+            checked={effectiveRemoveFromChannels}
+            disabled={
+              mutation.isPending || allChannelModels || !supportsChannelRemoval
+            }
             onCheckedChange={(checked) =>
               setRemoveFromChannels(checked === true)
             }
           />
           <Label htmlFor={checkboxId} className='flex-wrap leading-normal'>
-            {t('Also remove from all channels')}
-            {!supportsChannelRemoval && (
+            {allChannelModels
+              ? t('Remove from all channels')
+              : t('Also remove from all channels')}
+            {hasMetadataModels && !supportsChannelRemoval && (
               <span className='text-muted-foreground text-xs font-normal'>
                 {t('Only available for exact matching')}
               </span>
             )}
           </Label>
         </div>
+        {hasChannelModels && (
+          <p className='text-muted-foreground text-sm'>
+            {allChannelModels
+              ? t(
+                  'Models without metadata have no saved record and will be removed from all channels.'
+                )
+              : t(
+                  'Selected models without metadata will always be removed from all channels.'
+                )}
+          </p>
+        )}
         <div className='flex items-start gap-2'>
           <Checkbox
             id={pricingCheckboxId}

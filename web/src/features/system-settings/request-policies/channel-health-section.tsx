@@ -74,7 +74,14 @@ const channelTestModes = [
   'passive_recovery',
 ] as const
 type ChannelTestMode = (typeof channelTestModes)[number]
+const channelTestModelStrategies = ['fixed', 'random'] as const
+type ChannelTestModelStrategy = (typeof channelTestModelStrategies)[number]
 const MAX_CHANNEL_TEST_CONCURRENCY = 32
+const MIN_CHANNEL_TEST_SAMPLE_PERCENT = 1
+const MAX_CHANNEL_TEST_SAMPLE_PERCENT = 100
+const MIN_CHANNEL_TEST_IDLE_MINUTES = 0
+const MAX_CHANNEL_TEST_IDLE_MINUTES = 1440
+const DEFAULT_CHANNEL_TEST_IDLE_MINUTES = 30
 
 const createChannelHealthSchema = (
   t: (key: string, options?: Record<string, unknown>) => string
@@ -101,6 +108,32 @@ const createChannelHealthSchema = (
             t('Channel test concurrency must be between 1 and 32')
           ),
         channel_test_mode: z.enum(channelTestModes),
+        channel_test_model_strategy: z.enum(channelTestModelStrategies),
+        channel_test_sample_percent: z.coerce
+          .number()
+          .int(t('Enter a positive integer'))
+          .min(
+            MIN_CHANNEL_TEST_SAMPLE_PERCENT,
+            t('Channel sample rate must be between 1 and 100')
+          )
+          .max(
+            MAX_CHANNEL_TEST_SAMPLE_PERCENT,
+            t('Channel sample rate must be between 1 and 100')
+          ),
+        channel_test_exclude_models: z
+          .string()
+          .max(2000, t('Excluded model keywords cannot exceed 2000 characters')),
+        channel_test_idle_minutes: z.coerce
+          .number()
+          .int(t('Enter a non-negative integer'))
+          .min(
+            MIN_CHANNEL_TEST_IDLE_MINUTES,
+            t('Idle cooldown must be between 0 and 1440 minutes')
+          )
+          .max(
+            MAX_CHANNEL_TEST_IDLE_MINUTES,
+            t('Idle cooldown must be between 0 and 1440 minutes')
+          ),
       }),
     })
     .superRefine((values, ctx) => {
@@ -140,6 +173,10 @@ type NormalizedChannelHealthValues = {
   'monitor_setting.auto_test_channel_minutes': number
   'monitor_setting.channel_test_concurrency': number
   'monitor_setting.channel_test_mode': ChannelTestMode
+  'monitor_setting.channel_test_model_strategy': ChannelTestModelStrategy
+  'monitor_setting.channel_test_sample_percent': number
+  'monitor_setting.channel_test_exclude_models': string
+  'monitor_setting.channel_test_idle_minutes': number
 }
 
 function normalizeChannelTestMode(value?: string): ChannelTestMode {
@@ -147,6 +184,12 @@ function normalizeChannelTestMode(value?: string): ChannelTestMode {
     return value
   }
   return 'scheduled_all'
+}
+
+function normalizeChannelTestModelStrategy(
+  value?: string
+): ChannelTestModelStrategy {
+  return value === 'random' ? 'random' : 'fixed'
 }
 
 const buildFormDefaults = (
@@ -169,6 +212,16 @@ const buildFormDefaults = (
     channel_test_mode: normalizeChannelTestMode(
       defaults['monitor_setting.channel_test_mode']
     ),
+    channel_test_model_strategy: normalizeChannelTestModelStrategy(
+      defaults['monitor_setting.channel_test_model_strategy']
+    ),
+    channel_test_sample_percent:
+      defaults['monitor_setting.channel_test_sample_percent'] ?? 100,
+    channel_test_exclude_models:
+      defaults['monitor_setting.channel_test_exclude_models'] ?? '',
+    channel_test_idle_minutes:
+      defaults['monitor_setting.channel_test_idle_minutes'] ??
+      DEFAULT_CHANNEL_TEST_IDLE_MINUTES,
   },
 })
 
@@ -193,6 +246,18 @@ const normalizeDefaults = (
   'monitor_setting.channel_test_mode': normalizeChannelTestMode(
     defaults['monitor_setting.channel_test_mode']
   ),
+  'monitor_setting.channel_test_model_strategy':
+    normalizeChannelTestModelStrategy(
+      defaults['monitor_setting.channel_test_model_strategy']
+    ),
+  'monitor_setting.channel_test_sample_percent':
+    defaults['monitor_setting.channel_test_sample_percent'] ?? 100,
+  'monitor_setting.channel_test_exclude_models': (
+    defaults['monitor_setting.channel_test_exclude_models'] ?? ''
+  ).trim(),
+  'monitor_setting.channel_test_idle_minutes':
+    defaults['monitor_setting.channel_test_idle_minutes'] ??
+    DEFAULT_CHANNEL_TEST_IDLE_MINUTES,
 })
 
 const normalizeFormValues = (
@@ -214,6 +279,14 @@ const normalizeFormValues = (
   'monitor_setting.channel_test_concurrency':
     values.monitor_setting.channel_test_concurrency,
   'monitor_setting.channel_test_mode': values.monitor_setting.channel_test_mode,
+  'monitor_setting.channel_test_model_strategy':
+    values.monitor_setting.channel_test_model_strategy,
+  'monitor_setting.channel_test_sample_percent':
+    values.monitor_setting.channel_test_sample_percent,
+  'monitor_setting.channel_test_exclude_models':
+    values.monitor_setting.channel_test_exclude_models.trim(),
+  'monitor_setting.channel_test_idle_minutes':
+    values.monitor_setting.channel_test_idle_minutes,
 })
 
 export function ChannelHealthSection({
@@ -454,6 +527,127 @@ export function ChannelHealthSection({
                     <FormDescription>
                       {t(
                         'Maximum number of channels tested at the same time (1-32)'
+                      )}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name='monitor_setting.channel_test_model_strategy'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Test model strategy')}</FormLabel>
+                    <Select
+                      items={[
+                        {
+                          value: 'fixed',
+                          label: t('Fixed test model'),
+                        },
+                        {
+                          value: 'random',
+                          label: t('Random model from channel'),
+                        },
+                      ]}
+                      value={field.value}
+                      onValueChange={field.onChange}
+                    >
+                      <FormControl>
+                        <SelectTrigger className='w-full'>
+                          <SelectValue />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent alignItemWithTrigger={false}>
+                        <SelectGroup>
+                          <SelectItem value='fixed'>
+                            {t('Fixed test model')}
+                          </SelectItem>
+                          <SelectItem value='random'>
+                            {t('Random model from channel')}
+                          </SelectItem>
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>
+                      {t(
+                        'Fixed uses the channel test model or first model; Random rotates across supported text models on each check.'
+                      )}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name='monitor_setting.channel_test_sample_percent'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Channel sample rate (%)')}</FormLabel>
+                    <FormControl>
+                      <Input
+                        type='number'
+                        min={MIN_CHANNEL_TEST_SAMPLE_PERCENT}
+                        max={MAX_CHANNEL_TEST_SAMPLE_PERCENT}
+                        step={1}
+                        {...safeNumberFieldProps(field)}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      {t(
+                        'Percentage of eligible channels randomly sampled per scheduled cycle (1-100). Lower values reduce cost and spread out probes.'
+                      )}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name='monitor_setting.channel_test_exclude_models'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Excluded models for random test')}</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder={t('Optional — leave empty by default')}
+                        value={field.value}
+                        onChange={(event) => field.onChange(event.target.value)}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      {t(
+                        'Comma-separated keywords skipped in random mode. Image, video, audio, and realtime models are skipped automatically.'
+                      )}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name='monitor_setting.channel_test_idle_minutes'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>
+                      {t('Idle cooldown before probing (minutes)')}
+                    </FormLabel>
+                    <FormControl>
+                      <Input
+                        type='number'
+                        min={MIN_CHANNEL_TEST_IDLE_MINUTES}
+                        max={MAX_CHANNEL_TEST_IDLE_MINUTES}
+                        step={1}
+                        {...safeNumberFieldProps(field)}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      {t(
+                        'Skip active probing while a channel has successful real user traffic within this window (0-1440). Set to 0 to always probe on schedule.'
                       )}
                     </FormDescription>
                     <FormMessage />

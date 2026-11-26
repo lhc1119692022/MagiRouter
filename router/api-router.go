@@ -27,6 +27,7 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.POST("/setup", anonymousRequestBodyLimit, controller.PostSetup)
 		apiRouter.GET("/status", controller.GetStatus)
 		apiRouter.GET("/uptime/status", controller.GetUptimeKumaStatus)
+		apiRouter.GET("/uptime/health", middleware.DisableCache(), controller.GetUptimeHealth)
 		apiRouter.GET("/models", middleware.UserAuth(), controller.DashboardListModels)
 		apiRouter.GET("/status/test", middleware.AdminAuth(), controller.TestStatus)
 		apiRouter.GET("/notice", controller.GetNotice)
@@ -41,6 +42,7 @@ func SetApiRouter(router *gin.Engine) {
 		perfMetricsRoute.Use(middleware.DisableCache(), middleware.HeaderNavModulePublicOrUserAuth("pricing"))
 		{
 			perfMetricsRoute.GET("/summary", controller.GetPerfMetricsSummary)
+			perfMetricsRoute.GET("/groups", controller.GetPerfMetricsGroups)
 			perfMetricsRoute.GET("", controller.GetPerfMetrics)
 		}
 		apiRouter.GET("/rankings", middleware.HeaderNavModuleAuth("rankings"), controller.GetRankings)
@@ -421,6 +423,8 @@ func SetApiRouter(router *gin.Engine) {
 		dataRoute := apiRouter.Group("/data")
 		dataRoute.GET("/perf-metrics/summary", middleware.DisableCache(), middleware.AdminAuth(), controller.GetDashboardPerfMetricsSummary)
 		dataRoute.GET("/profit", middleware.DisableCache(), middleware.AdminAuth(), controller.GetProfitAnalytics)
+		dataRoute.GET("/profit/deleted-user-records", middleware.DisableCache(), middleware.RootAuth(), controller.GetProfitDeletedUserRecords)
+		dataRoute.POST("/profit/deleted-user-records/cleanup", middleware.DisableCache(), middleware.RootAuth(), controller.CleanupProfitDeletedUserRecords)
 		dataRoute.GET("/media_traffic", middleware.DisableCache(), middleware.AdminAuth(), controller.GetAdminMediaTrafficAnalytics)
 		dataRoute.GET("/media_traffic/objects", middleware.DisableCache(), middleware.AdminAuth(), controller.ListAdminMediaTrafficObjects)
 		dataRoute.GET("/media_traffic/overrides", middleware.DisableCache(), middleware.AdminAuth(), controller.ListAdminMediaTrafficOverrides)

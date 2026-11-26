@@ -304,4 +304,65 @@ describe('ModelDetailsContent redesigned 2-panel drawer', () => {
     expect(within(table).getByText('$8')).toBeVisible()
     expect(within(table).getByText('$64')).toBeVisible()
   })
+
+  it('keeps group primary prices aligned on the group header row and places cache prices on a separate row without nested border boxes', () => {
+    const model: PricingModel = {
+      id: 3,
+      model_name: 'kimi-k3.1-pro',
+      vendor_name: 'Moonshot AI',
+      quota_type: 0,
+      model_ratio: 1,
+      completion_ratio: 5,
+      billing_mode: 'tiered_expr',
+      billing_expr:
+        'tier("base", p * 2 + c * 10 + cr * 0.2 + cc * 2 + cc1h * 4)',
+      supported_endpoint_types: ['openai'],
+      enable_groups: ['kimi-promo'],
+      group_ratio: { 'kimi-promo': 0.09 },
+    }
+
+    render(
+      <QueryClientProvider client={client}>
+        <ModelDetailsContent
+          model={model}
+          groupRatio={{ 'kimi-promo': 0.09 }}
+          usableGroup={{
+            'kimi-promo': { desc: 'Kimi Promo', ratio: 0.09 },
+          }}
+          endpointMap={{}}
+          autoGroups={[]}
+          priceRate={1}
+          usdExchangeRate={1}
+          tokenUnit='M'
+        />
+      </QueryClientProvider>
+    )
+
+    const panel = screen.getByRole('tabpanel')
+    const pricingSection = within(panel)
+      .getByText('Pricing & Routes')
+      .closest('section')
+    expect(pricingSection).not.toBeNull()
+    expect(pricingSection).not.toHaveClass('border')
+
+    const ratioBadge = within(panel).getByText('0.09x')
+    const headerRow = ratioBadge.parentElement?.parentElement
+    expect(headerRow).not.toBeNull()
+    expect(within(headerRow as HTMLElement).getByText('$0.18')).toBeVisible()
+    expect(within(headerRow as HTMLElement).getByText('$0.9')).toBeVisible()
+    expect(
+      within(headerRow as HTMLElement).queryByText('$0.018')
+    ).not.toBeInTheDocument()
+
+    const groupCard = headerRow?.parentElement
+    expect(groupCard).not.toBeNull()
+    expect(within(groupCard as HTMLElement).getByText('$0.018')).toBeVisible()
+    expect(within(groupCard as HTMLElement).getByText('$0.36')).toBeVisible()
+
+    const availabilityRow = within(groupCard as HTMLElement).getByText(
+      'Availability'
+    ).parentElement?.parentElement
+    expect(availabilityRow).not.toHaveClass('border')
+    expect(availabilityRow).toHaveClass('border-t')
+  })
 })

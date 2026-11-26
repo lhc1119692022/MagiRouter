@@ -580,6 +580,8 @@ const AUDIT_TEMPLATES: Record<string, string> = {
     'Removed user (ID: {{id}}) from violation audit allowlist',
   'violation_audit.settings_update': 'Updated violation audit settings',
   'option.profit_analytics_update': 'Updated profit analytics cost settings',
+  'profit.deleted_user_records_cleanup':
+    'Cleaned up {{total_deleted}} deleted-user profit records',
   'option.upstream_balance_update': 'Updated upstream balance monitor settings',
   'option.upstream_balance_test_email':
     'Sent upstream balance alert test email',

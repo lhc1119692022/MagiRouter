@@ -224,9 +224,10 @@ func DeleteModelMeta(c *gin.Context) {
 
 func BatchDeleteModelMeta(c *gin.Context) {
 	var request struct {
-		ModelIDs           []int `json:"model_ids"`
-		RemoveFromChannels bool  `json:"remove_from_channels"`
-		RemovePricing      bool  `json:"remove_pricing"`
+		ModelIDs           []int    `json:"model_ids"`
+		ChannelModels      []string `json:"channel_models"`
+		RemoveFromChannels bool     `json:"remove_from_channels"`
+		RemovePricing      bool     `json:"remove_pricing"`
 	}
 	if err := common.DecodeJson(c.Request.Body, &request); err != nil {
 		common.ApiError(c, err)
@@ -236,12 +237,21 @@ func BatchDeleteModelMeta(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "Model pricing is managed by a super administrator."})
 		return
 	}
-	result, err := model.DeleteModelMetadata(request.ModelIDs, request.RemoveFromChannels, request.RemovePricing)
+	result, err := model.DeleteModels(request.ModelIDs, request.ChannelModels, request.RemoveFromChannels, request.RemovePricing)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	recordManageAudit(c, "model.delete_batch", map[string]any{"model_ids": request.ModelIDs, "remove_from_channels": request.RemoveFromChannels, "remove_pricing": request.RemovePricing, "updated_channels": result.UpdatedChannels})
+	auditPayload := map[string]any{
+		"model_ids":            request.ModelIDs,
+		"remove_from_channels": request.RemoveFromChannels,
+		"remove_pricing":       request.RemovePricing,
+		"updated_channels":     result.UpdatedChannels,
+	}
+	if len(request.ChannelModels) > 0 {
+		auditPayload["channel_models"] = request.ChannelModels
+	}
+	recordManageAudit(c, "model.delete_batch", auditPayload)
 	common.ApiSuccess(c, result)
 }
 

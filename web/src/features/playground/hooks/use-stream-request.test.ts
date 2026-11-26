@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { describe, expect, test } from 'vitest'
 
+import { parseStreamErrorDetails } from '../lib/streaming/stream-utils'
 import type { ChatCompletionRequest } from '../types'
 import { createStreamRequestController } from './use-stream-request'
 
@@ -195,5 +196,115 @@ describe('latest-wins stream request coordination', () => {
     )
 
     expect(updates).toEqual(['current'])
+  })
+})
+
+describe('parseStreamErrorDetails', () => {
+  test('summarizes raw HTML proxy error pages instead of dumping markup', () => {
+    const html =
+      '<!DOCTYPE html><html><head><title>us.magirouter.com | 502: Bad gateway</title></head><body><p>Cloudflare Ray ID: <strong>a6077f2fceeb1289</strong></p></body></html>'
+
+    expect(parseStreamErrorDetails(html)).toEqual({
+      errorMessage:
+        'us.magirouter.com | 502: Bad gateway (Ray ID: a6077f2fceeb1289)',
+    })
+  })
+
+  test('preserves JSON error code and message', () => {
+    expect(
+      parseStreamErrorDetails(
+        JSON.stringify({
+          error: { code: 'invalid_request', message: 'Bad parameter' },
+        })
+      )
+    ).toEqual({
+      errorCode: 'invalid_request',
+      errorMessage: 'Bad parameter',
+    })
+  })
+})
+
+describe('multi-protocol SSE stream handling', () => {
+  test('streams named Anthropic Messages events and completes on message_stop', async () => {
+    const source = new FakeStreamSource()
+    const updates: Array<[string, string]> = []
+    let completed = 0
+    const controller = createStreamRequestController({
+      getHeaders: () => Promise.resolve({ 'x-api-key': 'sk-test' }),
+      createSource: () => source,
+      setStreaming: () => undefined,
+    })
+
+    await controller.send(
+      payload,
+      {
+        onUpdate: (type, chunk) => updates.push([type, chunk]),
+        onComplete: () => {
+          completed += 1
+        },
+        onError: () => undefined,
+      },
+      1,
+      'anthropic_messages'
+    )
+
+    source.emit(
+      'content_block_delta',
+      JSON.stringify({
+        type: 'content_block_delta',
+        delta: { type: 'thinking_delta', thinking: 'reason' },
+      })
+    )
+    source.emit(
+      'content_block_delta',
+      JSON.stringify({
+        type: 'content_block_delta',
+        delta: { type: 'text_delta', text: 'OK' },
+      })
+    )
+    source.emit('message_stop', JSON.stringify({ type: 'message_stop' }))
+
+    expect(updates).toEqual([
+      ['reasoning', 'reason'],
+      ['content', 'OK'],
+    ])
+    expect(completed).toBe(1)
+    expect(source.closed).toBe(true)
+  })
+
+  test('completes Gemini v1beta streams cleanly when the HTTP 200 SSE connection closes', async () => {
+    const source = new FakeStreamSource()
+    const updates: Array<[string, string]> = []
+    let completed = 0
+    const controller = createStreamRequestController({
+      getHeaders: () => Promise.resolve({ 'x-goog-api-key': 'sk-test' }),
+      createSource: () => source,
+      setStreaming: () => undefined,
+    })
+
+    await controller.send(
+      payload,
+      {
+        onUpdate: (type, chunk) => updates.push([type, chunk]),
+        onComplete: () => {
+          completed += 1
+        },
+        onError: () => undefined,
+      },
+      1,
+      'gemini_v1beta'
+    )
+
+    source.emit(
+      'message',
+      JSON.stringify({
+        candidates: [{ content: { parts: [{ text: 'OK' }] } }],
+      })
+    )
+    source.readyState = 2
+    source.emit('readystatechange')
+
+    expect(updates).toEqual([['content', 'OK']])
+    expect(completed).toBe(1)
   })
 })
