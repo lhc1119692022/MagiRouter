@@ -364,6 +364,24 @@ func UpdateOption(c *gin.Context) {
 		common.ApiSuccess(c, nil)
 		return
 	}
+	if option.Key == console_setting.PricingFilterOrderOption {
+		raw, ok := option.Value.(string)
+		if !ok {
+			common.ApiErrorStatus(c, http.StatusBadRequest, common.NewMessage("Invalid model square filter order configuration."))
+			return
+		}
+		if _, err := console_setting.ParsePricingFilterOrder(raw); err != nil {
+			common.ApiErrorStatus(c, http.StatusBadRequest, err)
+			return
+		}
+		if err := model.UpdateOptionsBulk(map[string]string{option.Key: raw}); err != nil {
+			common.ApiErrorStatus(c, http.StatusInternalServerError, common.NewMessage("Failed to save configuration"))
+			return
+		}
+		recordManageAudit(c, "option.update", map[string]any{"key": option.Key})
+		common.ApiSuccess(c, nil)
+		return
+	}
 	if option.Key == console_setting.DocsConfigOption {
 		raw, ok := option.Value.(string)
 		if !ok {

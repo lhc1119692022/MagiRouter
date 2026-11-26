@@ -148,7 +148,7 @@ export function ChannelsPrimaryButtons() {
         </div>
 
         <ChannelSortControl
-          field={(sorting[0]?.id ?? 'priority') as ChannelSortBy}
+          field={(sorting[0]?.id ?? 'group') as ChannelSortBy}
           desc={sorting[0]?.desc ?? true}
           onChange={(field, desc) => {
             setSorting([{ id: field, desc }])

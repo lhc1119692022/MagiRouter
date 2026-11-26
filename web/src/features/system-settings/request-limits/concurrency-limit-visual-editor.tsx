@@ -75,6 +75,11 @@ export function ConcurrencyLimitVisualEditor(
     )
   }, [concurrencyLimits, searchText])
 
+  const configuredGroups = useMemo(
+    () => concurrencyLimits.map((limit) => limit.groupName),
+    [concurrencyLimits]
+  )
+
   const handleSave = (data: ConcurrencyLimitEntryData): void => {
     const trimmedGroupName = data.groupName.trim()
     if (!trimmedGroupName) {
@@ -198,6 +203,7 @@ export function ConcurrencyLimitVisualEditor(
         onOpenChange={setDialogOpen}
         onSave={handleSave}
         editData={editData}
+        existingGroups={configuredGroups}
       />
     </div>
   )

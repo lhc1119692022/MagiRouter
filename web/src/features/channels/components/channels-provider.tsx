@@ -93,8 +93,7 @@ export function ChannelsProvider({ children }: { children: React.ReactNode }) {
   })
   const [sorting, setSorting] = useState<SortingState>(() => [
     {
-      id:
-        localStorage.getItem('channels-id-sort') === 'true' ? 'id' : 'priority',
+      id: localStorage.getItem('channels-id-sort') === 'true' ? 'id' : 'group',
       desc: true,
     },
   ])

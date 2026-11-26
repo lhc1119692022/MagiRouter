@@ -1,4 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod'
+import { useQuery } from '@tanstack/react-query'
 import { useEffect, useMemo, type FormEvent } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -6,6 +7,8 @@ import * as z from 'zod'
 
 import { Dialog } from '@/components/dialog'
 import { Button } from '@/components/ui/button'
+import { Combobox } from '@/components/ui/combobox'
+import type { ComboboxInputOption } from '@/components/ui/combobox-input'
 import {
   Form,
   FormControl,
@@ -16,6 +19,8 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
+import { getGroups } from '@/features/users/api'
+import { requireServerSuccess } from '@/lib/server-error-message'
 
 import { safeNumberFieldProps } from '../utils/numeric-field'
 
@@ -76,6 +81,7 @@ type ConcurrencyLimitDialogProps = {
   onOpenChange: (open: boolean) => void
   onSave: (data: ConcurrencyLimitEntryData) => void
   editData?: ConcurrencyLimitEntryData | null
+  existingGroups?: string[]
 }
 
 export function ConcurrencyLimitDialog(props: ConcurrencyLimitDialogProps) {
@@ -83,6 +89,52 @@ export function ConcurrencyLimitDialog(props: ConcurrencyLimitDialogProps) {
   const isEditMode = Boolean(props.editData)
 
   const dialogSchema = useMemo(() => createConcurrencyLimitDialogSchema(t), [t])
+
+  const {
+    data: groupsData,
+    isLoading: isLoadingGroups,
+    isError: isGroupsError,
+  } = useQuery({
+    queryKey: ['groups'],
+    queryFn: async () => requireServerSuccess(await getGroups()),
+    enabled: props.open && !isEditMode,
+    staleTime: 60_000,
+  })
+
+  const configuredGroupSet = useMemo(
+    () => new Set((props.existingGroups ?? []).map((name) => name.trim())),
+    [props.existingGroups]
+  )
+
+  const groupOptions = useMemo<ComboboxInputOption[]>(() => {
+    const seen = new Set<string>()
+    const groupNames: string[] = []
+    for (const rawName of groupsData?.data ?? []) {
+      const name = rawName.trim()
+      if (!name || seen.has(name)) continue
+      seen.add(name)
+      groupNames.push(name)
+    }
+    const editGroupName = props.editData?.groupName.trim() ?? ''
+    if (isEditMode && editGroupName && !seen.has(editGroupName)) {
+      groupNames.unshift(editGroupName)
+    }
+    return groupNames.map((name) => {
+      const isAlreadyConfigured = !isEditMode && configuredGroupSet.has(name)
+      return {
+        value: name,
+        label: name,
+        disabled: isAlreadyConfigured,
+        description: isAlreadyConfigured ? t('Configured') : undefined,
+      }
+    })
+  }, [
+    configuredGroupSet,
+    groupsData?.data,
+    isEditMode,
+    props.editData?.groupName,
+    t,
+  ])
 
   const form = useForm<ConcurrencyLimitDialogFormValues>({
     resolver: zodResolver(dialogSchema),
@@ -161,16 +213,32 @@ export function ConcurrencyLimitDialog(props: ConcurrencyLimitDialogProps) {
               <FormItem>
                 <FormLabel>{t('Group Name')}</FormLabel>
                 <FormControl>
-                  <Input
-                    placeholder={t('e.g., default, vip, premium')}
-                    {...fieldProps.field}
-                    disabled={isEditMode}
+                  <Combobox
+                    options={groupOptions}
+                    value={fieldProps.field.value}
+                    onValueChange={(value) =>
+                      fieldProps.field.onChange(value ?? '')
+                    }
+                    onBlur={fieldProps.field.onBlur}
+                    name={fieldProps.field.name}
+                    ref={fieldProps.field.ref}
+                    disabled={isEditMode || isLoadingGroups}
+                    className='w-full'
+                    placeholder={
+                      isLoadingGroups ? t('Loading...') : t('Select a group')
+                    }
+                    searchPlaceholder={t('Select a group')}
+                    emptyText={
+                      isGroupsError
+                        ? t('Failed to load groups')
+                        : t('No results found')
+                    }
                   />
                 </FormControl>
                 <FormDescription>
                   {isEditMode
                     ? t('Group name cannot be changed when editing.')
-                    : t('Unique identifier for this group.')}
+                    : t('Select an existing user or billing group.')}
                 </FormDescription>
                 <FormMessage />
               </FormItem>

@@ -1,6 +1,7 @@
 package model
 
 import (
+	"cmp"
 	"slices"
 	"strings"
 	"sync"
@@ -48,6 +49,7 @@ type Pricing struct {
 	AudioRatio             *float64                             `json:"audio_ratio,omitempty"`
 	AudioCompletionRatio   *float64                             `json:"audio_completion_ratio,omitempty"`
 	EnableGroup            []string                             `json:"enable_groups"`
+	HotGroup               string                               `json:"hot_group,omitempty"`
 	SupportedEndpointTypes []constant.EndpointType              `json:"supported_endpoint_types"`
 	BillingMode            string                               `json:"billing_mode,omitempty"`
 	BillingExpr            string                               `json:"billing_expr,omitempty"`
@@ -255,6 +257,15 @@ func updatePricing() {
 			Icon:        v.Icon,
 		})
 	}
+	slices.SortFunc(vendorsList, func(left PricingVendor, right PricingVendor) int {
+		if diff := cmp.Compare(strings.ToLower(left.Name), strings.ToLower(right.Name)); diff != 0 {
+			return diff
+		}
+		if diff := cmp.Compare(left.Name, right.Name); diff != 0 {
+			return diff
+		}
+		return cmp.Compare(left.ID, right.ID)
+	})
 
 	modelGroupsMap := make(map[string]*types.Set[string])
 	pluginGeneration := jsplugin.DefaultRegistry.Generation()

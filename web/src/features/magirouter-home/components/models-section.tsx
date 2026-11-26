@@ -3,8 +3,12 @@ import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Skeleton } from '@/components/ui/skeleton'
+import { EXCLUDED_GROUPS, FILTER_ALL } from '@/features/pricing/constants'
 import { getModelPlaygroundModes } from '@/features/pricing/lib/filters'
-import { isTokenBasedModel } from '@/features/pricing/lib/model-helpers'
+import {
+  isTokenBasedModel,
+  resolveDisplayGroup,
+} from '@/features/pricing/lib/model-helpers'
 import { formatPrice, formatRequestPrice } from '@/features/pricing/lib/price'
 import type { PricingModel } from '@/features/pricing/types'
 import { getLobeIcon } from '@/lib/lobe-icon'
@@ -14,6 +18,42 @@ interface ModelsSectionProps {
   isLoading: boolean
   priceRate: number
   usdExchangeRate: number
+  groupRatio?: Record<string, number>
+}
+
+function resolveHottestGroupBadge(
+  model: PricingModel,
+  groupRatio?: Record<string, number>
+): { name: string; ratio?: number } {
+  const ratios = groupRatio ?? model.group_ratio ?? {}
+  const eligibleGroups = (model.enable_groups ?? []).filter(
+    (group) =>
+      Boolean(group) && group !== FILTER_ALL && !EXCLUDED_GROUPS.includes(group)
+  )
+  let name: string | undefined
+  if (
+    model.hot_group &&
+    model.hot_group !== FILTER_ALL &&
+    !EXCLUDED_GROUPS.includes(model.hot_group) &&
+    (eligibleGroups.length === 0 || eligibleGroups.includes(model.hot_group))
+  ) {
+    name = model.hot_group
+  }
+  if (!name) {
+    const fallback = resolveDisplayGroup(
+      { ...model, group_ratio: ratios },
+      undefined
+    )
+    name = fallback.group ?? eligibleGroups[0] ?? 'default'
+  }
+  const configured = ratios[name]
+  const ratio =
+    typeof configured === 'number' &&
+    Number.isFinite(configured) &&
+    configured >= 0
+      ? configured
+      : undefined
+  return { name, ratio }
 }
 
 function pickVendorTint(vendorName?: string): { bg: string; color: string } {
@@ -79,7 +119,8 @@ function pickFeaturedModels(models: PricingModel[]): PricingModel[] {
 function buildPriceSummary(
   model: PricingModel,
   priceRate: number,
-  usdExchangeRate: number
+  usdExchangeRate: number,
+  selectedGroup?: string
 ): string {
   if (isTokenBasedModel(model)) {
     const inputText = formatPrice(
@@ -88,7 +129,8 @@ function buildPriceSummary(
       'M',
       false,
       priceRate,
-      usdExchangeRate
+      usdExchangeRate,
+      selectedGroup
     )
     const outputText = formatPrice(
       model,
@@ -96,11 +138,18 @@ function buildPriceSummary(
       'M',
       false,
       priceRate,
-      usdExchangeRate
+      usdExchangeRate,
+      selectedGroup
     )
     return `输入 ${inputText} · 输出 ${outputText} / 1M`
   }
-  const reqText = formatRequestPrice(model, false, priceRate, usdExchangeRate)
+  const reqText = formatRequestPrice(
+    model,
+    false,
+    priceRate,
+    usdExchangeRate,
+    selectedGroup
+  )
   return `${reqText} / 次`
 }
 
@@ -148,17 +197,26 @@ export function ModelsSection(props: ModelsSectionProps) {
                 const iconKey =
                   model.icon || model.vendor_icon || model.vendor_name
                 const tint = pickVendorTint(model.vendor_name)
-                const routesList = (model.enable_groups ?? []).slice(0, 2)
-                const routesText =
-                  routesList.length > 0 ? routesList.join(' · ') : 'default'
+                const modelWithRatios = props.groupRatio
+                  ? { ...model, group_ratio: props.groupRatio }
+                  : model
+                const hotGroup = resolveHottestGroupBadge(
+                  modelWithRatios,
+                  props.groupRatio
+                )
+                const hotGroupTitle =
+                  hotGroup.ratio !== undefined
+                    ? `${hotGroup.name} ×${hotGroup.ratio}`
+                    : hotGroup.name
                 const [mode] = getModelPlaygroundModes(model)
                 const descText =
                   model.description?.trim() ||
                   `${model.vendor_name || '旗舰'} 稳定直连节点，支持统一密钥路由与实时按量计费。`
                 const priceSummary = buildPriceSummary(
-                  model,
+                  modelWithRatios,
                   props.priceRate,
-                  props.usdExchangeRate
+                  props.usdExchangeRate,
+                  hotGroup.name
                 )
 
                 return (
@@ -174,7 +232,17 @@ export function ModelsSection(props: ModelsSectionProps) {
                       >
                         {iconKey ? getLobeIcon(iconKey, 22) : null}
                       </div>
-                      <span className='el-pill'>{routesText}</span>
+                      <span
+                        className='el-pill hot-group-pill'
+                        title={hotGroupTitle}
+                      >
+                        <span className='hot-group-name'>{hotGroup.name}</span>
+                        {hotGroup.ratio !== undefined && (
+                          <span className='hot-group-ratio tabular-nums'>
+                            ×{hotGroup.ratio}
+                          </span>
+                        )}
+                      </span>
                     </div>
 
                     <div>

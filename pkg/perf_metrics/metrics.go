@@ -352,6 +352,54 @@ func QuerySummaryAll(hours int, groups []string, recentModels ...string) (Summar
 	}, nil
 }
 
+func QueryModelGroupRequestCounts(hours int, allowedGroups []string) (map[string]map[string]int64, map[string]int64, error) {
+	startTs, endTs := queryWindow(time.Now(), hours)
+	allowedSet := allowedGroupSet(allowedGroups)
+
+	byModelGroup := make(map[string]map[string]int64)
+	byGroup := make(map[string]int64)
+
+	addCount := func(modelName string, group string, count int64) {
+		if modelName == "" || group == "" || count <= 0 {
+			return
+		}
+		if allowedSet != nil {
+			if _, ok := allowedSet[group]; !ok {
+				return
+			}
+		}
+		modelCounts, exists := byModelGroup[modelName]
+		if !exists {
+			modelCounts = make(map[string]int64)
+			byModelGroup[modelName] = modelCounts
+		}
+		modelCounts[group] += count
+		byGroup[group] += count
+	}
+
+	rows, err := model.GetPerfMetricsModelGroupCounts(startTs, endTs, allowedGroups)
+	if err != nil {
+		return byModelGroup, byGroup, err
+	}
+	for _, row := range rows {
+		addCount(row.ModelName, row.Group, row.RequestCount)
+	}
+
+	hotBuckets.Range(func(key, value any) bool {
+		bucket := key.(bucketKey)
+		if bucket.bucketTs < startTs || bucket.bucketTs > endTs {
+			return true
+		}
+		snap := value.(*atomicBucket).snapshot()
+		if snap.requestCount > 0 {
+			addCount(bucket.model, bucket.group, snap.requestCount)
+		}
+		return true
+	})
+
+	return byModelGroup, byGroup, nil
+}
+
 func mergeModelTotals(totals map[string]counters, modelName string, value counters) {
 	if value.requestCount == 0 {
 		return

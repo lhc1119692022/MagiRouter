@@ -50,6 +50,10 @@ import {
   hasTaskUsageSchema,
   isUnconfiguredTaskUsageModel,
 } from './dynamic-price'
+import {
+  applyManualOrder,
+  type PricingFilterOrderConfig,
+} from './filter-order-config'
 import { getDisplayGroupRatio, isTokenBasedModel } from './model-helpers'
 import { withBasePricing } from './plugin-pricing'
 import { calculateTokenPrice } from './price'
@@ -522,6 +526,7 @@ const GROUP_SERIES_DELIMITER = /[\s\-_/「」【】[\]()（）·:：|]+/
 export type CatalogFacetsOptions = {
   groupRatio?: Record<string, number>
   vendors?: readonly PricingVendor[]
+  filterOrder?: PricingFilterOrderConfig
 }
 
 export function sortCatalogGroups(
@@ -694,16 +699,25 @@ export function getCatalogFacets(
   const visibleGroups = Object.keys(usableGroups).filter(
     (group) => !EXCLUDED_GROUPS.includes(group) && groups.has(group)
   )
+  const defaultCategories = MODEL_CAPABILITY_CATEGORIES.filter((category) =>
+    categories.has(category)
+  )
+  const defaultGroups = sortCatalogGroups(visibleGroups, models, options)
+  const defaultQuotaTypes = [
+    QUOTA_TYPES.TOKEN,
+    QUOTA_TYPES.REQUEST,
+    QUOTA_TYPES.TASK,
+  ].filter((quota) => quotaTypes.has(quota))
   return {
-    categories: MODEL_CAPABILITY_CATEGORIES.filter((category) =>
-      categories.has(category)
+    categories: applyManualOrder(
+      defaultCategories,
+      options?.filterOrder?.capabilities
     ),
-    groups: sortCatalogGroups(visibleGroups, models, options),
-    quotaTypes: [
-      QUOTA_TYPES.TOKEN,
-      QUOTA_TYPES.REQUEST,
-      QUOTA_TYPES.TASK,
-    ].filter((quota) => quotaTypes.has(quota)),
+    groups: applyManualOrder(defaultGroups, options?.filterOrder?.groups),
+    quotaTypes: applyManualOrder(
+      defaultQuotaTypes,
+      options?.filterOrder?.quota_types
+    ),
   }
 }
 

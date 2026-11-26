@@ -30,6 +30,7 @@ import { SidebarModulesSection } from '../maintenance/sidebar-modules-section'
 import type { SiteSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
 import { PricingBannerSection } from './pricing-banner-section'
+import { PricingFilterOrderSection } from './pricing-filter-order-section'
 
 const SITE_SECTIONS = [
   {
@@ -106,6 +107,15 @@ const SITE_SECTIONS = [
     build: (settings: SiteSettings) => (
       <PricingBannerSection
         value={settings['console_setting.pricing_banner']}
+      />
+    ),
+  },
+  {
+    id: 'pricing-filter-order',
+    titleKey: 'Model Square Filter Order',
+    build: (settings: SiteSettings) => (
+      <PricingFilterOrderSection
+        value={settings['console_setting.pricing_filter_order']}
       />
     ),
   },

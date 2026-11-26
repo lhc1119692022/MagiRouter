@@ -1,9 +1,13 @@
 package controller
 
 import (
+	"math"
+	"strings"
+
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
+	perfmetrics "github.com/QuantumNous/new-api/pkg/perf_metrics"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/console_setting"
@@ -37,18 +41,62 @@ func filterPricingByUsableGroups(pricing []model.Pricing, usableGroup map[string
 	return filtered
 }
 
+func selectHottestModelGroup(
+	modelName string,
+	enableGroups []string,
+	groupRatio map[string]float64,
+	byModelGroup map[string]map[string]int64,
+	byGroup map[string]int64,
+) string {
+	bestGroup := ""
+	var bestModelCount int64 = -1
+	var bestGroupCount int64 = -1
+	bestRatio := math.Inf(1)
+	modelCounts := byModelGroup[modelName]
+
+	for _, group := range enableGroups {
+		if group == "" || group == "auto" || group == "all" {
+			continue
+		}
+		modelCount := modelCounts[group]
+		groupCount := byGroup[group]
+		ratio := math.Inf(1)
+		if configured, ok := groupRatio[group]; ok && !math.IsNaN(configured) && !math.IsInf(configured, 0) && configured >= 0 {
+			ratio = configured
+		}
+		if bestGroup == "" {
+			bestGroup = group
+			bestModelCount = modelCount
+			bestGroupCount = groupCount
+			bestRatio = ratio
+			continue
+		}
+		better := false
+		if modelCount != bestModelCount {
+			better = modelCount > bestModelCount
+		} else if groupCount != bestGroupCount {
+			better = groupCount > bestGroupCount
+		} else if ratio != bestRatio {
+			better = ratio < bestRatio
+		} else {
+			better = strings.Compare(group, bestGroup) < 0
+		}
+		if better {
+			bestGroup = group
+			bestModelCount = modelCount
+			bestGroupCount = groupCount
+			bestRatio = ratio
+		}
+	}
+	return bestGroup
+}
+
 func GetPricing(c *gin.Context) {
 	userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
 	usableGroup := service.GetUserUsableGroups(userGroup)
 	pricing := filterPricingByUsableGroups(model.GetPricing(), usableGroup)
 	preferences, _ := common.GetContextKeyType[dto.UserSetting](c, constant.ContextKeyUserSetting)
 	references := console_setting.GetOfficialModelPrices()
-	for index := range pricing {
-		if preferences.AcceptUnsetRatioModel {
-			pricing[index].PriceUnconfigured = false
-		}
-		pricing[index].OfficialPrice = references[pricing[index].ModelName]
-	}
 	groupRatio := ratio_setting.GetGroupRatioCopy()
 	for group := range groupRatio {
 		if _, ok := usableGroup[group]; !ok {
@@ -60,6 +108,33 @@ func GetPricing(c *gin.Context) {
 				groupRatio[group] = ratio
 			}
 		}
+	}
+
+	allowedMetricGroups := make([]string, 0, len(usableGroup))
+	for group := range usableGroup {
+		if group == "" || group == "auto" {
+			continue
+		}
+		allowedMetricGroups = append(allowedMetricGroups, group)
+	}
+	byModelGroup, byGroup, err := perfmetrics.QueryModelGroupRequestCounts(24*30, allowedMetricGroups)
+	if err != nil {
+		byModelGroup = nil
+		byGroup = nil
+	}
+
+	for index := range pricing {
+		if preferences.AcceptUnsetRatioModel {
+			pricing[index].PriceUnconfigured = false
+		}
+		pricing[index].OfficialPrice = references[pricing[index].ModelName]
+		pricing[index].HotGroup = selectHottestModelGroup(
+			pricing[index].ModelName,
+			pricing[index].EnableGroup,
+			groupRatio,
+			byModelGroup,
+			byGroup,
+		)
 	}
 
 	c.JSON(200, gin.H{

@@ -243,6 +243,7 @@ func Register(c *gin.Context) {
 		return
 	}
 	if common.EmailVerificationEnabled {
+		user.VerificationCode = strings.TrimSpace(user.VerificationCode)
 		if user.Email == "" || user.VerificationCode == "" {
 			common.ApiErrorT(c, "Email verification is enabled, please enter email address and verification code")
 			return
@@ -293,6 +294,9 @@ func Register(c *gin.Context) {
 		}
 		common.ApiError(c, err)
 		return
+	}
+	if common.EmailVerificationEnabled {
+		common.DeleteKey(user.Email, common.EmailVerificationPurpose)
 	}
 
 	// 获取插入后的用户ID

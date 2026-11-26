@@ -86,6 +86,33 @@ type PerfMetricSummaryBucket struct {
 	CachedTokens   int64  `json:"cached_tokens"`
 }
 
+type PerfMetricModelGroupCount struct {
+	ModelName    string `gorm:"column:model_name" json:"model_name"`
+	Group        string `gorm:"column:group_name" json:"group"`
+	RequestCount int64  `gorm:"column:request_count" json:"request_count"`
+}
+
+func GetPerfMetricsModelGroupCounts(startTs int64, endTs int64, groups []string) ([]PerfMetricModelGroupCount, error) {
+	var counts []PerfMetricModelGroupCount
+	if DB == nil {
+		return counts, nil
+	}
+	query := DB.Model(&PerfMetric{}).
+		Select("model_name, "+commonGroupCol+" AS group_name, SUM(request_count) AS request_count").
+		Where("bucket_ts >= ? AND bucket_ts <= ?", startTs, endTs)
+	if groups != nil {
+		if len(groups) == 0 {
+			return counts, nil
+		}
+		query = query.Where(commonGroupCol+" IN ?", groups)
+	}
+	err := query.
+		Group("model_name, " + commonGroupCol).
+		Having("SUM(request_count) > 0").
+		Find(&counts).Error
+	return counts, err
+}
+
 func GetPerfMetricsSummaryAll(startTs int64, endTs int64, groups []string) ([]PerfMetricSummary, error) {
 	var summaries []PerfMetricSummary
 	query := DB.Model(&PerfMetric{}).

@@ -12,7 +12,10 @@ import { afterEach, expect, test } from 'vitest'
 import type { PricingModel } from '@/features/pricing/types'
 
 import { RoutesSection } from '../components/routes-section'
-import { buildBillingComparisonData } from '../lib/catalog-quote'
+import {
+  buildBillingComparisonData,
+  computeEffectiveDiscount,
+} from '../lib/catalog-quote'
 
 afterEach(cleanup)
 
@@ -25,7 +28,7 @@ const models: PricingModel[] = [
     model_ratio: 1,
     completion_ratio: 5,
     cache_ratio: 0.1,
-    enable_groups: ['promo', 'standard'],
+    enable_groups: ['promo', 'standard', 'enterprise'],
     official_price: {
       source_url: 'https://anthropic.example/pricing',
       input_usd_per_million: 2,
@@ -34,21 +37,27 @@ const models: PricingModel[] = [
   },
 ]
 
-async function renderBilling() {
+async function renderBilling(priceRate = 1) {
   const comparison = buildBillingComparisonData(
     models,
     {
       promo: { desc: '特价线路', ratio: 0.2 },
       standard: { desc: '标准官渠', ratio: 1 },
+      enterprise: { desc: '企业专线', ratio: 1.1 },
     },
-    { promo: 0.2, standard: 1 }
+    { promo: 0.2, standard: 1, enterprise: 1.1 }
   )
   const root = createRootRoute()
   const home = createRoute({
     getParentRoute: () => root,
     path: '/',
     component: () => (
-      <RoutesSection comparison={comparison} loading={false} failed={false} />
+      <RoutesSection
+        comparison={comparison}
+        loading={false}
+        failed={false}
+        priceRate={priceRate}
+      />
     ),
   })
   const router = createRouter({
@@ -68,23 +77,91 @@ test('toggles interactively between your discounted price and official price and
   expect(yourBtn).toHaveAttribute('aria-pressed', 'true')
   expect(officialBtn).toHaveAttribute('aria-pressed', 'false')
 
+  const conversionPanel = screen.getByLabelText('汇率与优惠换算明细')
+  expect(conversionPanel).toHaveTextContent('充 ¥1 = $1 站内额度')
+  expect(conversionPanel).toHaveTextContent('0.3折')
+  expect(conversionPanel).toHaveTextContent('97%')
+  expect(conversionPanel).toHaveTextContent(
+    '「本站站内额度 $」≠「官方真实美元 $」'
+  )
+
   const table = screen.getByRole('table')
+  expect(table).toHaveTextContent('¥0.4')
   expect(table).toHaveTextContent('$0.4')
-  expect(table).toHaveTextContent('省 80%')
+  expect(table).toHaveTextContent('0.3折 · 省 97%')
 
   await user.click(officialBtn)
   expect(officialBtn).toHaveAttribute('aria-pressed', 'true')
   expect(yourBtn).toHaveAttribute('aria-pressed', 'false')
   expect(table).toHaveTextContent('$2')
   expect(table).toHaveTextContent('$10')
+  expect(table).toHaveTextContent('¥13.4')
   expect(table).toHaveTextContent('官方价格')
 
-  const standardGroupBtn = screen.getByRole('button', { name: /standard/ })
-  await user.click(standardGroupBtn)
+  const enterpriseGroupBtn = screen.getByRole('button', { name: /enterprise/ })
+  await user.click(enterpriseGroupBtn)
   expect(yourBtn).toHaveAttribute('aria-pressed', 'true')
-  expect(standardGroupBtn).toHaveAttribute('aria-pressed', 'true')
-  expect(table).toHaveTextContent('$2')
+  expect(enterpriseGroupBtn).toHaveAttribute('aria-pressed', 'true')
+  expect(conversionPanel).toHaveTextContent('1.6折')
+  expect(conversionPanel).toHaveTextContent('83.6%')
+  expect(conversionPanel).toHaveTextContent('并非比官方贵')
+  expect(table).toHaveTextContent('¥2.2')
   expect(screen.getByText('计费案例')).toBeVisible()
+
+  await user.click(screen.getByRole('button', { name: '7.2' }))
+  expect(conversionPanel).toHaveTextContent('1.5折')
+  expect(conversionPanel).toHaveTextContent('84.7%')
+})
+
+test('computes accurate effective zhe and savings at 6.7 exchange rate across group multipliers', () => {
+  expect(
+    computeEffectiveDiscount({
+      yourUsd: 1,
+      officialUsd: 1,
+      priceRate: 1,
+      referenceUsdRate: 6.7,
+    })
+  ).toMatchObject({
+    zheLabel: '1.5折',
+    savingsLabel: '85.1%',
+    isDiscounted: true,
+  })
+  expect(
+    computeEffectiveDiscount({
+      yourUsd: 0.5,
+      officialUsd: 1,
+      priceRate: 1,
+      referenceUsdRate: 6.7,
+    })
+  ).toMatchObject({
+    zheLabel: '0.75折',
+    savingsLabel: '92.5%',
+    isDiscounted: true,
+  })
+  expect(
+    computeEffectiveDiscount({
+      yourUsd: 1.1,
+      officialUsd: 1,
+      priceRate: 1,
+      referenceUsdRate: 6.7,
+    })
+  ).toMatchObject({
+    zheLabel: '1.6折',
+    savingsLabel: '83.6%',
+    isDiscounted: true,
+  })
+  expect(
+    computeEffectiveDiscount({
+      yourUsd: 0.025,
+      officialUsd: 1,
+      priceRate: 1,
+      referenceUsdRate: 6.7,
+    })
+  ).toMatchObject({
+    zheLabel: '0.04折',
+    savingsLabel: '99.6%',
+    isDiscounted: true,
+  })
 })
 
 test('defaults usable groups absent from group_ratio to 1x and caps displayed examples at 4 models', () => {

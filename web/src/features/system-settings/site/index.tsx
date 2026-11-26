@@ -40,6 +40,7 @@ const defaultSiteSettings: SiteSettings = {
   SidebarModulesAdmin: '',
   'console_setting.home_showcase': '{}',
   'console_setting.pricing_banner': '[]',
+  'console_setting.pricing_filter_order': '{}',
 }
 
 export function SiteSettings() {

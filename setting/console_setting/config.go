@@ -6,6 +6,7 @@ type ConsoleSetting struct {
 	OfficialModelPrices  string `json:"official_model_prices"`
 	HomeShowcase         string `json:"home_showcase"`
 	PricingBanner        string `json:"pricing_banner"`
+	PricingFilterOrder   string `json:"pricing_filter_order"`
 	CreationPresets      string `json:"creation_presets"`
 	DocsConfig           string `json:"docs_config"`
 	SitePopups           string `json:"site_popups"`
@@ -25,6 +26,7 @@ var defaultConsoleSetting = ConsoleSetting{
 	OfficialModelPrices:  "{}",
 	HomeShowcase:         "{}",
 	PricingBanner:        "[]",
+	PricingFilterOrder:   "{}",
 	CreationPresets:      "[]",
 	DocsConfig:           "{}",
 	SitePopups:           "[]",

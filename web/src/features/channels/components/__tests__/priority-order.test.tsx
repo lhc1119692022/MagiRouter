@@ -216,12 +216,14 @@ async function mount(view: 'table' | 'card' = 'card', enabled = true) {
   )
   await screen.findByRole('button', { name: 'Drag mode' })
   if (enabled) {
+    const user = userEvent.setup()
+    const header = within(screen.getByRole('banner'))
+    await user.click(header.getByRole('combobox', { name: 'Sort channels by' }))
+    await user.click(await screen.findByRole('option', { name: /^Priority$/ }))
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Drag mode' })).toBeEnabled()
     )
-    await userEvent
-      .setup()
-      .click(screen.getByRole('button', { name: 'Drag mode' }))
+    await user.click(screen.getByRole('button', { name: 'Drag mode' }))
     await screen.findByRole('button', { name: 'Reorder channel 3' })
   }
   return { client, router }
@@ -640,6 +642,12 @@ test.each(['table', 'card'] as const)(
   async (view) => {
     await mount(view, false)
     const user = userEvent.setup()
+    const header = within(screen.getByRole('banner'))
+    await user.click(header.getByRole('combobox', { name: 'Sort channels by' }))
+    await user.click(await screen.findByRole('option', { name: /^Priority$/ }))
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Drag mode' })).toBeEnabled()
+    )
     screen.getByRole('button', { name: 'Drag mode' }).focus()
     await user.keyboard('{Enter}')
     expect(
@@ -683,6 +691,11 @@ test('the header places reorder before batch mode while shared display controls 
   const user = userEvent.setup()
   const header = within(screen.getByRole('banner'))
   const toolbar = within(screen.getByRole('region', { name: 'Channels' }))
+  await user.click(header.getByRole('combobox', { name: 'Sort channels by' }))
+  await user.click(await screen.findByRole('option', { name: /^Priority$/ }))
+  await waitFor(() =>
+    expect(header.getByRole('button', { name: 'Drag mode' })).toBeEnabled()
+  )
   const reorder = header.getByRole('button', { name: 'Drag mode' })
   reorder.focus()
   await user.tab()
@@ -890,29 +903,11 @@ test.each(['table', 'card'] as const)(
   }
 )
 
-test('group sort defaults to ascending, sends group sort params, and syncs with the table column header', async () => {
+test('channels page defaults to group descending sort, sends group sort params, and syncs with the table column header', async () => {
   await mount('card', false)
   const user = userEvent.setup()
   const header = within(screen.getByRole('banner'))
 
-  await user.click(header.getByRole('combobox', { name: 'Sort channels by' }))
-  await user.click(await screen.findByRole('option', { name: /^Group$/ }))
-
-  await waitFor(() =>
-    expect(api.get).toHaveBeenLastCalledWith(
-      '/api/channel',
-      expect.objectContaining({
-        params: expect.objectContaining({
-          sort_by: 'group',
-          sort_order: 'asc',
-        }),
-      })
-    )
-  )
-  expect(header.getByRole('button', { name: 'Ascending' })).toBeEnabled()
-  expect(screen.getByRole('button', { name: 'Drag mode' })).toBeDisabled()
-
-  await user.click(header.getByRole('button', { name: 'Ascending' }))
   await waitFor(() =>
     expect(api.get).toHaveBeenLastCalledWith(
       '/api/channel',
@@ -920,6 +915,24 @@ test('group sort defaults to ascending, sends group sort params, and syncs with 
         params: expect.objectContaining({
           sort_by: 'group',
           sort_order: 'desc',
+        }),
+      })
+    )
+  )
+  expect(
+    header.getByRole('combobox', { name: 'Sort channels by' })
+  ).toHaveTextContent('Group')
+  expect(header.getByRole('button', { name: 'Descending' })).toBeEnabled()
+  expect(screen.getByRole('button', { name: 'Drag mode' })).toBeDisabled()
+
+  await user.click(header.getByRole('button', { name: 'Descending' }))
+  await waitFor(() =>
+    expect(api.get).toHaveBeenLastCalledWith(
+      '/api/channel',
+      expect.objectContaining({
+        params: expect.objectContaining({
+          sort_by: 'group',
+          sort_order: 'asc',
         }),
       })
     )
@@ -945,6 +958,21 @@ test('group sort defaults to ascending, sends group sort params, and syncs with 
       expect.objectContaining({
         params: expect.objectContaining({
           sort_by: 'priority',
+          sort_order: 'desc',
+        }),
+      })
+    )
+  )
+  expect(header.getByRole('button', { name: 'Descending' })).toBeEnabled()
+
+  await user.click(header.getByRole('combobox', { name: 'Sort channels by' }))
+  await user.click(await screen.findByRole('option', { name: /^Group$/ }))
+  await waitFor(() =>
+    expect(api.get).toHaveBeenLastCalledWith(
+      '/api/channel',
+      expect.objectContaining({
+        params: expect.objectContaining({
+          sort_by: 'group',
           sort_order: 'desc',
         }),
       })

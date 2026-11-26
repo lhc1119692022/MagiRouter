@@ -67,6 +67,7 @@ export function useFilters(
   const navigate = useNavigate({ from: '/pricing/' })
   const groupRatio = facetOptions?.groupRatio
   const vendors = facetOptions?.vendors
+  const filterOrder = facetOptions?.filterOrder
   const [filterState, setFilterState] = useState<FilterState>(() => ({
     search: search.search,
     sort: search.sort,
@@ -97,9 +98,12 @@ export function useFilters(
   )
   const availableGroups = useMemo(
     () =>
-      getCatalogFacets(vendorModels, usableGroups, { groupRatio, vendors })
-        .groups,
-    [vendorModels, usableGroups, groupRatio, vendors]
+      getCatalogFacets(vendorModels, usableGroups, {
+        groupRatio,
+        vendors,
+        filterOrder,
+      }).groups,
+    [vendorModels, usableGroups, groupRatio, vendors, filterOrder]
   )
   const groupFilter =
     search.group && availableGroups.includes(search.group)

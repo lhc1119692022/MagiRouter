@@ -71,6 +71,12 @@ async function renderConcurrencyLimitSection(
 
 describe('ConcurrencyLimitSection', () => {
   beforeEach(() => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      data: {
+        success: true,
+        data: ['default', 'vip', 'premium'],
+      },
+    })
     vi.spyOn(api, 'put').mockResolvedValue({ data: { success: true } })
   })
 
@@ -148,14 +154,17 @@ describe('ConcurrencyLimitSection', () => {
     ).toBeVisible()
     expect(api.put).not.toHaveBeenCalled()
 
-    const groupNameInput = within(dialog).getByRole('textbox', {
+    const groupSelect = within(dialog).getByRole('combobox', {
       name: 'Group Name',
     })
+    await waitFor(() => expect(groupSelect).not.toBeDisabled())
     const maxConcurrencyInput = within(dialog).getByRole('spinbutton', {
       name: 'Max concurrency',
     })
 
-    await user.type(groupNameInput, '  vip  ')
+    await user.click(groupSelect)
+    await user.click(await screen.findByRole('option', { name: 'vip' }))
+    await waitFor(() => expect(groupSelect).toHaveValue('vip'))
     fireEvent.change(maxConcurrencyInput, { target: { value: '100001' } })
     await user.click(within(dialog).getByRole('button', { name: 'Add' }))
 
@@ -199,11 +208,12 @@ describe('ConcurrencyLimitSection', () => {
     const dialog = await screen.findByRole('dialog', {
       name: 'Edit group concurrency limit',
     })
-    const groupNameInput = within(dialog).getByRole('textbox', {
+    const groupSelect = within(dialog).getByRole('combobox', {
       name: 'Group Name',
     })
-    expect(groupNameInput).toHaveValue('default')
-    expect(groupNameInput).toBeDisabled()
+    expect(groupSelect).toHaveValue('default')
+    expect(groupSelect).toBeDisabled()
+    expect(api.get).not.toHaveBeenCalled()
 
     const maxConcurrencyInput = within(dialog).getByRole('spinbutton', {
       name: 'Max concurrency',
@@ -230,6 +240,35 @@ describe('ConcurrencyLimitSection', () => {
       key: 'UserConcurrencyLimitGroup',
       value: '{\n  "default": 0,\n  "vip": 20\n}',
     })
+  })
+
+  test('marks already configured groups as disabled in the group dropdown', async () => {
+    const user = userEvent.setup()
+    await renderConcurrencyLimitSection({
+      UserConcurrencyLimitGroup: '{"vip": 20}',
+    })
+
+    await user.click(screen.getByRole('button', { name: 'Add group' }))
+
+    const dialog = await screen.findByRole('dialog', {
+      name: 'Add group concurrency limit',
+    })
+    const groupSelect = within(dialog).getByRole('combobox', {
+      name: 'Group Name',
+    })
+    await waitFor(() => expect(groupSelect).not.toBeDisabled())
+
+    await user.click(groupSelect)
+    const configuredOption = await screen.findByRole('option', {
+      name: /vip/i,
+    })
+    expect(configuredOption).toHaveAttribute('aria-disabled', 'true')
+    expect(within(configuredOption).getByText('Configured')).toBeVisible()
+
+    const availableOption = screen.getByRole('option', { name: 'premium' })
+    expect(availableOption).not.toHaveAttribute('aria-disabled', 'true')
+    await user.click(availableOption)
+    await waitFor(() => expect(groupSelect).toHaveValue('premium'))
   })
 
   test('deletes a group via row action menu and saves empty object when last removed', async () => {

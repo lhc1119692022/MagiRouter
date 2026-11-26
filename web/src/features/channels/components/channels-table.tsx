@@ -328,7 +328,7 @@ export function ChannelsTable() {
   })
   const user = useAuthStore((state) => state.auth.user)
   const sortField = (sorting[0]?.id ??
-    (idSort ? 'id' : 'priority')) as ChannelSortBy
+    (idSort ? 'id' : 'group')) as ChannelSortBy
   const sortDesc = sorting[0]?.desc ?? true
   const [reorderEnabled, setReorderEnabled] = useState(false)
   const canReorder =

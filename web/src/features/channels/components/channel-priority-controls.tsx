@@ -86,7 +86,7 @@ export function ChannelPriorityHandle(props: { id: number }) {
 
 const DEFAULT_CHANNEL_SORT_DESC: Record<ChannelSortBy, boolean> = {
   priority: true,
-  group: false,
+  group: true,
   id: true,
   name: false,
   balance: true,

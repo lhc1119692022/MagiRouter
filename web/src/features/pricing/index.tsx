@@ -66,6 +66,10 @@ import {
   type PricingBannerSlideConfig,
 } from './lib/banner-config'
 import {
+  parsePricingFilterOrderConfig,
+  sortCatalogVendors,
+} from './lib/filter-order-config'
+import {
   getCatalogFacets,
   expandTaskFilters,
   getModelPlaygroundModes,
@@ -90,6 +94,7 @@ export function Pricing() {
   const { auth } = useAuthStore()
   const { status } = useStatus()
   const isAuthenticated = Boolean(auth.user)
+  const isAdmin = (auth.user?.role ?? 0) >= 10
 
   const [selectedModelName, setSelectedModelName] = useState<string | null>(
     null
@@ -152,6 +157,20 @@ export function Pricing() {
     usdExchangeRate,
   } = usePricingData()
 
+  const filterOrder = useMemo(
+    () =>
+      parsePricingFilterOrderConfig(
+        status?.pricing_filter_order ?? status?.data?.pricing_filter_order
+      ),
+    [status?.data?.pricing_filter_order, status?.pricing_filter_order]
+  )
+
+  const sortedVendors = useMemo(() => {
+    const visibleIds = new Set(models.map((model) => model.vendor_id))
+    const visibleVendors = vendors.filter((vendor) => visibleIds.has(vendor.id))
+    return sortCatalogVendors(visibleVendors, filterOrder.vendors)
+  }, [filterOrder.vendors, models, vendors])
+
   const {
     searchInput,
     sortBy,
@@ -174,7 +193,11 @@ export function Pricing() {
     hasActiveFilters,
     clearFilters,
     clearSearch,
-  } = useFilters(models, usableGroup, catalogReady, { groupRatio, vendors })
+  } = useFilters(models, usableGroup, catalogReady, {
+    groupRatio,
+    vendors: sortedVendors,
+    filterOrder,
+  })
 
   const displayedModels = useMemo(() => {
     if (!selectedTasks.length) return filteredModels
@@ -200,8 +223,13 @@ export function Pricing() {
   )
 
   const facets = useMemo(
-    () => getCatalogFacets(models, usableGroup, { groupRatio, vendors }),
-    [models, usableGroup, groupRatio, vendors]
+    () =>
+      getCatalogFacets(models, usableGroup, {
+        groupRatio,
+        vendors: sortedVendors,
+        filterOrder,
+      }),
+    [models, usableGroup, groupRatio, sortedVendors, filterOrder]
   )
   const hasExtraOptions =
     availableGroups.length > 0 || facets.quotaTypes.length > 0
@@ -348,11 +376,6 @@ export function Pricing() {
     activeSlide?.mediaUrl,
     activeSlide?.mediaType
   )
-
-  const sortedVendors = useMemo(() => {
-    const visibleIds = new Set(models.map((model) => model.vendor_id))
-    return vendors.filter((vendor) => visibleIds.has(vendor.id))
-  }, [models, vendors])
 
   const renderPricingContent = () => {
     if (viewMode === VIEW_MODES.CARD) {
@@ -744,15 +767,31 @@ export function Pricing() {
                         </div>
                       </div>
                     )}
-                    {anyFilterActive && (
+                    {(anyFilterActive || isAdmin) && (
                       <div className='filter-top-actions'>
-                        <button
-                          type='button'
-                          className='filter-clear-link'
-                          onClick={handleClearAll}
-                        >
-                          {t('Reset')}
-                        </button>
+                        {anyFilterActive && (
+                          <button
+                            type='button'
+                            className='filter-clear-link'
+                            onClick={handleClearAll}
+                          >
+                            {t('Reset')}
+                          </button>
+                        )}
+                        {isAdmin && (
+                          <button
+                            type='button'
+                            className='filter-clear-link'
+                            onClick={() =>
+                              void navigate({
+                                to: '/system-settings/site/$section',
+                                params: { section: 'pricing-filter-order' },
+                              })
+                            }
+                          >
+                            {t('Adjust filter order')}
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>

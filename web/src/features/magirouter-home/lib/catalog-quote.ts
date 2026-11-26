@@ -39,6 +39,94 @@ export interface BillingComparisonData {
   rowsByGroup: Record<string, BillingCompareRow[]>
 }
 
+export const DEFAULT_REFERENCE_USD_CNY_RATE = 6.7
+export const REFERENCE_USD_CNY_PRESETS = [6.7, 7.0, 7.2] as const
+
+export interface EffectiveDiscountSummary {
+  yourCny: number
+  officialCny: number
+  effectiveFactor: number | null
+  zheLabel: string
+  savingsPercent: number | null
+  savingsLabel: string | null
+  isDiscounted: boolean
+}
+
+export function formatEffectiveZhe(factor: number): string {
+  if (!Number.isFinite(factor) || factor < 0) return '—'
+  if (factor === 0) return '免费'
+  if (factor < 1) {
+    const zhe = factor * 10
+    if (zhe < 0.1) {
+      const rounded = Math.max(0.01, Math.round(zhe * 100) / 100)
+      return `${Number(rounded.toFixed(2))}折`
+    }
+    if (zhe < 1) {
+      const rounded = Math.round(zhe * 100) / 100
+      return `${Number(rounded.toFixed(2))}折`
+    }
+    const rounded = Math.round(zhe * 10) / 10
+    if (rounded >= 10) return '9.9折'
+    return `${Number(rounded.toFixed(1))}折`
+  }
+  return `${Number(factor.toFixed(2))}×`
+}
+
+export function formatEffectiveSavingsPercent(
+  percent: number,
+  factor: number
+): string | null {
+  if (!Number.isFinite(percent) || percent <= 0) return null
+  if (factor === 0) return '100%'
+  const rounded = Math.min(99.9, Math.round(percent * 10) / 10)
+  if (rounded <= 0) return null
+  return `${Number(rounded.toFixed(1))}%`
+}
+
+export function computeEffectiveDiscount(params: {
+  yourUsd: number
+  officialUsd: number
+  priceRate: number
+  referenceUsdRate: number
+}): EffectiveDiscountSummary {
+  const safePriceRate =
+    Number.isFinite(params.priceRate) && params.priceRate > 0
+      ? params.priceRate
+      : 1
+  const safeRefRate =
+    Number.isFinite(params.referenceUsdRate) && params.referenceUsdRate > 0
+      ? params.referenceUsdRate
+      : DEFAULT_REFERENCE_USD_CNY_RATE
+  const yourCny = params.yourUsd * safePriceRate
+  const officialCny = params.officialUsd * safeRefRate
+  const effectiveFactor = officialCny > 0 ? yourCny / officialCny : null
+  const rawSavings =
+    effectiveFactor !== null && effectiveFactor < 1
+      ? (1 - effectiveFactor) * 100
+      : null
+  const savingsLabel =
+    rawSavings !== null && effectiveFactor !== null
+      ? formatEffectiveSavingsPercent(rawSavings, effectiveFactor)
+      : null
+  let savingsPercent: number | null = null
+  if (rawSavings !== null && effectiveFactor !== null) {
+    savingsPercent =
+      effectiveFactor === 0
+        ? 100
+        : Math.min(99.9, Math.round(rawSavings * 10) / 10)
+  }
+  return {
+    yourCny,
+    officialCny,
+    effectiveFactor,
+    zheLabel:
+      effectiveFactor !== null ? formatEffectiveZhe(effectiveFactor) : '—',
+    savingsPercent,
+    savingsLabel,
+    isDiscounted: effectiveFactor !== null && effectiveFactor < 1,
+  }
+}
+
 const FEATURED_MODEL_PATTERNS = [
   /claude-opus/i,
   /claude-sonnet/i,

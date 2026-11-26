@@ -161,6 +161,7 @@ export type SiteSettings = {
   SidebarModulesAdmin: string
   'console_setting.home_showcase': string
   'console_setting.pricing_banner': string
+  'console_setting.pricing_filter_order': string
 }
 
 export type AuthSettings = {

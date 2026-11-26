@@ -137,6 +137,7 @@ export interface SystemStatus {
     custom_oauth_providers?: CustomOAuthProviderInfo[]
     home_showcase?: Record<string, unknown>
     pricing_banner?: unknown[]
+    pricing_filter_order?: Record<string, unknown>
     site_popups?: unknown[]
     auth_domains_enabled?: boolean
     auth_domains?: Array<{
@@ -196,6 +197,7 @@ export interface SystemStatus {
   custom_oauth_providers?: CustomOAuthProviderInfo[]
   home_showcase?: Record<string, unknown>
   pricing_banner?: unknown[]
+  pricing_filter_order?: Record<string, unknown>
   site_popups?: unknown[]
   auth_domains_enabled?: boolean
   auth_domains?: Array<{

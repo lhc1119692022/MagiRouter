@@ -427,13 +427,122 @@ it('renders multiplier group pills clustered by vendor and series and ordered by
   const groupBar = within(
     await screen.findByRole('group', { name: 'Multiplier groups' })
   )
+  const vendorBar = within(
+    screen.getByRole('group', { name: 'Model manufacturers' })
+  )
+  expect(
+    vendorBar.getAllByRole('button').map((button) => button.textContent)
+  ).toEqual(['Anthropic', 'OpenAI'])
   expect(
     groupBar.getAllByRole('button').map((button) => button.textContent)
   ).toEqual([
+    'Claude 标准 ×0.15',
     'GPT Team ×0.055',
     'GPT Plus ×0.08',
     'GPT Fast 「企业」 ×0.25',
-    'Claude 标准 ×0.15',
     '通用专线 ×0.12',
+  ])
+})
+
+it('honors manual filter order configured via status.pricing_filter_order', async () => {
+  vi.spyOn(api, 'get').mockResolvedValue({
+    data: { success: true, data: { models: [] } },
+  })
+  client = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+  })
+  client.setQueryData(['status'], {
+    pricing_filter_order: {
+      vendors: ['OpenAI', 'Google', 'Anthropic'],
+      groups: ['通用专线', 'GPT Fast 「企业」'],
+    },
+  })
+  client.setQueryData(['pricing'], {
+    success: true,
+    vendors: [
+      { id: 1, name: 'Google' },
+      { id: 2, name: 'Anthropic' },
+      { id: 3, name: 'OpenAI' },
+    ],
+    group_ratio: {
+      'Claude 标准': 0.15,
+      'GPT Fast 「企业」': 0.25,
+      'GPT Team': 0.055,
+      通用专线: 0.12,
+    },
+    data: [
+      {
+        id: 1,
+        vendor_id: 3,
+        model_name: 'gpt-6.2',
+        supported_endpoint_types: ['openai'],
+        enable_groups: ['GPT Fast 「企业」', 'GPT Team', '通用专线'],
+        quota_type: 0,
+        model_ratio: 1,
+        completion_ratio: 1,
+      },
+      {
+        id: 2,
+        vendor_id: 2,
+        model_name: 'claude-5.5',
+        supported_endpoint_types: ['anthropic'],
+        enable_groups: ['Claude 标准', '通用专线'],
+        quota_type: 0,
+        model_ratio: 1,
+        completion_ratio: 1,
+      },
+      {
+        id: 3,
+        vendor_id: 1,
+        model_name: 'gemini-4',
+        supported_endpoint_types: ['gemini'],
+        enable_groups: ['通用专线'],
+        quota_type: 0,
+        model_ratio: 1,
+        completion_ratio: 1,
+      },
+    ],
+    usable_group: {
+      'Claude 标准': 'Claude',
+      'GPT Fast 「企业」': 'Fast',
+      'GPT Team': 'Team',
+      通用专线: 'Shared',
+    },
+  })
+  const root = createRootRoute()
+  const pricing = createRoute({
+    getParentRoute: () => root,
+    path: 'pricing/',
+    component: Pricing,
+    validateSearch: pricingRoute.options.validateSearch,
+  })
+  const router = createRouter({
+    routeTree: root.addChildren([pricing]),
+    history: createMemoryHistory({ initialEntries: ['/pricing'] }),
+  })
+  await router.load()
+  render(
+    <QueryClientProvider client={client}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>
+  )
+
+  const vendorBar = within(
+    await screen.findByRole('group', { name: 'Model manufacturers' })
+  )
+  expect(
+    vendorBar.getAllByRole('button').map((button) => button.textContent)
+  ).toEqual(['OpenAI', 'Google', 'Anthropic'])
+
+  const groupBar = within(
+    screen.getByRole('group', { name: 'Multiplier groups' })
+  )
+  expect(
+    groupBar.getAllByRole('button').map((button) => button.textContent)
+  ).toEqual([
+    '通用专线 ×0.12',
+    'GPT Fast 「企业」 ×0.25',
+    'GPT Team ×0.055',
+    'Claude 标准 ×0.15',
   ])
 })

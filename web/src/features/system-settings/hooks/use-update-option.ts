@@ -81,6 +81,9 @@ export function useUpdateOption() {
         if (variables.key === 'console_setting.official_model_prices') {
           void queryClient.invalidateQueries({ queryKey: ['pricing'] })
         }
+        if (variables.key === 'console_setting.pricing_filter_order') {
+          void queryClient.invalidateQueries({ queryKey: ['pricing'] })
+        }
         if (variables.key === 'console_setting.docs_config') {
           void queryClient.invalidateQueries({ queryKey: ['docs-config'] })
         }

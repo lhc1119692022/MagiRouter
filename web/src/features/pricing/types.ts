@@ -85,6 +85,7 @@ export type PricingModel = {
   audio_ratio?: number | null
   audio_completion_ratio?: number | null
   enable_groups: string[]
+  hot_group?: string
   tags?: string
   supported_endpoint_types?: string[]
   key?: string

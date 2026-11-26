@@ -61,11 +61,13 @@ export function MagiRouterHome(props: MagiRouterHomeProps) {
         isLoading={pricing.isLoading}
         priceRate={pricing.priceRate}
         usdExchangeRate={pricing.usdExchangeRate}
+        groupRatio={pricing.groupRatio}
       />
       <RoutesSection
         comparison={billingComparison}
         loading={pricing.isLoading}
         failed={Boolean(pricing.error)}
+        priceRate={pricing.priceRate}
       />
       <IntegrationSection isAuthenticated={props.isAuthenticated} />
       <BrandFooter />

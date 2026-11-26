@@ -156,7 +156,8 @@ export function SignUpForm({
       toast.error(t('Please enter your email'))
       return
     }
-    if (emailVerificationRequired && !verificationCode) {
+    const trimmedVerificationCode = verificationCode.trim()
+    if (emailVerificationRequired && !trimmedVerificationCode) {
       toast.error(t('Please enter the verification code'))
       return
     }
@@ -169,7 +170,7 @@ export function SignUpForm({
         username: data.username,
         password: data.password,
         email,
-        verification_code: verificationCode || undefined,
+        verification_code: trimmedVerificationCode || undefined,
         aff_code: getAffiliateCode(),
         turnstile: turnstileToken,
       })
@@ -323,7 +324,7 @@ export function SignUpForm({
               <FormLabel>{t('Email')}</FormLabel>
               <FormControl>
                 <Input
-                  placeholder={t('name@example.com')}
+                  placeholder={t('Only QQ email is supported')}
                   type='email'
                   {...field}
                 />
@@ -341,6 +342,8 @@ export function SignUpForm({
               <div className='flex-1'>
                 <Input
                   placeholder={t('Verification code')}
+                  inputMode='numeric'
+                  autoComplete='one-time-code'
                   value={verificationCode}
                   onChange={(e) => setVerificationCode(e.target.value)}
                 />

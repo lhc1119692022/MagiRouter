@@ -23,7 +23,10 @@ const catalogRecord: PricingModel = {
   supported_endpoint_types: ['image-generation'],
 }
 
-async function showCard(record: PricingModel) {
+async function showCard(
+  record: PricingModel,
+  groupRatio?: Record<string, number>
+) {
   const root = createRootRoute()
   const home = createRoute({
     getParentRoute: () => root,
@@ -34,6 +37,7 @@ async function showCard(record: PricingModel) {
         isLoading={false}
         priceRate={1}
         usdExchangeRate={1}
+        groupRatio={groupRatio}
       />
     ),
   })
@@ -76,4 +80,47 @@ test('a model without a supported workspace mode retains details without a misle
   })
   expect(card.queryByRole('link', { name: 'Get started' })).toBeNull()
   expect(card.getByRole('link', { name: 'View details' })).toBeInTheDocument()
+})
+
+test('shows only the hottest group badge together with its group multiplier', async () => {
+  const card = await showCard(
+    {
+      ...catalogRecord,
+      model_name: 'gpt-6.2-sol',
+      enable_groups: ['GPT Team', 'GPT Fast「企业」', 'GPT Plus'],
+      hot_group: 'GPT Fast「企业」',
+      model_ratio: 10,
+      completion_ratio: 2,
+      supported_endpoint_types: ['openai'],
+    },
+    {
+      'GPT Team': 0.055,
+      'GPT Fast「企业」': 0.25,
+      'GPT Plus': 0.08,
+    }
+  )
+
+  expect(card.getByText('GPT Fast「企业」')).toBeVisible()
+  expect(card.getByText('×0.25')).toBeVisible()
+  expect(card.queryByText(/GPT Team/)).toBeNull()
+  expect(card.queryByText(/GPT Plus/)).toBeNull()
+})
+
+test('falls back to the lowest-multiplier group with its ratio when hot_group is absent', async () => {
+  const card = await showCard(
+    {
+      ...catalogRecord,
+      model_name: 'claude-opus-5-5',
+      enable_groups: ['Claude Max 「0注 企业」', 'Claude Cursor'],
+      supported_endpoint_types: ['anthropic'],
+    },
+    {
+      'Claude Max 「0注 企业」': 1.1,
+      'Claude Cursor': 0.5,
+    }
+  )
+
+  expect(card.getByText('Claude Cursor')).toBeVisible()
+  expect(card.getByText('×0.5')).toBeVisible()
+  expect(card.queryByText(/Claude Max/)).toBeNull()
 })
