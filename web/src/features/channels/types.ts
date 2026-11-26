@@ -309,6 +309,7 @@ export interface MultiKeyStatusResponse {
 export type ChannelSortBy =
   | 'id'
   | 'name'
+  | 'group'
   | 'priority'
   | 'balance'
   | 'response_time'

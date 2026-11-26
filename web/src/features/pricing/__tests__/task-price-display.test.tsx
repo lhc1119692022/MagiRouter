@@ -147,7 +147,7 @@ it('shows nested task conditions and prices in detail and group tables without a
   expect(
     screen.getAllByText(/resolution: 768P · Outside these times:/).length
   ).toBeGreaterThan(0)
-  expect(screen.getByText('$0.072 – $0.15')).toBeVisible()
+  expect(screen.getAllByText('$0.072 – $0.15').length).toBeGreaterThan(0)
   expect(screen.getAllByText('$0.24').length).toBeGreaterThan(0)
   expect(screen.queryByText('Matched')).not.toBeInTheDocument()
 })

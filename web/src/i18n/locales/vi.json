@@ -9127,6 +9127,13 @@
     "Group routes": "Tuyến nhóm",
     "24h trends": "Xu hướng 24h",
     "Base (1x)": "Cơ bản (1x)",
-    "1K token": "1K token"
+    "1K token": "1K token",
+    "Official base pricing": "Giá chuẩn chính thức",
+    "Reference rate before group multiplier": "Giá tham chiếu trước khi nhân hệ số nhóm",
+    "Select group to preview actual price": "Chọn nhóm để xem giá sử dụng thực tế",
+    "Actual usage price for selected group": "Giá sử dụng thực tế cho nhóm đã chọn",
+    "Showing official base pricing (1x)": "Đang hiển thị: Giá chuẩn chính thức (1x)",
+    "Official Base": "Giá chuẩn",
+    "Base × {{ratio}}": "Giá chuẩn × {{ratio}}"
   }
 }

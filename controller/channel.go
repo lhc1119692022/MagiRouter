@@ -267,24 +267,41 @@ func GetAllChannels(c *gin.Context) {
 				common.ApiErrorT(c, "Failed to fetch channels with this tag. Please try again later")
 				return
 			}
+			model.SortChannels(tagChannels, sortOptions)
 			channelData = append(channelData, tagChannels...)
 		}
 	} else {
-		if err := buildChannelListQuery(groupFilter, statusFilter, typeFilter).Count(&total).Error; err != nil {
-			common.SysError(common.LogText("failed to count channels: %s", err.Error()))
-			common.ApiErrorT(c, "Failed to count channels. Please try again later")
-			return
-		}
+		if sortOptions.SortBy == "group" {
+			var err error
+			channelData, total, err = model.FindChannelsSortedByGroup(
+				buildChannelListQuery(groupFilter, statusFilter, typeFilter),
+				pageInfo.GetStartIdx(),
+				pageInfo.GetPageSize(),
+				false,
+				sortOptions.SortOrder != "asc",
+			)
+			if err != nil {
+				common.SysError(common.LogText("failed to get channels: %s", err.Error()))
+				common.ApiErrorT(c, "Failed to fetch channels. Please try again later")
+				return
+			}
+		} else {
+			if err := buildChannelListQuery(groupFilter, statusFilter, typeFilter).Count(&total).Error; err != nil {
+				common.SysError(common.LogText("failed to count channels: %s", err.Error()))
+				common.ApiErrorT(c, "Failed to count channels. Please try again later")
+				return
+			}
 
-		err := sortOptions.Apply(buildChannelListQuery(groupFilter, statusFilter, typeFilter)).
-			Limit(pageInfo.GetPageSize()).
-			Offset(pageInfo.GetStartIdx()).
-			Omit("key").
-			Find(&channelData).Error
-		if err != nil {
-			common.SysError(common.LogText("failed to get channels: %s", err.Error()))
-			common.ApiErrorT(c, "Failed to fetch channels. Please try again later")
-			return
+			err := sortOptions.Apply(buildChannelListQuery(groupFilter, statusFilter, typeFilter)).
+				Limit(pageInfo.GetPageSize()).
+				Offset(pageInfo.GetStartIdx()).
+				Omit("key").
+				Find(&channelData).Error
+			if err != nil {
+				common.SysError(common.LogText("failed to get channels: %s", err.Error()))
+				common.ApiErrorT(c, "Failed to fetch channels. Please try again later")
+				return
+			}
 		}
 	}
 
@@ -418,6 +435,7 @@ func SearchChannels(c *gin.Context) {
 					common.ApiError(c, err)
 					return
 				}
+				model.SortChannels(tagChannels, sortOptions)
 				channelData = append(channelData, tagChannels...)
 			}
 		}

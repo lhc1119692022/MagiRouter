@@ -183,6 +183,24 @@ describe('ModelDetailsContent redesigned 2-panel drawer', () => {
     expect(screen.getByText('$2.5')).toBeVisible()
     expect(screen.getByText('$12.5')).toBeVisible()
 
+    // Official base pricing card and cache price display are explicitly visible
+    expect(screen.getByText('Official base pricing')).toBeVisible()
+    expect(
+      screen.getByText('Reference rate before group multiplier')
+    ).toBeVisible()
+    expect(screen.getAllByText('Cache').length).toBeGreaterThanOrEqual(2)
+
+    // Availability in group cards uses 24-slot mini status blocks + percentage
+    const sampledBar = screen.getByRole('img', {
+      name: 'Sampled request success rates',
+    })
+    expect(sampledBar.querySelectorAll('[data-state]')).toHaveLength(24)
+    expect(
+      sampledBar.querySelectorAll('[data-state="ok"]').length
+    ).toBeGreaterThan(0)
+    const emptyBar = screen.getByRole('img', { name: 'Not monitored' })
+    expect(emptyBar.querySelectorAll('[data-state="empty"]')).toHaveLength(24)
+
     // Local toggle switches between Group routes and 24h trends
     await user.click(screen.getByRole('button', { name: '24h trends' }))
     expect(screen.getByTestId('mock-trends')).toHaveAttribute(
@@ -203,7 +221,7 @@ describe('ModelDetailsContent redesigned 2-panel drawer', () => {
       completion_ratio: 4,
       billing_mode: 'tiered_expr',
       billing_expr:
-        'len < 128000 ? tier("std", p * 4 + c * 16) : tier("long", p * 8 + c * 32)',
+        'len < 128000 ? tier("std", p * 4 + cr * 0.4 + cc * 5 + c * 16) : tier("long", p * 8 + cr * 0.8 + cc * 10 + c * 32)',
       supported_endpoint_types: ['openai-response'],
       enable_groups: ['vip', 'default'],
       group_ratio: { vip: 0.5, default: 2 },
@@ -241,19 +259,48 @@ describe('ModelDetailsContent redesigned 2-panel drawer', () => {
     ).not.toBeInTheDocument()
     expect(within(panel).queryByText(/\.0000/)).not.toBeInTheDocument()
 
+    // Official base pricing is listed separately and explicitly
+    expect(within(panel).getByText('Official base pricing')).toBeVisible()
+    expect(
+      within(panel).getByText('Reference rate before group multiplier')
+    ).toBeVisible()
+
+    // Tier table clearly annotates actual usage price for the selected group
+    expect(
+      within(panel).getByText('Actual usage price for selected group')
+    ).toBeVisible()
+    expect(within(panel).getByText('Base × 0.5')).toBeVisible()
+
+    // Group cards below include cache pricing (Cached input + Cache write) for dynamic usage-based models
+    expect(within(panel).getAllByText('$0.2').length).toBeGreaterThan(0)
+    expect(within(panel).getAllByText('$2.5').length).toBeGreaterThan(0)
+    expect(within(panel).getAllByText('$0.8').length).toBeGreaterThan(0)
+    expect(within(panel).getAllByText('$10').length).toBeGreaterThan(0)
+
     // Single tier table defaults to first group (vip · 0.5x): $4*0.5=$2, $16*0.5=$8, $8*0.5=$4, $32*0.5=$16
     const table = screen.getByRole('table')
     expect(within(table).getByText('$2')).toBeVisible()
     expect(within(table).getByText('$16')).toBeVisible()
 
-    // Switch to Base (1x)
+    // Switch to Official Base (1x) via explicit button
     const user = userEvent.setup()
-    await user.click(screen.getByRole('button', { name: 'Base (1x)' }))
+    const baseButton = screen.getByRole('button', { name: /Official Base/ })
+    await user.click(baseButton)
+    expect(baseButton).toHaveAttribute('aria-pressed', 'true')
+    expect(
+      within(panel).getByText('Showing official base pricing (1x)')
+    ).toBeVisible()
     expect(within(table).getByText('$4')).toBeVisible()
     expect(within(table).getByText('$32')).toBeVisible()
 
-    // Switch to default · 2x
-    await user.click(screen.getByRole('button', { name: 'default · 2x' }))
+    // Switch to default (2x) via explicit button
+    const defaultButton = screen.getByRole('button', { name: /default.*2x/ })
+    await user.click(defaultButton)
+    expect(defaultButton).toHaveAttribute('aria-pressed', 'true')
+    expect(
+      within(panel).getByText('Actual usage price for selected group')
+    ).toBeVisible()
+    expect(within(panel).getByText('Base × 2')).toBeVisible()
     expect(within(table).getByText('$8')).toBeVisible()
     expect(within(table).getByText('$64')).toBeVisible()
   })

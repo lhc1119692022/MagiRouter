@@ -28,6 +28,7 @@ import {
   ArrowUpRight,
   BookOpen,
   CalendarClock,
+  Check,
   Code2,
   DatabaseZap,
   FileText,
@@ -36,6 +37,7 @@ import {
   Layers,
   Maximize2,
   Sparkles,
+  Tag,
   Timer,
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
@@ -69,6 +71,7 @@ import type {
   PerformanceMetricsData,
 } from '@/features/performance-metrics/types'
 import { PluginIcon } from '@/features/task-plugins/components/plugin-icon'
+import { formatTimestampToDate } from '@/lib/format'
 import { getLobeIcon } from '@/lib/lobe-icon'
 import { cn } from '@/lib/utils'
 import { useSystemConfigStore } from '@/stores/system-config-store'
@@ -91,9 +94,10 @@ import { parseTags } from '../lib/filters'
 import type { SupportedParameter } from '../lib/mock-stats'
 import { getAvailableGroups, isTokenBasedModel } from '../lib/model-helpers'
 import {
+  buildHourlyMonitorSlots,
   isMeasuredRate,
   monitoringWindowLabel,
-  observedRequestSamples,
+  type HourlyMonitorSlotState,
 } from '../lib/monitored-requests'
 import { withOrdinaryPricing, withPluginPricing } from '../lib/plugin-pricing'
 import { formatFixedPrice, formatGroupPrice } from '../lib/price'
@@ -119,7 +123,6 @@ import { DynamicPricingBreakdown } from './dynamic-pricing-breakdown'
 import { ModelBillingModeBadge } from './model-billing-mode-badge'
 import { ModelDetailsApi } from './model-details-api'
 import { ModelDetailsPerformance } from './model-details-performance'
-import { UptimeSparkline } from './model-details-uptime-sparkline'
 
 // ----------------------------------------------------------------------------
 // Constants & formatting helpers
@@ -687,6 +690,7 @@ function CompactBasePriceStrip(props: {
         priceRate: props.priceRate,
         usdExchangeRate: props.usdExchangeRate,
         groupRatioMultiplier: 1,
+        digitsLarge: 2,
       }),
     // Currency is read indirectly by the price formatter.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -728,59 +732,111 @@ function CompactBasePriceStrip(props: {
       )
     }
 
-    const allEntries = [
-      ...dynamicSummary.primaryEntries,
-      ...dynamicSummary.secondaryEntries,
-    ]
+    const primaryEntries = dynamicSummary.primaryEntries
+    const secondaryEntries = dynamicSummary.secondaryEntries
+    const hasAnyEntries = primaryEntries.length > 0 || secondaryEntries.length > 0
+    const showDynamicCacheFallback =
+      !dynamicSummary.isTaskUsage &&
+      isTokenBased &&
+      secondaryEntries.length === 0
+    const baseUnitLabel = dynamicSummary.isTaskUsage
+      ? t('Prices shown per usage unit')
+      : t('Prices shown per {{unit}} tokens', { unit: tokenUnitLabel })
 
     return (
-      <div className='bg-muted/30 border-border/60 rounded-lg border px-3 py-2'>
-        <div className='flex flex-wrap items-center justify-between gap-2'>
-          <div className='flex flex-wrap items-center gap-1.5 text-xs'>
-            <span className='text-muted-foreground font-medium'>
-              {t('Base Price')}
+      <div className='bg-muted/25 border-border/80 overflow-hidden rounded-xl border'>
+        <div className='bg-muted/45 border-border/60 flex flex-wrap items-center justify-between gap-2 border-b px-3.5 py-2'>
+          <div className='flex flex-wrap items-center gap-2'>
+            <span className='text-foreground inline-flex items-center gap-1.5 text-xs font-semibold'>
+              <Tag className='text-primary size-3.5 shrink-0' />
+              {t('Official base pricing')}
             </span>
-            <span className='bg-background/80 text-muted-foreground rounded px-1.5 py-0.5 font-mono text-[10px]'>
+            <span className='bg-foreground/10 text-foreground rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold'>
               1x
             </span>
-            {dynamicSummary.providerCount && (
-              <span className='text-muted-foreground text-[11px]'>
-                ·{' '}
-                {t('{{count}} providers', {
-                  count: dynamicSummary.providerCount,
-                })}
-                {dynamicSummary.hasUnconfiguredProviders &&
-                  ` · ${t('Not configured for some providers')}`}
-              </span>
-            )}
+            <span className='text-muted-foreground text-[11px]'>
+              {t('Reference rate before group multiplier')}
+            </span>
           </div>
-          {allEntries.length > 0 ? (
-            <div className='flex flex-wrap items-baseline gap-x-3 gap-y-1'>
-              {allEntries.map((entry) => {
-                const unitLabelKey = getDynamicPriceUnitLabelKey(entry)
-                const unitLabel = taskUsageUnitLabel(
-                  entry,
-                  i18n.language,
-                  unitLabelKey ? t(unitLabelKey) : tokenUnitLabel
-                )
-                return (
-                  <span
-                    key={entry.key}
-                    className='inline-flex items-baseline gap-1 text-xs'
-                  >
-                    <span className='text-muted-foreground'>
-                      <DynamicPriceEntryLabel entry={entry} />
+          <span className='text-muted-foreground text-[11px]'>
+            {dynamicSummary.providerCount
+              ? `${t('{{count}} providers', { count: dynamicSummary.providerCount })}${
+                  dynamicSummary.hasUnconfiguredProviders
+                    ? ` · ${t('Not configured for some providers')}`
+                    : ''
+                }`
+              : baseUnitLabel}
+          </span>
+        </div>
+
+        <div className='space-y-2 px-3.5 py-2.5'>
+          {hasAnyEntries ? (
+            <>
+              {primaryEntries.length > 0 && (
+                <div className='flex flex-wrap items-baseline gap-x-4 gap-y-1'>
+                  {primaryEntries.map((entry) => {
+                    const unitLabelKey = getDynamicPriceUnitLabelKey(entry)
+                    const unitLabel = taskUsageUnitLabel(
+                      entry,
+                      i18n.language,
+                      unitLabelKey ? t(unitLabelKey) : tokenUnitLabel
+                    )
+                    return (
+                      <span
+                        key={entry.key}
+                        className='inline-flex items-baseline gap-1.5 text-xs'
+                      >
+                        <span className='text-muted-foreground font-medium'>
+                          <DynamicPriceEntryLabel entry={entry} />
+                        </span>
+                        <span className='text-foreground font-mono text-sm font-semibold tabular-nums'>
+                          {entry.formattedRange ?? entry.formatted}
+                        </span>
+                        <span className='text-muted-foreground/65 text-[11px]'>
+                          / {unitLabel}
+                        </span>
+                      </span>
+                    )
+                  })}
+                </div>
+              )}
+              {(secondaryEntries.length > 0 || showDynamicCacheFallback) && (
+                <div className='border-border/50 flex flex-wrap items-baseline gap-x-3.5 gap-y-1 border-t pt-2 text-[11px]'>
+                  {secondaryEntries.map((entry) => {
+                    const unitLabelKey = getDynamicPriceUnitLabelKey(entry)
+                    const unitLabel = taskUsageUnitLabel(
+                      entry,
+                      i18n.language,
+                      unitLabelKey ? t(unitLabelKey) : tokenUnitLabel
+                    )
+                    return (
+                      <span
+                        key={entry.key}
+                        className='inline-flex items-baseline gap-1'
+                      >
+                        <span className='text-muted-foreground'>
+                          <DynamicPriceEntryLabel entry={entry} />
+                        </span>
+                        <span className='text-foreground/85 font-mono font-medium tabular-nums'>
+                          {entry.formattedRange ?? entry.formatted}
+                        </span>
+                        <span className='text-muted-foreground/60 text-[10px]'>
+                          / {unitLabel}
+                        </span>
+                      </span>
+                    )
+                  })}
+                  {showDynamicCacheFallback && (
+                    <span className='inline-flex items-baseline gap-1'>
+                      <span className='text-muted-foreground'>{t('Cache')}</span>
+                      <span className='text-muted-foreground font-mono tabular-nums'>
+                        —
+                      </span>
                     </span>
-                    <span className='text-foreground font-mono font-semibold tabular-nums'>
-                      {entry.formattedRange ?? entry.formatted}
-                    </span>
-                    <span className='text-muted-foreground/60 text-[11px]'>
-                      / {unitLabel}
-                    </span>
-                  </span>
-                )
-              })}
-            </div>
+                  )}
+                </div>
+              )}
+            </>
           ) : (
             <span className='text-muted-foreground text-xs'>
               {dynamicSummary.hasUnconfiguredProviders
@@ -799,16 +855,22 @@ function CompactBasePriceStrip(props: {
 
   if (!isTokenBased) {
     return (
-      <div className='bg-muted/30 border-border/60 flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2'>
-        <div className='flex items-center gap-1.5 text-xs'>
-          <span className='text-muted-foreground font-medium'>
-            {t('Base Price')}
-          </span>
-          <span className='bg-background/80 text-muted-foreground rounded px-1.5 py-0.5 font-mono text-[10px]'>
-            1x
-          </span>
+      <div className='bg-muted/25 border-border/80 overflow-hidden rounded-xl border'>
+        <div className='bg-muted/45 border-border/60 flex flex-wrap items-center justify-between gap-2 border-b px-3.5 py-2'>
+          <div className='flex flex-wrap items-center gap-2'>
+            <span className='text-foreground inline-flex items-center gap-1.5 text-xs font-semibold'>
+              <Tag className='text-primary size-3.5 shrink-0' />
+              {t('Official base pricing')}
+            </span>
+            <span className='bg-foreground/10 text-foreground rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold'>
+              1x
+            </span>
+            <span className='text-muted-foreground text-[11px]'>
+              {t('Reference rate before group multiplier')}
+            </span>
+          </div>
         </div>
-        <div className='flex items-baseline gap-1.5'>
+        <div className='flex items-baseline gap-2 px-3.5 py-2.5'>
           <span className='text-muted-foreground text-xs'>
             {t('Per request')}
           </span>
@@ -832,11 +894,6 @@ function CompactBasePriceStrip(props: {
     type: PriceType
     available: boolean
   }[] = [
-    {
-      label: t('Cached input'),
-      type: 'cache',
-      available: props.model.cache_ratio != null,
-    },
     {
       label: t('Cache write'),
       type: 'create_cache',
@@ -877,47 +934,78 @@ function CompactBasePriceStrip(props: {
     )
 
   return (
-    <div className='bg-muted/30 border-border/60 space-y-1.5 rounded-lg border px-3 py-2'>
-      <div className='flex flex-wrap items-center justify-between gap-2'>
-        <div className='flex items-center gap-1.5 text-xs'>
-          <span className='text-muted-foreground font-medium'>
-            {t('Base Price')}
+    <div className='bg-muted/25 border-border/80 overflow-hidden rounded-xl border'>
+      <div className='bg-muted/45 border-border/60 flex flex-wrap items-center justify-between gap-2 border-b px-3.5 py-2'>
+        <div className='flex flex-wrap items-center gap-2'>
+          <span className='text-foreground inline-flex items-center gap-1.5 text-xs font-semibold'>
+            <Tag className='text-primary size-3.5 shrink-0' />
+            {t('Official base pricing')}
           </span>
-          <span className='bg-background/80 text-muted-foreground rounded px-1.5 py-0.5 font-mono text-[10px]'>
+          <span className='bg-foreground/10 text-foreground rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold'>
             1x
           </span>
+          <span className='text-muted-foreground text-[11px]'>
+            {t('Reference rate before group multiplier')}
+          </span>
         </div>
-        <div className='flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs'>
-          <span className='inline-flex items-baseline gap-1'>
-            <span className='text-muted-foreground'>{t('Input')}</span>
-            <span className='text-foreground font-mono font-semibold tabular-nums'>
+        <span className='text-muted-foreground text-[11px]'>
+          {t('Prices shown per {{unit}} tokens', { unit: tokenUnitLabel })}
+        </span>
+      </div>
+
+      <div className='space-y-2 px-3.5 py-2.5'>
+        <div className='flex flex-wrap items-baseline gap-x-4 gap-y-1 text-xs'>
+          <span className='inline-flex items-baseline gap-1.5'>
+            <span className='text-muted-foreground font-medium'>
+              {t('Input')}
+            </span>
+            <span className='text-foreground font-mono text-sm font-semibold tabular-nums'>
               {renderBasePrice('input')}
             </span>
           </span>
-          <span className='inline-flex items-baseline gap-1'>
-            <span className='text-muted-foreground'>{t('Output')}</span>
-            <span className='text-foreground font-mono font-semibold tabular-nums'>
+          <span className='inline-flex items-baseline gap-1.5'>
+            <span className='text-muted-foreground font-medium'>
+              {t('Output')}
+            </span>
+            <span className='text-foreground font-mono text-sm font-semibold tabular-nums'>
               {renderBasePrice('output')}
             </span>
           </span>
-          <span className='text-muted-foreground/60 text-[11px]'>
-            / {tokenUnitLabel}
+          <span className='inline-flex items-baseline gap-1.5'>
+            <span className='text-muted-foreground font-medium'>
+              {t('Cache')}
+            </span>
+            <span
+              className={cn(
+                'font-mono text-sm font-semibold tabular-nums',
+                props.model.cache_ratio != null
+                  ? 'text-foreground'
+                  : 'text-muted-foreground'
+              )}
+            >
+              {props.model.cache_ratio != null
+                ? renderBasePrice('cache')
+                : '—'}
+            </span>
           </span>
         </div>
-      </div>
 
-      {secondaryPriceTypes.length > 0 && (
-        <div className='border-border/50 flex flex-wrap items-center gap-x-3 gap-y-1 border-t pt-1.5 text-[11px]'>
-          {secondaryPriceTypes.map((item) => (
-            <span key={item.type} className='inline-flex items-baseline gap-1'>
-              <span className='text-muted-foreground/80'>{item.label}</span>
-              <span className='text-muted-foreground font-mono font-medium tabular-nums'>
-                {renderBasePrice(item.type)}
+        {secondaryPriceTypes.length > 0 && (
+          <div className='border-border/50 flex flex-wrap items-center gap-x-3.5 gap-y-1 border-t pt-2 text-[11px]'>
+            {secondaryPriceTypes.map((item) => (
+              <span
+                key={item.type}
+                className='inline-flex items-baseline gap-1'
+              >
+                <span className='text-muted-foreground'>{item.label}</span>
+                <span className='text-foreground/85 font-mono font-medium tabular-nums'>
+                  {renderBasePrice(item.type)}
+                </span>
               </span>
-            </span>
-          ))}
-        </div>
-      )}
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -925,6 +1013,13 @@ function CompactBasePriceStrip(props: {
 // ----------------------------------------------------------------------------
 // Per-group live performance micro-strip (fused into every group card)
 // ----------------------------------------------------------------------------
+
+const GROUP_AVAILABILITY_TICK_CLASS: Record<HourlyMonitorSlotState, string> = {
+  ok: 'h-full flex-1 rounded-[1.5px] bg-emerald-500',
+  warn: 'h-full flex-1 rounded-[1.5px] bg-amber-500',
+  err: 'h-full flex-1 rounded-[1.5px] bg-red-500',
+  empty: 'h-full flex-1 rounded-[1.5px] bg-foreground/12 dark:bg-white/15',
+}
 
 function GroupPerfStrip(props: {
   perf?: PerformanceGroup
@@ -936,13 +1031,16 @@ function GroupPerfStrip(props: {
     ? perf.success_rate
     : Number.NaN
   const hasSuccess = Number.isFinite(successRate)
-  const sparklineSeries = useMemo(
+  const monitorSlots = useMemo(
     () =>
-      perf
-        ? observedRequestSamples(perf.series, props.monitoringData ?? undefined)
-        : [],
+      buildHourlyMonitorSlots(
+        perf?.series,
+        props.monitoringData ?? undefined,
+        24
+      ),
     [perf, props.monitoringData]
   )
+  const hasSampledTicks = monitorSlots.some((slot) => slot.state !== 'empty')
   const latencyDisplay = perf ? formatLatency(perf.avg_latency_ms) : '—'
   const ttftDisplay =
     perf && perf.avg_ttft_ms > 0 ? formatLatency(perf.avg_ttft_ms) : null
@@ -950,41 +1048,50 @@ function GroupPerfStrip(props: {
   const cacheDisplay = formatCacheHitRate(perf?.cache_hit_rate)
 
   return (
-    <div className='bg-muted/25 border-border/50 mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 rounded-md border px-2.5 py-1.5 text-[11px] sm:grid-cols-4'>
-      <div className='flex min-w-0 flex-col gap-0.5'>
+    <div className='bg-muted/25 border-border/50 mt-2.5 grid grid-cols-2 gap-x-3 gap-y-2 rounded-lg border px-2.5 py-2 text-[11px] sm:grid-cols-[minmax(158px,1.55fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]'>
+      <div className='col-span-2 flex min-w-0 flex-col gap-1 sm:col-span-1'>
         <span className='text-muted-foreground/80 truncate text-[10px]'>
           {t('Availability')}
         </span>
-        {hasSuccess && sparklineSeries.length > 0 ? (
-          <UptimeSparkline
-            size='sm'
-            series={sparklineSeries.slice(-12)}
-            overallSuccessRate={successRate}
-            className='gap-1.5 [&_span]:text-xs'
-          />
-        ) : (
+        <div className='flex items-center gap-2'>
+          <div
+            className='flex h-3 w-[88px] shrink-0 items-center gap-[1.5px]'
+            role='img'
+            aria-label={
+              hasSampledTicks
+                ? t('Sampled request success rates')
+                : t('Not monitored')
+            }
+          >
+            {monitorSlots.map((slot) => {
+              const tickTitle =
+                slot.state !== 'empty' && slot.ts != null && slot.rate != null
+                  ? `${formatTimestampToDate(slot.ts)} · ${formatUptimePct(slot.rate)}`
+                  : undefined
+              return (
+                <span
+                  key={slot.key}
+                  className={GROUP_AVAILABILITY_TICK_CLASS[slot.state]}
+                  data-state={slot.state}
+                  title={tickTitle}
+                />
+              )
+            })}
+          </div>
           <span
             className={cn(
-              'inline-flex items-center gap-1 font-mono text-xs font-medium tabular-nums',
+              'font-mono text-xs font-semibold whitespace-nowrap tabular-nums',
               hasSuccess
                 ? getSuccessRateTextClass(successRate)
                 : 'text-muted-foreground'
             )}
           >
-            {hasSuccess && (
-              <span
-                className={cn(
-                  'size-1.5 shrink-0 rounded-full',
-                  getSuccessRateDotClass(successRate)
-                )}
-              />
-            )}
             {hasSuccess ? formatUptimePct(successRate) : '—'}
           </span>
-        )}
+        </div>
       </div>
 
-      <div className='flex min-w-0 flex-col gap-0.5'>
+      <div className='flex min-w-0 flex-col gap-1'>
         <span className='text-muted-foreground/80 truncate text-[10px]'>
           {t('Latency')}
         </span>
@@ -998,7 +1105,7 @@ function GroupPerfStrip(props: {
         </span>
       </div>
 
-      <div className='flex min-w-0 flex-col gap-0.5'>
+      <div className='flex min-w-0 flex-col gap-1'>
         <span className='text-muted-foreground/80 truncate text-[10px]'>
           {t('Throughput')}
         </span>
@@ -1007,7 +1114,7 @@ function GroupPerfStrip(props: {
         </span>
       </div>
 
-      <div className='flex min-w-0 flex-col gap-0.5'>
+      <div className='flex min-w-0 flex-col gap-1'>
         <span className='text-muted-foreground/80 truncate text-[10px]'>
           {t('Cache hit rate')}
         </span>
@@ -1161,6 +1268,7 @@ function UnifiedProviderPricingSection(props: UnifiedPricingSectionProps) {
             priceRate: props.priceRate,
             usdExchangeRate: props.usdExchangeRate,
             groupRatioMultiplier: 1,
+            digitsLarge: 2,
           })
         : null,
     // Currency is read indirectly by the price formatter.
@@ -1194,18 +1302,14 @@ function UnifiedProviderPricingSection(props: UnifiedPricingSectionProps) {
     (dynamicTiers.length > 0 || Boolean(props.model.billing_expr))
 
   const showCompactBaseStrip =
-    (!showUnifiedTierTable &&
-      (!props.model.billing_usage_schema ||
-        simpleTaskPricing ||
-        !hasConditionalOrMultiTier ||
-        taskTiers.length === 0)) ||
-    Boolean(activeBaseDynamicSummary?.isTimePricing)
+    !(showUnifiedTierTable && activeBaseDynamicSummary?.isSpecialExpression) &&
+    (!props.model.billing_usage_schema ||
+      simpleTaskPricing ||
+      taskTiers.length === 0 ||
+      isDynamic)
 
   const extraPriceTypes = useMemo(() => {
     const types: { label: string; type: PriceType }[] = []
-    if (props.model.cache_ratio != null) {
-      types.push({ label: t('Cache'), type: 'cache' })
-    }
     if (props.model.create_cache_ratio != null) {
       types.push({ label: t('Cache write'), type: 'create_cache' })
     }
@@ -1248,6 +1352,7 @@ function UnifiedProviderPricingSection(props: UnifiedPricingSectionProps) {
             priceRate: props.priceRate,
             usdExchangeRate: props.usdExchangeRate,
             groupRatioMultiplier: ratio,
+            digitsLarge: 2,
           }),
         ] as const
       })
@@ -1307,38 +1412,83 @@ function UnifiedProviderPricingSection(props: UnifiedPricingSectionProps) {
           </span>
         )
       }
+      const primaryEntries = groupDynamicSummary.primaryEntries
+      const secondaryEntries = groupDynamicSummary.secondaryEntries
+      const showDynamicCacheFallback =
+        !groupDynamicSummary.isTaskUsage &&
+        isTokenBased &&
+        secondaryEntries.length === 0
       return (
-        <div className='flex flex-wrap items-baseline justify-end gap-x-3 gap-y-0.5'>
-          {groupDynamicSummary.primaryEntries.map((entry) => {
-            const unitLabelKey = getDynamicPriceUnitLabelKey(entry)
-            const unitLabel = taskUsageUnitLabel(
-              entry,
-              i18n.language,
-              unitLabelKey ? t(unitLabelKey) : tokenUnitLabel
-            )
-            return (
-              <span
-                key={entry.key}
-                className='inline-flex items-baseline gap-1 text-xs'
-              >
-                <span className='text-muted-foreground'>
-                  <DynamicPriceEntryLabel entry={entry} />
+        <div className='space-y-1'>
+          <div className='flex flex-wrap items-baseline justify-end gap-x-3 gap-y-0.5'>
+            {primaryEntries.map((entry) => {
+              const unitLabelKey = getDynamicPriceUnitLabelKey(entry)
+              const unitLabel = taskUsageUnitLabel(
+                entry,
+                i18n.language,
+                unitLabelKey ? t(unitLabelKey) : tokenUnitLabel
+              )
+              return (
+                <span
+                  key={entry.key}
+                  className='inline-flex items-baseline gap-1 text-xs'
+                >
+                  <span className='text-muted-foreground'>
+                    <DynamicPriceEntryLabel entry={entry} />
+                  </span>
+                  <span className='text-foreground font-mono text-sm font-semibold tabular-nums'>
+                    {entry.formattedRange ?? entry.formatted}
+                  </span>
+                  <span className='text-muted-foreground/60 text-[11px]'>
+                    / {unitLabel}
+                  </span>
                 </span>
-                <span className='text-foreground font-mono text-sm font-semibold tabular-nums'>
-                  {entry.formattedRange ?? entry.formatted}
+              )
+            })}
+          </div>
+          {(secondaryEntries.length > 0 || showDynamicCacheFallback) && (
+            <div className='flex flex-wrap items-baseline justify-end gap-x-3 gap-y-0.5 text-[11px]'>
+              {secondaryEntries.map((entry) => {
+                const unitLabelKey = getDynamicPriceUnitLabelKey(entry)
+                const unitLabel = taskUsageUnitLabel(
+                  entry,
+                  i18n.language,
+                  unitLabelKey ? t(unitLabelKey) : tokenUnitLabel
+                )
+                return (
+                  <span
+                    key={entry.key}
+                    className='inline-flex items-baseline gap-1'
+                  >
+                    <span className='text-muted-foreground/85'>
+                      <DynamicPriceEntryLabel entry={entry} />
+                    </span>
+                    <span className='text-foreground/85 font-mono font-medium tabular-nums'>
+                      {entry.formattedRange ?? entry.formatted}
+                    </span>
+                    <span className='text-muted-foreground/55 text-[10px]'>
+                      / {unitLabel}
+                    </span>
+                  </span>
+                )
+              })}
+              {showDynamicCacheFallback && (
+                <span className='inline-flex items-baseline gap-1'>
+                  <span className='text-muted-foreground/85'>{t('Cache')}</span>
+                  <span className='text-muted-foreground font-mono tabular-nums'>
+                    —
+                  </span>
                 </span>
-                <span className='text-muted-foreground/60 text-[11px]'>
-                  / {unitLabel}
-                </span>
-              </span>
-            )
-          })}
+              )}
+            </div>
+          )}
         </div>
       )
     }
     if (isTokenBased) {
+      const hasCache = props.model.cache_ratio != null
       return (
-        <div className='space-y-0.5'>
+        <div className='space-y-1'>
           <div className='flex flex-wrap items-baseline justify-end gap-x-3 gap-y-0.5 text-xs'>
             <span className='inline-flex items-baseline gap-1'>
               <span className='text-muted-foreground'>{t('Input')}</span>
@@ -1352,6 +1502,17 @@ function UnifiedProviderPricingSection(props: UnifiedPricingSectionProps) {
                 {renderGroupPrice(group, 'output')}
               </span>
             </span>
+            <span className='inline-flex items-baseline gap-1'>
+              <span className='text-muted-foreground'>{t('Cache')}</span>
+              <span
+                className={cn(
+                  'font-mono text-sm font-semibold tabular-nums',
+                  hasCache ? 'text-foreground' : 'text-muted-foreground'
+                )}
+              >
+                {hasCache ? renderGroupPrice(group, 'cache') : '—'}
+              </span>
+            </span>
           </div>
           {extraPriceTypes.length > 0 && (
             <div className='flex flex-wrap items-baseline justify-end gap-x-2.5 gap-y-0.5 text-[11px]'>
@@ -1363,7 +1524,7 @@ function UnifiedProviderPricingSection(props: UnifiedPricingSectionProps) {
                   <span className='text-muted-foreground/80'>
                     {extra.label}
                   </span>
-                  <span className='text-muted-foreground font-mono tabular-nums'>
+                  <span className='text-foreground/85 font-mono font-medium tabular-nums'>
                     {renderGroupPrice(group, extra.type)}
                   </span>
                 </span>
@@ -1394,94 +1555,157 @@ function UnifiedProviderPricingSection(props: UnifiedPricingSectionProps) {
         />
       )}
 
-      {showUnifiedTierTable && (
-        <div className='border-border/70 bg-background/60 overflow-hidden rounded-xl border'>
-          <div className='bg-muted/30 border-border/60 flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2'>
-            <div className='flex items-baseline gap-2'>
-              <span className='text-foreground text-xs font-semibold'>
-                {t('Tiered pricing')}
-              </span>
-              <span className='text-muted-foreground text-[11px]'>
-                {dynamicTiers.some(
-                  (tier) =>
-                    'unitPrices' in tier || tier.billingUnit === 'request'
-                )
-                  ? t('Prices shown per usage unit')
-                  : t('Prices shown per {{unit}} tokens', {
-                      unit: tokenUnitLabel,
-                    })}
-              </span>
-            </div>
-
-            {availableGroups.length > 0 && (
-              <div
-                className='bg-muted/70 flex flex-wrap items-center gap-0.5 rounded-lg p-0.5'
-                role='group'
-                aria-label={t('Pricing by Group')}
-              >
-                <button
-                  type='button'
-                  onClick={() => setSelectedTierGroup(BASE_RATIO_KEY)}
-                  aria-pressed={effectiveTierGroup === BASE_RATIO_KEY}
-                  className={cn(
-                    'rounded-md px-2 py-0.5 font-mono text-[11px] transition-colors',
-                    effectiveTierGroup === BASE_RATIO_KEY
-                      ? 'bg-background text-foreground font-semibold shadow-xs'
-                      : 'text-muted-foreground hover:text-foreground'
+      {showUnifiedTierTable &&
+        (() => {
+          const tierUnitHint = dynamicTiers.some(
+            (tier) => 'unitPrices' in tier || tier.billingUnit === 'request'
+          )
+            ? t('Prices shown per usage unit')
+            : t('Prices shown per {{unit}} tokens', {
+                unit: tokenUnitLabel,
+              })
+          const isViewingBase = effectiveTierGroup === BASE_RATIO_KEY
+          return (
+            <div className='border-border/80 bg-card/60 overflow-hidden rounded-xl border'>
+              <div className='bg-muted/30 border-border/60 space-y-2.5 border-b px-3.5 py-2.5'>
+                <div className='flex flex-wrap items-baseline justify-between gap-2'>
+                  <span className='text-foreground text-xs font-semibold'>
+                    {t('Tiered pricing')}
+                  </span>
+                  {availableGroups.length > 0 && (
+                    <span className='text-muted-foreground text-[11px]'>
+                      {t('Select group to preview actual price')}
+                    </span>
                   )}
-                >
-                  {t('Base (1x)')}
-                </button>
-                {availableGroups.map((group) => {
-                  const ratio = props.groupRatio[group] || 1
-                  const active = effectiveTierGroup === group
-                  return (
+                </div>
+
+                {availableGroups.length > 0 && (
+                  <div
+                    className='flex flex-wrap items-center gap-1.5'
+                    role='group'
+                    aria-label={t('Select group to preview actual price')}
+                  >
                     <button
-                      key={group}
                       type='button'
-                      onClick={() => setSelectedTierGroup(group)}
-                      aria-pressed={active}
+                      onClick={() => setSelectedTierGroup(BASE_RATIO_KEY)}
+                      aria-pressed={isViewingBase}
                       className={cn(
-                        'rounded-md px-2 py-0.5 font-mono text-[11px] transition-colors',
-                        active
-                          ? 'bg-background text-foreground font-semibold shadow-xs'
-                          : 'text-muted-foreground hover:text-foreground'
+                        'inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs transition-all',
+                        isViewingBase
+                          ? 'border-primary bg-primary text-primary-foreground font-medium shadow-xs'
+                          : 'border-border bg-background text-foreground/85 hover:border-primary/60 hover:bg-accent hover:text-foreground shadow-2xs'
                       )}
                     >
-                      {group} · {ratio}x
+                      {isViewingBase && <Check className='size-3 shrink-0' />}
+                      <span>{t('Official Base')}</span>
+                      <span
+                        className={cn(
+                          'rounded px-1 py-0.5 font-mono text-[10px] leading-none',
+                          isViewingBase
+                            ? 'bg-primary-foreground/20 text-primary-foreground'
+                            : 'bg-muted text-muted-foreground'
+                        )}
+                      >
+                        1x
+                      </span>
                     </button>
-                  )
-                })}
+                    {availableGroups.map((group) => {
+                      const ratio = props.groupRatio[group] || 1
+                      const active = effectiveTierGroup === group
+                      return (
+                        <button
+                          key={group}
+                          type='button'
+                          onClick={() => setSelectedTierGroup(group)}
+                          aria-pressed={active}
+                          className={cn(
+                            'inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs transition-all',
+                            active
+                              ? 'border-primary bg-primary text-primary-foreground font-medium shadow-xs'
+                              : 'border-border bg-background text-foreground/85 hover:border-primary/60 hover:bg-accent hover:text-foreground shadow-2xs'
+                          )}
+                        >
+                          {active && <Check className='size-3 shrink-0' />}
+                          <span>{group}</span>
+                          <span
+                            className={cn(
+                              'rounded px-1 py-0.5 font-mono text-[10px] leading-none',
+                              active
+                                ? 'bg-primary-foreground/20 text-primary-foreground'
+                                : 'bg-muted text-muted-foreground'
+                            )}
+                          >
+                            {ratio}x
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
 
-          <div className='p-2.5'>
-            <DynamicPricingBreakdown
-              hideHeader
-              compact
-              unitInHeader
-              tableOnly
-              modelName={props.model.model_name}
-              billingExpr={props.model.billing_expr}
-              usageSchema={props.model.billing_usage_schema}
-              taskPriceOptions={{
-                tokenUnit: props.tokenUnit,
-                showRechargePrice,
-                priceRate: props.priceRate,
-                usdExchangeRate: props.usdExchangeRate,
-                groupRatioMultiplier: activeTierRatio,
-                digitsLarge: 2,
-              }}
-            />
-          </div>
-        </div>
-      )}
+              <div
+                className={cn(
+                  'flex flex-wrap items-center justify-between gap-2 border-b px-3.5 py-2 text-xs',
+                  isViewingBase
+                    ? 'bg-muted/20 border-border/60'
+                    : 'bg-primary/[0.06] border-primary/15'
+                )}
+              >
+                <div className='flex flex-wrap items-center gap-2'>
+                  {isViewingBase ? (
+                    <span className='text-foreground font-semibold'>
+                      {t('Showing official base pricing (1x)')}
+                    </span>
+                  ) : (
+                    <>
+                      <span className='text-primary font-semibold'>
+                        {t('Actual usage price for selected group')}
+                      </span>
+                      <GroupBadge group={effectiveTierGroup} size='sm' />
+                      <span className='bg-background/90 border-border/70 text-foreground rounded border px-1.5 py-0.5 font-mono text-[11px] font-medium'>
+                        {t('Base × {{ratio}}', { ratio: activeTierRatio })}
+                      </span>
+                    </>
+                  )}
+                </div>
+                <span className='text-muted-foreground text-[11px]'>
+                  {tierUnitHint}
+                </span>
+              </div>
+
+              <div className='p-2.5'>
+                <DynamicPricingBreakdown
+                  hideHeader
+                  compact
+                  unitInHeader
+                  tableOnly
+                  modelName={props.model.model_name}
+                  billingExpr={props.model.billing_expr}
+                  usageSchema={props.model.billing_usage_schema}
+                  taskPriceOptions={{
+                    tokenUnit: props.tokenUnit,
+                    showRechargePrice,
+                    priceRate: props.priceRate,
+                    usdExchangeRate: props.usdExchangeRate,
+                    groupRatioMultiplier: activeTierRatio,
+                    digitsLarge: 2,
+                  }}
+                />
+              </div>
+            </div>
+          )
+        })()}
 
       {usageExampleRows.length > 0 && (
         <div className='border-border/70 bg-background/60 overflow-hidden rounded-xl border'>
-          <div className='text-muted-foreground bg-muted/30 border-border/60 border-b px-3 py-1.5 text-[10px] font-semibold tracking-wider uppercase'>
-            {t('Price examples')}
+          <div className='text-muted-foreground bg-muted/30 border-border/60 flex flex-wrap items-center justify-between gap-2 border-b px-3 py-1.5 text-[10px] font-semibold tracking-wider uppercase'>
+            <span>{t('Price examples')}</span>
+            <span className='font-mono normal-case'>
+              {effectiveTierGroup === BASE_RATIO_KEY
+                ? `${t('Official Base')} · 1x`
+                : `${effectiveTierGroup} · ${activeTierRatio}x`}
+            </span>
           </div>
           <StaticDataTable
             className='rounded-none border-0'
@@ -1561,6 +1785,11 @@ function UnifiedProviderPricingSection(props: UnifiedPricingSectionProps) {
                       <span className='bg-muted/70 text-muted-foreground rounded px-1.5 py-0.5 font-mono text-[11px] font-medium'>
                         {ratio}x
                       </span>
+                      {isSelectedForTiers && (
+                        <span className='bg-primary/10 text-primary rounded px-1.5 py-0.5 text-[10px] font-medium'>
+                          {t('Selected')}
+                        </span>
+                      )}
                     </div>
 
                     <div className='text-right'>

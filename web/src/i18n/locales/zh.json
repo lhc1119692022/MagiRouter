@@ -9145,6 +9145,13 @@
     "Group routes": "分组线路",
     "24h trends": "24h 趋势",
     "Base (1x)": "基准 1x",
-    "1K token": "1K token"
+    "1K token": "1K token",
+    "Official base pricing": "官方基准定价",
+    "Reference rate before group multiplier": "官方基准原价，实际费用按分组倍率折算",
+    "Select group to preview actual price": "选择分组查看实际使用价格",
+    "Actual usage price for selected group": "当前所选分组实际使用价格",
+    "Showing official base pricing (1x)": "当前展示：官方基准定价（1x 原价）",
+    "Official Base": "官方基准",
+    "Base × {{ratio}}": "基准价 × {{ratio}}"
   }
 }

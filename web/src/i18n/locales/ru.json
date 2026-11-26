@@ -9127,6 +9127,13 @@
     "Group routes": "Группы",
     "24h trends": "Тренды за 24ч",
     "Base (1x)": "Базовая (1x)",
-    "1K token": "1K токенов"
+    "1K token": "1K токенов",
+    "Official base pricing": "Официальная базовая цена",
+    "Reference rate before group multiplier": "Базовая цена до применения множителя группы",
+    "Select group to preview actual price": "Выберите группу для просмотра фактической цены",
+    "Actual usage price for selected group": "Фактическая цена для выбранной группы",
+    "Showing official base pricing (1x)": "Показана официальная базовая цена (1x)",
+    "Official Base": "Базовая",
+    "Base × {{ratio}}": "База × {{ratio}}"
   }
 }

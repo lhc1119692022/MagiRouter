@@ -84,6 +84,16 @@ export function ChannelPriorityHandle(props: { id: number }) {
   )
 }
 
+const DEFAULT_CHANNEL_SORT_DESC: Record<ChannelSortBy, boolean> = {
+  priority: true,
+  group: false,
+  id: true,
+  name: false,
+  balance: true,
+  response_time: false,
+  test_time: true,
+}
+
 export function ChannelSortControl(props: {
   field: ChannelSortBy
   desc: boolean
@@ -93,6 +103,7 @@ export function ChannelSortControl(props: {
   const { t } = useTranslation()
   const options = [
     { value: 'priority', label: t('Priority') },
+    { value: 'group', label: t('Group') },
     { value: 'id', label: t('ID') },
     { value: 'name', label: t('Name') },
     { value: 'balance', label: t('Balance') },
@@ -105,7 +116,13 @@ export function ChannelSortControl(props: {
         value={props.field}
         disabled={props.disabled}
         onValueChange={(value) => {
-          if (value) props.onChange(value as ChannelSortBy, props.desc)
+          if (!value) return
+          const nextField = value as ChannelSortBy
+          const nextDesc =
+            nextField === props.field
+              ? props.desc
+              : DEFAULT_CHANNEL_SORT_DESC[nextField]
+          props.onChange(nextField, nextDesc)
         }}
         items={options}
       >

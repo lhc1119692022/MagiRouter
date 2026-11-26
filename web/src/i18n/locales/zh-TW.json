@@ -9127,6 +9127,13 @@
     "Group routes": "分組線路",
     "24h trends": "24h 趨勢",
     "Base (1x)": "基準 1x",
-    "1K token": "1K token"
+    "1K token": "1K token",
+    "Official base pricing": "官方基準定價",
+    "Reference rate before group multiplier": "官方基準原價，實際費用依分組倍率折算",
+    "Select group to preview actual price": "選擇分組查看實際使用價格",
+    "Actual usage price for selected group": "目前所選分組實際使用價格",
+    "Showing official base pricing (1x)": "目前顯示：官方基準定價（1x 原價）",
+    "Official Base": "官方基準",
+    "Base × {{ratio}}": "基準價 × {{ratio}}"
   }
 }

@@ -88,6 +88,7 @@ type ChannelSortOptions struct {
 var channelSortColumns = map[string]string{
 	"id":            "id",
 	"name":          "name",
+	"group":         "group",
 	"priority":      "priority",
 	"balance":       "balance",
 	"response_time": "response_time",
@@ -118,10 +119,17 @@ func (options ChannelSortOptions) Apply(query *gorm.DB) *gorm.DB {
 			// Routing treats a missing priority as zero on every database.
 			column = clause.Column{Name: "COALESCE(priority, 0)", Raw: true}
 		}
-		return query.Order(clause.OrderByColumn{
+		ordered := query.Order(clause.OrderByColumn{
 			Column: column,
 			Desc:   options.SortOrder != "asc",
-		}).Order(clause.OrderByColumn{Column: clause.Column{Name: "id"}, Desc: true})
+		})
+		if columnName == "group" {
+			ordered = ordered.Order(clause.OrderByColumn{
+				Column: clause.Column{Name: "COALESCE(priority, 0)", Raw: true},
+				Desc:   true,
+			})
+		}
+		return ordered.Order(clause.OrderByColumn{Column: clause.Column{Name: "id"}, Desc: true})
 	}
 	if options.IDSort {
 		return query.Order(clause.OrderByColumn{
@@ -142,6 +150,209 @@ func resolveChannelSortOptions(idSort bool, sortOptions []ChannelSortOptions) Ch
 	options := sortOptions[0]
 	options.IDSort = options.IDSort || idSort
 	return options
+}
+
+func CanonicalChannelGroups(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	seen := make(map[string]struct{}, len(parts))
+	groups := make([]string, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed == "" {
+			continue
+		}
+		if _, exists := seen[trimmed]; exists {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		groups = append(groups, trimmed)
+	}
+	if len(groups) == 0 {
+		return nil
+	}
+	slices.SortFunc(groups, compareCanonicalGroupName)
+	return groups
+}
+
+func compareCanonicalGroupName(left string, right string) int {
+	if left == right {
+		return 0
+	}
+	if left == "default" {
+		return -1
+	}
+	if right == "default" {
+		return 1
+	}
+	leftLower := strings.ToLower(left)
+	rightLower := strings.ToLower(right)
+	if leftLower != rightLower {
+		return strings.Compare(leftLower, rightLower)
+	}
+	return strings.Compare(left, right)
+}
+
+func compareCanonicalGroupLists(left []string, right []string, desc bool) int {
+	if len(left) == 0 && len(right) == 0 {
+		return 0
+	}
+	if len(left) == 0 {
+		return 1
+	}
+	if len(right) == 0 {
+		return -1
+	}
+	limit := min(len(left), len(right))
+	cmp := 0
+	for idx := 0; idx < limit; idx++ {
+		if diff := compareCanonicalGroupName(left[idx], right[idx]); diff != 0 {
+			cmp = diff
+			break
+		}
+	}
+	if cmp == 0 {
+		switch {
+		case len(left) < len(right):
+			cmp = -1
+		case len(left) > len(right):
+			cmp = 1
+		}
+	}
+	if desc {
+		return -cmp
+	}
+	return cmp
+}
+
+func compareChannelGroupEntry(leftGroups []string, leftPriority int64, leftID int, rightGroups []string, rightPriority int64, rightID int, desc bool) int {
+	if cmp := compareCanonicalGroupLists(leftGroups, rightGroups, desc); cmp != 0 {
+		return cmp
+	}
+	if leftPriority != rightPriority {
+		if leftPriority > rightPriority {
+			return -1
+		}
+		return 1
+	}
+	if leftID != rightID {
+		if leftID > rightID {
+			return -1
+		}
+		return 1
+	}
+	return 0
+}
+
+func SortChannels(channels []*Channel, options ChannelSortOptions) {
+	if options.SortBy != "group" || len(channels) < 2 {
+		return
+	}
+	type sortEntry struct {
+		channel  *Channel
+		groups   []string
+		priority int64
+	}
+	desc := options.SortOrder != "asc"
+	entries := make([]sortEntry, len(channels))
+	for idx, ch := range channels {
+		entries[idx] = sortEntry{
+			channel:  ch,
+			groups:   CanonicalChannelGroups(ch.Group),
+			priority: ch.GetPriority(),
+		}
+	}
+	slices.SortFunc(entries, func(left, right sortEntry) int {
+		return compareChannelGroupEntry(left.groups, left.priority, left.channel.Id, right.groups, right.priority, right.channel.Id, desc)
+	})
+	for idx, entry := range entries {
+		channels[idx] = entry.channel
+	}
+}
+
+func FindChannelsSortedByGroup(baseQuery *gorm.DB, startIdx int, num int, selectAll bool, desc bool) ([]*Channel, int64, error) {
+	type sortRow struct {
+		Id       int
+		Group    string
+		Priority *int64
+	}
+	var rows []sortRow
+	if err := baseQuery.Session(&gorm.Session{}).
+		Clauses(clause.Select{
+			Columns: []clause.Column{
+				{Name: "id"},
+				{Name: "group"},
+				{Name: "priority"},
+			},
+		}).
+		Find(&rows).Error; err != nil {
+		return nil, 0, err
+	}
+	total := int64(len(rows))
+	if total == 0 {
+		return make([]*Channel, 0), 0, nil
+	}
+	type sortEntry struct {
+		id       int
+		groups   []string
+		priority int64
+	}
+	entries := make([]sortEntry, len(rows))
+	for idx, row := range rows {
+		var priority int64
+		if row.Priority != nil {
+			priority = *row.Priority
+		}
+		entries[idx] = sortEntry{
+			id:       row.Id,
+			groups:   CanonicalChannelGroups(row.Group),
+			priority: priority,
+		}
+	}
+	slices.SortFunc(entries, func(left, right sortEntry) int {
+		return compareChannelGroupEntry(left.groups, left.priority, left.id, right.groups, right.priority, right.id, desc)
+	})
+	if !selectAll {
+		if startIdx < 0 {
+			startIdx = 0
+		}
+		if startIdx >= len(entries) {
+			return make([]*Channel, 0), total, nil
+		}
+		endIdx := len(entries)
+		if num > 0 {
+			endIdx = min(startIdx+num, len(entries))
+		}
+		entries = entries[startIdx:endIdx]
+	}
+	pageIDs := make([]int, len(entries))
+	for idx, entry := range entries {
+		pageIDs[idx] = entry.id
+	}
+	fetchQuery := baseQuery.Session(&gorm.Session{NewDB: true}).Model(&Channel{}).Where("id IN ?", pageIDs)
+	if baseQuery.Statement != nil && baseQuery.Statement.Table != "" {
+		fetchQuery = baseQuery.Session(&gorm.Session{NewDB: true}).Table(baseQuery.Statement.Table).Where("id IN ?", pageIDs)
+	}
+	if !selectAll {
+		fetchQuery = fetchQuery.Omit("key")
+	}
+	var fetched []*Channel
+	if err := fetchQuery.Find(&fetched).Error; err != nil {
+		return nil, 0, err
+	}
+	byID := make(map[int]*Channel, len(fetched))
+	for _, ch := range fetched {
+		byID[ch.Id] = ch
+	}
+	ordered := make([]*Channel, 0, len(pageIDs))
+	for _, id := range pageIDs {
+		if ch, ok := byID[id]; ok {
+			ordered = append(ordered, ch)
+		}
+	}
+	return ordered, total, nil
 }
 
 func NormalizeChannelGroupFilter(group string) string {
@@ -427,6 +638,10 @@ func GetAllChannels(startIdx int, num int, selectAll bool, idSort bool, sortOpti
 	var channels []*Channel
 	var err error
 	order := resolveChannelSortOptions(idSort, sortOptions)
+	if order.SortBy == "group" {
+		channels, _, err = FindChannelsSortedByGroup(DB.Model(&Channel{}), startIdx, num, selectAll, order.SortOrder != "asc")
+		return channels, err
+	}
 	if selectAll {
 		err = order.Apply(DB).Find(&channels).Error
 	} else {
@@ -443,6 +658,9 @@ func GetChannelsByTag(tag string, idSort bool, selectAll bool, sortOptions ...Ch
 		query = query.Omit("key")
 	}
 	err := query.Find(&channels).Error
+	if err == nil {
+		SortChannels(channels, order)
+	}
 	return channels, err
 }
 
@@ -476,6 +694,7 @@ func SearchChannels(keyword string, group string, model string, idSort bool, sor
 	if err != nil {
 		return nil, err
 	}
+	SortChannels(channels, order)
 	return channels, nil
 }
 

@@ -9145,6 +9145,13 @@
     "Group routes": "Group routes",
     "24h trends": "24h trends",
     "Base (1x)": "Base (1x)",
-    "1K token": "1K token"
+    "1K token": "1K token",
+    "Official base pricing": "Official base pricing",
+    "Reference rate before group multiplier": "Reference rate before group multiplier",
+    "Select group to preview actual price": "Select group to preview actual price",
+    "Actual usage price for selected group": "Actual usage price for selected group",
+    "Showing official base pricing (1x)": "Showing official base pricing (1x)",
+    "Official Base": "Official Base",
+    "Base × {{ratio}}": "Base × {{ratio}}"
   }
 }

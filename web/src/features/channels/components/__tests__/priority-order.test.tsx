@@ -889,3 +889,66 @@ test.each(['table', 'card'] as const)(
     )
   }
 )
+
+test('group sort defaults to ascending, sends group sort params, and syncs with the table column header', async () => {
+  await mount('card', false)
+  const user = userEvent.setup()
+  const header = within(screen.getByRole('banner'))
+
+  await user.click(header.getByRole('combobox', { name: 'Sort channels by' }))
+  await user.click(await screen.findByRole('option', { name: /^Group$/ }))
+
+  await waitFor(() =>
+    expect(api.get).toHaveBeenLastCalledWith(
+      '/api/channel',
+      expect.objectContaining({
+        params: expect.objectContaining({
+          sort_by: 'group',
+          sort_order: 'asc',
+        }),
+      })
+    )
+  )
+  expect(header.getByRole('button', { name: 'Ascending' })).toBeEnabled()
+  expect(screen.getByRole('button', { name: 'Drag mode' })).toBeDisabled()
+
+  await user.click(header.getByRole('button', { name: 'Ascending' }))
+  await waitFor(() =>
+    expect(api.get).toHaveBeenLastCalledWith(
+      '/api/channel',
+      expect.objectContaining({
+        params: expect.objectContaining({
+          sort_by: 'group',
+          sort_order: 'desc',
+        }),
+      })
+    )
+  )
+
+  await user.click(screen.getByRole('button', { name: 'Table view' }))
+  await user.click(
+    await screen.findByRole('button', {
+      name: 'Groups',
+    })
+  )
+  await user.click(await screen.findByRole('menuitem', { name: 'Asc' }))
+  expect(
+    header.getByRole('combobox', { name: 'Sort channels by' })
+  ).toHaveTextContent('Group')
+  expect(header.getByRole('button', { name: 'Ascending' })).toBeEnabled()
+
+  await user.click(header.getByRole('combobox', { name: 'Sort channels by' }))
+  await user.click(await screen.findByRole('option', { name: /^Priority$/ }))
+  await waitFor(() =>
+    expect(api.get).toHaveBeenLastCalledWith(
+      '/api/channel',
+      expect.objectContaining({
+        params: expect.objectContaining({
+          sort_by: 'priority',
+          sort_order: 'desc',
+        }),
+      })
+    )
+  )
+  expect(header.getByRole('button', { name: 'Descending' })).toBeEnabled()
+})

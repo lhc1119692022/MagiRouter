@@ -9127,6 +9127,13 @@
     "Group routes": "グループ一覧",
     "24h trends": "24時間推移",
     "Base (1x)": "基準 1x",
-    "1K token": "1K トークン"
+    "1K token": "1K トークン",
+    "Official base pricing": "公式基準価格",
+    "Reference rate before group multiplier": "グループ倍率適用前の基準価格",
+    "Select group to preview actual price": "グループを選択して実際の料金を確認",
+    "Actual usage price for selected group": "選択中グループの実際の利用料金",
+    "Showing official base pricing (1x)": "表示中：公式基準価格（1x）",
+    "Official Base": "公式基準",
+    "Base × {{ratio}}": "基準 × {{ratio}}"
   }
 }
