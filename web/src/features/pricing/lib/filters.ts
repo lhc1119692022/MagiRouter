@@ -218,6 +218,7 @@ function getSortPrice(
 export type SortModelsOptions = {
   selectedGroup?: string
   priceMode?: PriceMode
+  vendors?: readonly PricingVendor[]
 }
 
 function getEffectiveCardPrice(
@@ -367,6 +368,65 @@ export function sortModels(
   }
 
   switch (sortBy) {
+    case SORT_OPTIONS.VENDOR: {
+      const vendorRankById = new Map<number, number>()
+      const vendorRankByName = new Map<string, number>()
+      for (const [index, vendor] of (options?.vendors ?? []).entries()) {
+        if (!vendorRankById.has(vendor.id)) {
+          vendorRankById.set(vendor.id, index)
+        }
+        const normalizedName = vendor.name.trim().toLowerCase()
+        if (normalizedName && !vendorRankByName.has(normalizedName)) {
+          vendorRankByName.set(normalizedName, index)
+        }
+      }
+
+      const getVendorRank = (model: PricingModel): number => {
+        if (
+          typeof model.vendor_id === 'number' &&
+          vendorRankById.has(model.vendor_id)
+        ) {
+          return vendorRankById.get(model.vendor_id) ?? Number.POSITIVE_INFINITY
+        }
+        const normalizedName = model.vendor_name?.trim().toLowerCase()
+        if (normalizedName && vendorRankByName.has(normalizedName)) {
+          return (
+            vendorRankByName.get(normalizedName) ?? Number.POSITIVE_INFINITY
+          )
+        }
+        return Number.POSITIVE_INFINITY
+      }
+
+      sorted.sort((first, second) => {
+        const rankA = getVendorRank(first)
+        const rankB = getVendorRank(second)
+        if (rankA !== rankB) {
+          return rankA - rankB
+        }
+        if (rankA === Number.POSITIVE_INFINITY) {
+          const vendorNameA = first.vendor_name?.trim() || ''
+          const vendorNameB = second.vendor_name?.trim() || ''
+          if (Boolean(vendorNameA) !== Boolean(vendorNameB)) {
+            return vendorNameA ? -1 : 1
+          }
+          if (vendorNameA && vendorNameB) {
+            const vendorNameDiff = vendorNameA.localeCompare(
+              vendorNameB,
+              'en',
+              {
+                sensitivity: 'base',
+                numeric: true,
+              }
+            )
+            if (vendorNameDiff !== 0) {
+              return vendorNameDiff
+            }
+          }
+        }
+        return (second.model_name || '').localeCompare(first.model_name || '')
+      })
+      break
+    }
     case SORT_OPTIONS.TIME_DESC:
     case SORT_OPTIONS.TIME_ASC: {
       const direction = sortBy === SORT_OPTIONS.TIME_ASC ? 1 : -1
@@ -409,6 +469,7 @@ export function filterAndSortModels(
     tag: string
     sortBy: string
     priceMode?: PriceMode
+    vendors?: readonly PricingVendor[]
   }
 ): PricingModel[] {
   let result = filterBySearch(models, filters.search)
@@ -420,6 +481,7 @@ export function filterAndSortModels(
   result = sortModels(result, filters.sortBy, {
     selectedGroup: filters.group,
     priceMode: filters.priceMode,
+    vendors: filters.vendors,
   })
 
   return result

@@ -972,4 +972,5 @@ export const STATIC_I18N_KEYS = [
   'Auto (model chooses format)',
   'Plain text (.txt)',
   'Source code',
+  'Manufacturer order (Name: Z to A)',
 ] as const

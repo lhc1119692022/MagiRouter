@@ -52,6 +52,7 @@ import {
   ERROR_MESSAGES,
 } from '../constants'
 import type { ApiKey } from '../types'
+import { ApiAddressesBar } from './api-addresses-bar'
 import { ApiKeyQuotaCell } from './api-key-quota-cell'
 import { ApiKeyActivityCell } from './api-key-timestamp-cell'
 import {
@@ -371,6 +372,7 @@ export function ApiKeysTable() {
           },
         ],
       }}
+      beforeTable={<ApiAddressesBar />}
       mobile={
         <ApiKeysMobileList table={table} isLoading={isLoading} now={now} />
       }

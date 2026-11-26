@@ -9484,6 +9484,7 @@
     "Generated files": "Сгенерированные файлы",
     "Download all": "Скачать все",
     "{{count}} lines": "{{count}} строк",
-    "Download {{filename}}": "Скачать {{filename}}"
+    "Download {{filename}}": "Скачать {{filename}}",
+    "Manufacturer order (Name: Z to A)": "По порядку провайдеров (Имя: Я–А)"
   }
 }

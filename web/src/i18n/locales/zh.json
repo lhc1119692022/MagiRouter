@@ -9502,6 +9502,7 @@
     "Generated files": "已生成文件",
     "Download all": "全部下载",
     "{{count}} lines": "{{count}} 行",
-    "Download {{filename}}": "下载 {{filename}}"
+    "Download {{filename}}": "下载 {{filename}}",
+    "Manufacturer order (Name: Z to A)": "按厂商顺序（同厂商按名称降序）"
   }
 }

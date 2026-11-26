@@ -26,6 +26,7 @@ import type { PriceMode, TokenUnit } from './types'
 
 /** Sort options for pricing models */
 export const SORT_OPTIONS = {
+  VENDOR: 'vendor',
   TIME_DESC: 'time-desc',
   TIME_ASC: 'time-asc',
   PRICE_ASC: 'price-asc',
@@ -42,12 +43,18 @@ export const SORT_OPTIONS = {
 
 export type SortOption = (typeof SORT_OPTIONS)[keyof typeof SORT_OPTIONS]
 
-export type CatalogSortIconKind = 'desc' | 'asc' | 'name-asc' | 'name-desc'
+export type CatalogSortIconKind =
+  | 'vendor'
+  | 'desc'
+  | 'asc'
+  | 'name-asc'
+  | 'name-desc'
 
 export type CatalogSortOptionConfig = {
   value: SortOption
-  labelKey: 'Time' | 'Price' | 'Name'
+  labelKey: 'Manufacturer' | 'Time' | 'Price' | 'Name'
   tooltipKey:
+    | 'Manufacturer order (Name: Z to A)'
     | 'Newest first'
     | 'Oldest first'
     | 'Price: Low to High'
@@ -57,9 +64,15 @@ export type CatalogSortOptionConfig = {
   icon: CatalogSortIconKind
 }
 
-export const DEFAULT_CATALOG_SORT: SortOption = SORT_OPTIONS.NAME_DESC
+export const DEFAULT_CATALOG_SORT: SortOption = SORT_OPTIONS.VENDOR
 
 export const CATALOG_SORT_OPTIONS: readonly CatalogSortOptionConfig[] = [
+  {
+    value: SORT_OPTIONS.VENDOR,
+    labelKey: 'Manufacturer',
+    tooltipKey: 'Manufacturer order (Name: Z to A)',
+    icon: 'vendor',
+  },
   {
     value: SORT_OPTIONS.TIME_DESC,
     labelKey: 'Time',
@@ -105,6 +118,7 @@ export const PRICE_MODES = {
 
 export function getSortLabels(t: TFunction): Record<SortOption, string> {
   return {
+    [SORT_OPTIONS.VENDOR]: t('Manufacturer order (Name: Z to A)'),
     [SORT_OPTIONS.TIME_DESC]: t('Newest first'),
     [SORT_OPTIONS.TIME_ASC]: t('Oldest first'),
     [SORT_OPTIONS.PRICE_ASC]: t('Price: Low to High'),

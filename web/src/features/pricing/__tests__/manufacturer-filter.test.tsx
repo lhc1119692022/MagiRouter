@@ -208,13 +208,16 @@ it('expands filters by default, excludes remark tags from filters, and renders c
 
   // Filters button sits directly after the sort dropdown in the top controls bar
   const sortTrigger = screen.getByRole('button', { name: '排序方式' })
-  expect(sortTrigger).toHaveTextContent('Name')
-  expect(sortTrigger).toHaveAttribute('title', 'Name: Z to A')
+  expect(sortTrigger).toHaveTextContent('Manufacturer')
+  expect(sortTrigger).toHaveAttribute(
+    'title',
+    'Manufacturer order (Name: Z to A)'
+  )
   expect(sortTrigger.closest('.sort-dropdown-wrap')?.nextElementSibling).toBe(
     filtersToggle
   )
 
-  // Default sort is name descending (Z to A: Model B before Model A even though Model A is newer)
+  // Default sort follows manufacturer order and name descending within each manufacturer
   const cards = screen.getAllByRole('article')
   expect(cards).toHaveLength(2)
   expect(
@@ -252,10 +255,11 @@ it('expands filters by default, excludes remark tags from filters, and renders c
   expect(within(modelACard).getByText('/1M')).toBeVisible()
   expect(within(modelACard).queryByText('/1M+')).toBeNull()
 
-  // Sort dropdown lists compact Time / Price / Name entries without input/output split
+  // Sort dropdown lists Manufacturer first followed by Time / Price / Name entries
   await user.click(sortTrigger)
   const sortMenuItems = screen.getAllByRole('menuitem')
   expect(sortMenuItems.map((node) => node.textContent)).toEqual([
+    'Manufacturer',
     'Time',
     'Time',
     'Price',
@@ -545,4 +549,10 @@ it('honors manual filter order configured via status.pricing_filter_order', asyn
     'GPT Team ×0.055',
     'Claude 标准 ×0.15',
   ])
+
+  // Default Manufacturer sort follows the exact vendor filter order: OpenAI -> Google -> Anthropic
+  const cardHeadings = screen
+    .getAllByRole('article')
+    .map((card) => within(card).getByRole('heading').textContent)
+  expect(cardHeadings).toEqual(['gpt-6.2', 'gemini-4', 'claude-5.5'])
 })

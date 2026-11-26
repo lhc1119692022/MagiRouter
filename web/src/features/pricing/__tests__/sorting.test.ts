@@ -18,9 +18,9 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { describe, expect, test } from 'vitest'
 
-import { SORT_OPTIONS } from '../constants'
+import { DEFAULT_CATALOG_SORT, SORT_OPTIONS } from '../constants'
 import { sortModels } from '../lib/filters'
-import type { PricingModel } from '../types'
+import type { PricingModel, PricingVendor } from '../types'
 
 function pricingModel(
   modelName: string,
@@ -241,5 +241,50 @@ describe('catalog sorting (time, unified price, name)', () => {
         (item) => item.model_name
       )
     ).toEqual(['unpriced-model', 'gamma-model', 'beta-model', 'alpha-model'])
+  })
+
+  test('uses manufacturer sort as default, following vendor filter order with model names descending per vendor', () => {
+    expect(DEFAULT_CATALOG_SORT).toBe(SORT_OPTIONS.VENDOR)
+
+    const orderedVendors: PricingVendor[] = [
+      { id: 10, name: 'Anthropic' },
+      { id: 20, name: 'OpenAI' },
+      { id: 30, name: 'Google' },
+    ]
+    const vendorModels: PricingModel[] = [
+      pricingModel('gpt-5.4', { vendor_id: 20, vendor_name: 'OpenAI' }),
+      pricingModel('gemini-3-pro', { vendor_id: 30, vendor_name: 'Google' }),
+      pricingModel('claude-4-sonnet', {
+        vendor_id: 10,
+        vendor_name: 'Anthropic',
+      }),
+      pricingModel('gpt-6.2-sol', { vendor_id: 20, vendor_name: 'OpenAI' }),
+      pricingModel('claude-5-opus', {
+        vendor_id: 10,
+        vendor_name: 'Anthropic',
+      }),
+      pricingModel('gemini-4-neon', { vendor_id: 30, vendor_name: 'Google' }),
+      pricingModel('zeta-unlisted', { vendor_name: 'Zeta' }),
+      pricingModel('alpha-unlisted', { vendor_name: 'Zeta' }),
+      pricingModel('orphan-a'),
+      pricingModel('orphan-z'),
+    ]
+
+    expect(
+      sortModels(vendorModels, SORT_OPTIONS.VENDOR, {
+        vendors: orderedVendors,
+      }).map((item) => item.model_name)
+    ).toEqual([
+      'claude-5-opus',
+      'claude-4-sonnet',
+      'gpt-6.2-sol',
+      'gpt-5.4',
+      'gemini-4-neon',
+      'gemini-3-pro',
+      'zeta-unlisted',
+      'alpha-unlisted',
+      'orphan-z',
+      'orphan-a',
+    ])
   })
 })

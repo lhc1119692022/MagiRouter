@@ -9484,6 +9484,7 @@
     "Generated files": "生成されたファイル",
     "Download all": "すべてダウンロード",
     "{{count}} lines": "{{count}} 行",
-    "Download {{filename}}": "{{filename}} をダウンロード"
+    "Download {{filename}}": "{{filename}} をダウンロード",
+    "Manufacturer order (Name: Z to A)": "プロバイダー順（名称降順）"
   }
 }

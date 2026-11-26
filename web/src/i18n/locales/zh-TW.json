@@ -9484,6 +9484,7 @@
     "Generated files": "已產生檔案",
     "Download all": "全部下載",
     "{{count}} lines": "{{count}} 行",
-    "Download {{filename}}": "下載 {{filename}}"
+    "Download {{filename}}": "下載 {{filename}}",
+    "Manufacturer order (Name: Z to A)": "依廠商順序（同廠商依名稱降冪）"
   }
 }

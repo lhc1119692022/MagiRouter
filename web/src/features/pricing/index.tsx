@@ -22,6 +22,7 @@ import {
   ArrowDownWideNarrow,
   ArrowUpNarrowWide,
   ArrowUpZA,
+  Building2,
   Check,
   ChevronDown,
   LayoutGrid,
@@ -77,6 +78,8 @@ import {
 
 function renderCatalogSortIcon(icon: CatalogSortIconKind, className: string) {
   switch (icon) {
+    case 'vendor':
+      return <Building2 className={className} />
     case 'desc':
       return <ArrowDownWideNarrow className={className} />
     case 'asc':

@@ -9484,6 +9484,7 @@
     "Generated files": "Fichiers générés",
     "Download all": "Tout télécharger",
     "{{count}} lines": "{{count}} lignes",
-    "Download {{filename}}": "Télécharger {{filename}}"
+    "Download {{filename}}": "Télécharger {{filename}}",
+    "Manufacturer order (Name: Z to A)": "Ordre des fournisseurs (Nom : Z à A)"
   }
 }

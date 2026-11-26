@@ -237,6 +237,7 @@ export function useFilters(
       tag: FILTER_ALL,
       sortBy,
       priceMode,
+      vendors,
     })
   }, [
     models,
@@ -247,6 +248,7 @@ export function useFilters(
     endpointTypeFilter,
     sortBy,
     priceMode,
+    vendors,
   ])
 
   const hasActiveFilters = useMemo(
