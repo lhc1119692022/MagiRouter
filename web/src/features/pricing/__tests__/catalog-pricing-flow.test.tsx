@@ -205,10 +205,10 @@ test('displays the lowest group starting price for token and tiered models, and 
   expect(cards).toHaveLength(4)
 
   // Your price (default): RMB symbol with starting suffix and lowest group ratio
-  expect(within(cards[0]).getByText('¥18.75')).toBeVisible()
+  expect(within(cards[0]).getByText('¥18.75 / ¥112.5')).toBeVisible()
   expect(within(cards[0]).getByText('/1M+')).toBeVisible()
 
-  expect(within(cards[1]).getByText('¥1')).toBeVisible()
+  expect(within(cards[1]).getByText('¥1 / ¥4')).toBeVisible()
   expect(within(cards[1]).getByText('/1M+')).toBeVisible()
 
   expect(within(cards[2]).getByText('¥0.005')).toBeVisible()
@@ -230,14 +230,14 @@ test('displays the lowest group starting price for token and tiered models, and 
     </QueryClientProvider>
   )
   const scaledCards = screen.getAllByRole('article')
-  expect(within(scaledCards[0]).getByText('¥37.5')).toBeVisible()
+  expect(within(scaledCards[0]).getByText('¥37.5 / ¥225')).toBeVisible()
   expect(within(scaledCards[1]).getByText('¥0.01')).toBeVisible()
 
   // When a specific group filter is active, prices switch to that group's multiplier
   rerender(
     <QueryClientProvider client={client}>
       <ZmModelCardGrid
-        models={[tokenEntry, mixedEntry]}
+        models={[tokenEntry, tieredTokenEntry, mixedEntry]}
         onModelClick={vi.fn()}
         tokenUnit='M'
         priceRate={1}
@@ -246,8 +246,12 @@ test('displays the lowest group starting price for token and tiered models, and 
     </QueryClientProvider>
   )
   const filteredCards = screen.getAllByRole('article')
-  expect(within(filteredCards[0]).getByText('¥37.5')).toBeVisible()
-  expect(within(filteredCards[1]).getByText('¥0.01')).toBeVisible()
+  expect(within(filteredCards[0]).getByText('¥37.5 / ¥225')).toBeVisible()
+  expect(within(filteredCards[0]).getByText('/1M')).toBeVisible()
+  expect(within(filteredCards[0]).queryByText('/1M+')).toBeNull()
+  expect(within(filteredCards[1]).getByText('¥2 / ¥8')).toBeVisible()
+  expect(within(filteredCards[1]).getByText('/1M+')).toBeVisible()
+  expect(within(filteredCards[2]).getByText('¥0.01')).toBeVisible()
 
   // Official price mode: shows backend 1x USD prices without starting suffix
   rerender(

@@ -53,6 +53,7 @@ import {
   getTierCachePricingMode,
 } from '../lib/cache-pricing'
 import {
+  formatDynamicUnitPrice,
   formatTaskUsageUnitPrice,
   type DynamicPriceLabelKind,
   type DynamicPriceOptions,
@@ -91,10 +92,24 @@ type DynamicPricingBreakdownProps = {
    * icon header and uses the dialog's small text sizes. Defaults to false.
    */
   compact?: boolean
+  /** Hide the outer icon + "Dynamic Pricing" title when embedded inside a unified pricing section. */
+  hideHeader?: boolean
+  /** Place usage units in column headers instead of repeating them inside each table cell. */
+  unitInHeader?: boolean
+  /** Always render the compact scrollable table without a duplicate mobile card list. */
+  tableOnly?: boolean
   usageSchema?: BillingUsageSchema
-  taskPriceOptions?: Pick<
-    DynamicPriceOptions,
-    'showRechargePrice' | 'priceRate' | 'usdExchangeRate'
+  taskPriceOptions?: Partial<
+    Pick<
+      DynamicPriceOptions,
+      | 'showRechargePrice'
+      | 'priceRate'
+      | 'usdExchangeRate'
+      | 'groupRatioMultiplier'
+      | 'tokenUnit'
+      | 'digitsLarge'
+      | 'digitsSmall'
+    >
   >
   /**
    * Settlement usage facts from the consume log. Used to highlight the
@@ -117,15 +132,43 @@ type BreakdownPriceField = {
   value: (tier: BreakdownTier) => number
 }
 
+function breakdownFieldUnitSuffix(
+  field: BreakdownPriceField,
+  t: (key: string) => string,
+  language: string
+): string {
+  if (field.unit === 'second') return t('s')
+  if (field.unit === 'count') {
+    return taskUsageUnitLabel(field, language, t('unit'))
+  }
+  if (field.unit === 'credit') return t('credit')
+  if (field.unit === 'token' && field.labelKind === 'schema') {
+    return t('1M token')
+  }
+  if (field.unit === 'request') return t('request')
+  if (field.unit === 'image') return t('image')
+  return ''
+}
+
 function breakdownPriceFieldLabel(
   field: BreakdownPriceField,
-  t: (key: string) => string
+  t: (key: string) => string,
+  tokenUnitLabel: string,
+  language: string,
+  unitInHeader: boolean
 ): ReactNode {
   if (field.labelKind === 'schema') {
-    return <span className='break-words whitespace-normal'>{field.label}</span>
+    const unit = unitInHeader
+      ? breakdownFieldUnitSuffix(field, t, language)
+      : ''
+    return (
+      <span className='break-words whitespace-normal'>
+        {unit ? `${field.label} / ${unit}` : field.label}
+      </span>
+    )
   }
   return field.showTokenUnit
-    ? `${t(field.label)} / ${t('1M token')}`
+    ? `${t(field.label)} / ${tokenUnitLabel}`
     : t(field.label)
 }
 
@@ -203,18 +246,19 @@ function formatBreakdownConditionSummary(
 function formatBreakdownPrice(
   value: number,
   field: BreakdownPriceField,
-  symbol: string,
-  rate: number,
   t: (key: string) => string,
   taskPriceOptions: DynamicPricingBreakdownProps['taskPriceOptions'],
-  language: string
+  language: string,
+  unitInHeader: boolean
 ): string {
+  const tokenUnit = taskPriceOptions?.tokenUnit ?? 'M'
   const amount =
     field.labelKind === 'schema' ||
     field.unit === 'request' ||
     field.unit === 'image'
-      ? formatTaskUsageUnitPrice(value, { tokenUnit: 'M', ...taskPriceOptions })
-      : `${symbol}${(value * rate).toFixed(4)}`
+      ? formatTaskUsageUnitPrice(value, { tokenUnit, ...taskPriceOptions })
+      : formatDynamicUnitPrice(value, { tokenUnit, ...taskPriceOptions })
+  if (unitInHeader) return amount
   if (field.unit === 'second') return `${amount}/${t('s')}`
   if (field.unit === 'count') {
     return `${amount}/${taskUsageUnitLabel(field, language, t('unit'))}`
@@ -294,26 +338,19 @@ export function DynamicPricingBreakdown({
   requestRules,
   hideCacheColumns = false,
   compact = false,
+  hideHeader = false,
+  unitInHeader = false,
+  tableOnly = false,
   usageSchema,
   taskPriceOptions,
   usageFacts,
 }: DynamicPricingBreakdownProps) {
   const { t, i18n } = useTranslation()
   const expr = billingExpr || ''
-  const currency = useSystemConfigStore((s) => s.config.currency)
-
-  const { symbol, rate } = useMemo(() => {
-    if (currency.quotaDisplayType === 'CNY') {
-      return { symbol: '¥', rate: currency.usdExchangeRate || 7 }
-    }
-    if (currency.quotaDisplayType === 'CUSTOM') {
-      return {
-        symbol: currency.customCurrencySymbol || '¤',
-        rate: currency.customCurrencyExchangeRate || 1,
-      }
-    }
-    return { symbol: '$', rate: 1 }
-  }, [currency])
+  // Subscribe so formatted prices re-render when display currency changes.
+  useSystemConfigStore((s) => s.config.currency)
+  const tokenUnitLabel =
+    taskPriceOptions?.tokenUnit === 'K' ? t('1K token') : t('1M token')
 
   const { tiers, ruleGroups } = useMemo(() => {
     const split = splitBillingExprAndRequestRules(expr)
@@ -350,7 +387,7 @@ export function DynamicPricingBreakdown({
   if (!hasTiers) {
     return (
       <section className={cn('min-w-0', !compact && 'py-4')}>
-        {!compact && (
+        {!compact && !hideHeader && (
           <div className='mb-3 flex items-center gap-2'>
             <span className='inline-flex size-6 items-center justify-center rounded-lg bg-amber-100 text-amber-700 shadow-sm dark:bg-amber-500/20 dark:text-amber-300'>
               <TagIcon className='size-3.5' />
@@ -468,8 +505,10 @@ export function DynamicPricingBreakdown({
   const requestRuleKeyOccurrences = new Map<string, number>()
 
   return (
-    <section className={cn('min-w-0', !compact && 'py-3 sm:py-4')}>
-      {!compact && !usageSchema && (
+    <section
+      className={cn('min-w-0', !compact && !hideHeader && 'py-3 sm:py-4')}
+    >
+      {!compact && !hideHeader && !usageSchema && (
         <div className='mb-3 flex items-start gap-2 sm:mb-4'>
           <span className='mt-0.5 inline-flex size-6 items-center justify-center rounded-lg bg-amber-100 text-amber-700 shadow-sm dark:bg-amber-500/20 dark:text-amber-300'>
             <TagIcon className='size-3.5' />
@@ -486,8 +525,12 @@ export function DynamicPricingBreakdown({
       )}
 
       {hasTiers && (
-        <div className={cn(compact ? cn(hasRules && 'mb-2') : 'mb-3 sm:mb-4')}>
-          {!usageSchema && (
+        <div
+          className={cn(
+            compact || hideHeader ? cn(hasRules && 'mb-2') : 'mb-3 sm:mb-4'
+          )}
+        >
+          {!usageSchema && !hideHeader && (
             <div
               className={
                 compact
@@ -498,103 +541,113 @@ export function DynamicPricingBreakdown({
               {t('Tiered price table')}
             </div>
           )}
-          <div className='space-y-1.5 sm:hidden'>
-            {tiers.map((tier) => {
-              const condSummary = formatBreakdownConditionSummary(
-                tier,
-                t,
-                usageSchema,
-                i18n.language,
-                tiers.length
-              )
-              const isMatched = isBreakdownTierMatched(
-                tier,
-                tiers,
-                matchedTierLabel,
-                usageFacts,
-                matchedBillingUnit,
-                matchedFixedPrice
-              )
-              const rowKey = nextOccurrenceKey(
-                JSON.stringify(tier),
-                mobileTierKeyOccurrences
-              )
-              return (
-                <div
-                  key={`tier-mobile-${rowKey}`}
-                  className={cn(
-                    'rounded-md border p-2',
-                    isMatched && 'border-emerald-500/40 bg-emerald-500/10'
-                  )}
-                >
-                  <div className='mb-1.5 flex flex-wrap items-center gap-1.5'>
-                    {!usageSchema && (
-                      <Badge
-                        variant='secondary'
-                        className='bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300'
-                      >
-                        {tier.label || t('Default')}
-                      </Badge>
-                    )}
-                    {isMatched && (
-                      <Badge
-                        variant='secondary'
-                        className='bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300'
-                      >
-                        {t('Matched')}
-                      </Badge>
-                    )}
-                  </div>
-                  {condSummary && (
-                    <div className='text-muted-foreground mb-1.5 text-xs'>
-                      {condSummary}
-                    </div>
-                  )}
+          {!tableOnly && (
+            <div className='space-y-1.5 sm:hidden'>
+              {tiers.map((tier) => {
+                const condSummary = formatBreakdownConditionSummary(
+                  tier,
+                  t,
+                  usageSchema,
+                  i18n.language,
+                  tiers.length
+                )
+                const isMatched = isBreakdownTierMatched(
+                  tier,
+                  tiers,
+                  matchedTierLabel,
+                  usageFacts,
+                  matchedBillingUnit,
+                  matchedFixedPrice
+                )
+                const rowKey = nextOccurrenceKey(
+                  JSON.stringify(tier),
+                  mobileTierKeyOccurrences
+                )
+                return (
                   <div
+                    key={`tier-mobile-${rowKey}`}
                     className={cn(
-                      'grid gap-x-3 gap-y-1.5',
-                      visiblePriceFields.length > 1 && 'grid-cols-2'
+                      'rounded-md border p-2',
+                      isMatched && 'border-emerald-500/40 bg-emerald-500/10'
                     )}
                   >
-                    {visiblePriceFields.map((field) => {
-                      const value = field.value(tier)
-                      return (
-                        <div key={field.id} className='min-w-0'>
-                          <div className='text-muted-foreground text-xs font-medium break-words whitespace-normal'>
-                            {breakdownPriceFieldLabel(field, t)}
+                    <div className='mb-1.5 flex flex-wrap items-center gap-1.5'>
+                      {!usageSchema && (
+                        <Badge
+                          variant='secondary'
+                          className='bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300'
+                        >
+                          {tier.label || t('Default')}
+                        </Badge>
+                      )}
+                      {isMatched && (
+                        <Badge
+                          variant='secondary'
+                          className='bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300'
+                        >
+                          {t('Matched')}
+                        </Badge>
+                      )}
+                    </div>
+                    {condSummary && (
+                      <div className='text-muted-foreground mb-1.5 text-xs'>
+                        {condSummary}
+                      </div>
+                    )}
+                    <div
+                      className={cn(
+                        'grid gap-x-3 gap-y-1.5',
+                        visiblePriceFields.length > 1 && 'grid-cols-2'
+                      )}
+                    >
+                      {visiblePriceFields.map((field) => {
+                        const value = field.value(tier)
+                        return (
+                          <div key={field.id} className='min-w-0'>
+                            <div className='text-muted-foreground text-xs font-medium break-words whitespace-normal'>
+                              {breakdownPriceFieldLabel(
+                                field,
+                                t,
+                                tokenUnitLabel,
+                                i18n.language,
+                                unitInHeader
+                              )}
+                            </div>
+                            <div
+                              className={cn(
+                                'break-words font-mono',
+                                compact ? 'text-xs' : 'text-sm font-semibold'
+                              )}
+                            >
+                              {value > 0 ||
+                              ((field.showZero ||
+                                field.unit === 'request' ||
+                                field.unit === 'image') &&
+                                Number.isFinite(value))
+                                ? formatBreakdownPrice(
+                                    value,
+                                    field,
+                                    t,
+                                    taskPriceOptions,
+                                    i18n.language,
+                                    unitInHeader
+                                  )
+                                : '-'}
+                            </div>
                           </div>
-                          <div
-                            className={cn(
-                              'break-words font-mono',
-                              compact ? 'text-xs' : 'text-sm font-semibold'
-                            )}
-                          >
-                            {value > 0 ||
-                            ((field.showZero ||
-                              field.unit === 'request' ||
-                              field.unit === 'image') &&
-                              Number.isFinite(value))
-                              ? formatBreakdownPrice(
-                                  value,
-                                  field,
-                                  symbol,
-                                  rate,
-                                  t,
-                                  taskPriceOptions,
-                                  i18n.language
-                                )
-                              : '-'}
-                          </div>
-                        </div>
-                      )
-                    })}
+                        )
+                      })}
+                    </div>
                   </div>
-                </div>
-              )
-            })}
-          </div>
+                )
+              })}
+            </div>
+          )}
           <StaticDataTable
-            className='hidden rounded-none border-0 sm:block'
+            className={cn(
+              'rounded-none border-0',
+              !tableOnly && 'hidden sm:block'
+            )}
             tableClassName={
               compact
                 ? '[&_td]:text-xs [&_td_*]:text-xs [&_th]:text-xs [&_th_*]:text-xs'
@@ -676,7 +729,13 @@ export function DynamicPricingBreakdown({
               },
               ...visiblePriceFields.map((field) => ({
                 id: field.id,
-                header: breakdownPriceFieldLabel(field, t),
+                header: breakdownPriceFieldLabel(
+                  field,
+                  t,
+                  tokenUnitLabel,
+                  i18n.language,
+                  unitInHeader
+                ),
                 className: cn(
                   'text-muted-foreground py-2 text-right font-medium',
                   compact && 'h-8'
@@ -696,11 +755,10 @@ export function DynamicPricingBreakdown({
                       {formatBreakdownPrice(
                         value,
                         field,
-                        symbol,
-                        rate,
                         t,
                         taskPriceOptions,
-                        i18n.language
+                        i18n.language,
+                        unitInHeader
                       )}
                     </span>
                   ) : (

@@ -57,7 +57,7 @@ export type CatalogSortOptionConfig = {
   icon: CatalogSortIconKind
 }
 
-export const DEFAULT_CATALOG_SORT: SortOption = SORT_OPTIONS.TIME_DESC
+export const DEFAULT_CATALOG_SORT: SortOption = SORT_OPTIONS.NAME_DESC
 
 export const CATALOG_SORT_OPTIONS: readonly CatalogSortOptionConfig[] = [
   {

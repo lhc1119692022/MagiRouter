@@ -579,6 +579,7 @@ const AUDIT_TEMPLATES: Record<string, string> = {
   'violation_audit.allowlist_remove':
     'Removed user (ID: {{id}}) from violation audit allowlist',
   'violation_audit.settings_update': 'Updated violation audit settings',
+  'option.profit_analytics_update': 'Updated profit analytics cost settings',
   // Generic middleware fallback
   generic: '{{method}} {{route}}',
 }

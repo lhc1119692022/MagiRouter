@@ -250,6 +250,8 @@ func SetApiRouter(router *gin.Engine) {
 			optionRoute.PUT("/media_relay/overrides/:user_id", controller.UpsertMediaTrafficOverride)
 			optionRoute.DELETE("/media_relay/overrides/:user_id", controller.DeleteMediaTrafficOverride)
 			optionRoute.POST("/media_relay/usage/:user_id/reset", controller.ResetAdminUserMediaDailyTraffic)
+			optionRoute.GET("/profit_analytics", controller.GetProfitAnalyticsSettings)
+			optionRoute.PUT("/profit_analytics", controller.UpdateProfitAnalyticsSettings)
 		}
 
 		// Custom OAuth provider management (root only)
@@ -412,6 +414,10 @@ func SetApiRouter(router *gin.Engine) {
 
 		dataRoute := apiRouter.Group("/data")
 		dataRoute.GET("/perf-metrics/summary", middleware.DisableCache(), middleware.AdminAuth(), controller.GetDashboardPerfMetricsSummary)
+		dataRoute.GET("/profit", middleware.DisableCache(), middleware.AdminAuth(), controller.GetProfitAnalytics)
+		dataRoute.GET("/media_traffic", middleware.DisableCache(), middleware.AdminAuth(), controller.GetAdminMediaTrafficAnalytics)
+		dataRoute.GET("/media_traffic/objects", middleware.DisableCache(), middleware.AdminAuth(), controller.ListAdminMediaTrafficObjects)
+		dataRoute.GET("/media_traffic/overrides", middleware.DisableCache(), middleware.AdminAuth(), controller.ListAdminMediaTrafficOverrides)
 		dataRoute.GET("/", middleware.AdminAuth(), controller.GetAllQuotaDates)
 		dataRoute.GET("/users", middleware.AdminAuth(), controller.GetQuotaDatesByUser)
 		dataRoute.GET("/self", middleware.UserAuth(), controller.GetUserQuotaDates)

@@ -50,6 +50,7 @@ import { ZmModelCardGrid } from './components/zm-model-card-grid'
 import { ZmModelTable } from './components/zm-model-table'
 import {
   CATALOG_SORT_OPTIONS,
+  DEFAULT_CATALOG_SORT,
   FILTER_ALL,
   PRICE_MODES,
   QUOTA_TYPES,
@@ -173,7 +174,7 @@ export function Pricing() {
     hasActiveFilters,
     clearFilters,
     clearSearch,
-  } = useFilters(models, usableGroup, catalogReady)
+  } = useFilters(models, usableGroup, catalogReady, { groupRatio, vendors })
 
   const displayedModels = useMemo(() => {
     if (!selectedTasks.length) return filteredModels
@@ -199,8 +200,8 @@ export function Pricing() {
   )
 
   const facets = useMemo(
-    () => getCatalogFacets(models, usableGroup),
-    [models, usableGroup]
+    () => getCatalogFacets(models, usableGroup, { groupRatio, vendors }),
+    [models, usableGroup, groupRatio, vendors]
   )
   const hasExtraOptions =
     availableGroups.length > 0 || facets.quotaTypes.length > 0
@@ -237,6 +238,9 @@ export function Pricing() {
   const activeSortOption = useMemo(
     () =>
       CATALOG_SORT_OPTIONS.find((option) => option.value === sortBy) ??
+      CATALOG_SORT_OPTIONS.find(
+        (option) => option.value === DEFAULT_CATALOG_SORT
+      ) ??
       CATALOG_SORT_OPTIONS[0],
     [sortBy]
   )

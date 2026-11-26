@@ -174,6 +174,8 @@ var accessTokenRouteRules = map[string]accessTokenRouteRule{
 	"PUT /api/option/media_relay/overrides/:user_id":             accessTokenScopeRule("option:write"),
 	"DELETE /api/option/media_relay/overrides/:user_id":          accessTokenScopeRule("option:write"),
 	"POST /api/option/media_relay/usage/:user_id/reset":          accessTokenScopeRule("option:write"),
+	"GET /api/option/profit_analytics":                           accessTokenScopeRule("option:read"),
+	"PUT /api/option/profit_analytics":                           accessTokenScopeRule("option:write"),
 
 	// router/api-router.go: /api/custom-oauth-provider, /api/ratio_sync
 	"POST /api/custom-oauth-provider/discovery": accessTokenScopeRule("option:write"),
@@ -275,6 +277,10 @@ var accessTokenRouteRules = map[string]accessTokenRouteRule{
 	"GET /api/log/self/export":                       accessTokenScopeRule("usage:read"),
 	"GET /api/data/":                                 accessTokenScopeRule("log:read"),
 	"GET /api/data/perf-metrics/summary":             accessTokenScopeRule("log:read"),
+	"GET /api/data/profit":                           accessTokenScopeRule("log:read"),
+	"GET /api/data/media_traffic":                    accessTokenScopeRule("log:read"),
+	"GET /api/data/media_traffic/objects":            accessTokenScopeRule("log:read"),
+	"GET /api/data/media_traffic/overrides":          accessTokenScopeRule("log:read"),
 	"GET /api/data/users":                            accessTokenScopeRule("log:read"),
 	"GET /api/data/self":                             accessTokenScopeRule("usage:read"),
 	"GET /api/data/flow":                             accessTokenScopeRule("log:read"),

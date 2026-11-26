@@ -35,6 +35,7 @@ import {
   filterAndSortModels,
   filterByVendor,
   getCatalogFacets,
+  type CatalogFacetsOptions,
 } from '../lib/filters'
 import type { PriceMode, PricingModel, TokenUnit } from '../types'
 
@@ -59,10 +60,13 @@ function normalizeViewMode(value: unknown): ViewMode {
 export function useFilters(
   models: PricingModel[],
   usableGroups: Record<string, unknown>,
-  catalogReady: boolean
+  catalogReady: boolean,
+  facetOptions?: CatalogFacetsOptions
 ) {
   const search = useSearch({ from: '/pricing/' })
   const navigate = useNavigate({ from: '/pricing/' })
+  const groupRatio = facetOptions?.groupRatio
+  const vendors = facetOptions?.vendors
   const [filterState, setFilterState] = useState<FilterState>(() => ({
     search: search.search,
     sort: search.sort,
@@ -92,8 +96,10 @@ export function useFilters(
     [models, selectedVendors]
   )
   const availableGroups = useMemo(
-    () => getCatalogFacets(vendorModels, usableGroups).groups,
-    [vendorModels, usableGroups]
+    () =>
+      getCatalogFacets(vendorModels, usableGroups, { groupRatio, vendors })
+        .groups,
+    [vendorModels, usableGroups, groupRatio, vendors]
   )
   const groupFilter =
     search.group && availableGroups.includes(search.group)

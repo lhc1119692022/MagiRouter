@@ -98,6 +98,8 @@ export const SIDEBAR_MODULES_DEFAULT: SidebarModulesAdminConfig = {
     task_plugins: true,
     request_processing: true,
     violation_audit: true,
+    profit_analytics: true,
+    media_traffic: true,
   },
 }
 

@@ -214,8 +214,10 @@ it.each([false, true])(
       </QueryClientProvider>
     )
     await act(() => i18next.changeLanguage('zhCN'))
-    expect(screen.getAllByText('图片生成单价')).toHaveLength(2)
-    expect(screen.getAllByText(configured ? '/ 张' : '张')).toHaveLength(2)
+    expect(screen.getAllByText('图片生成单价')).toHaveLength(configured ? 2 : 1)
+    expect(screen.getAllByText(configured ? '/ 张' : '张')).toHaveLength(
+      configured ? 2 : 1
+    )
     expect(screen.queryByText('image_count')).not.toBeInTheDocument()
     if (configured) {
       expect(screen.getByText('$0.2')).toBeVisible()

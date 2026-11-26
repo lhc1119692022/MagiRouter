@@ -36,7 +36,7 @@ import {
   type QuotaTypeOption,
   type SortOption,
 } from '../constants'
-import type { PriceMode, PricingModel } from '../types'
+import type { PriceMode, PricingModel, PricingVendor } from '../types'
 import {
   getCurrentTimePricingTiers,
   splitBillingExprAndRequestRules,
@@ -517,9 +517,170 @@ export function matchesTaskFilter(
   )
 }
 
+const GROUP_SERIES_DELIMITER = /[\s\-_/「」【】[\]()（）·:：|]+/
+
+export type CatalogFacetsOptions = {
+  groupRatio?: Record<string, number>
+  vendors?: readonly PricingVendor[]
+}
+
+export function sortCatalogGroups(
+  groupNames: readonly string[],
+  models: readonly PricingModel[],
+  options?: CatalogFacetsOptions
+): string[] {
+  if (groupNames.length <= 1) return [...groupNames]
+
+  const ratioMap =
+    options?.groupRatio ??
+    models.find((model) => model.group_ratio)?.group_ratio
+  const vendorIndexById = new Map<number, number>()
+  const vendorNameById = new Map<number, string>()
+  const vendorIndexByName = new Map<string, number>()
+
+  for (const [index, vendor] of (options?.vendors ?? []).entries()) {
+    vendorIndexById.set(vendor.id, index)
+    vendorNameById.set(vendor.id, vendor.name)
+    vendorIndexByName.set(vendor.name, index)
+  }
+
+  const visibleSet = new Set(groupNames)
+  const groupVendors = new Map<
+    string,
+    Map<string, { order: number; label: string }>
+  >()
+
+  for (const model of models) {
+    let vendorKey: string | undefined
+    let vendorOrder = Number.POSITIVE_INFINITY
+    let vendorLabel = ''
+
+    if (model.vendor_id != null && model.vendor_id !== 0) {
+      vendorKey = `id:${model.vendor_id}`
+      vendorOrder =
+        vendorIndexById.get(model.vendor_id) ?? Number.POSITIVE_INFINITY
+      vendorLabel =
+        model.vendor_name ||
+        vendorNameById.get(model.vendor_id) ||
+        String(model.vendor_id)
+    } else if (model.vendor_name) {
+      vendorKey = `name:${model.vendor_name}`
+      vendorOrder =
+        vendorIndexByName.get(model.vendor_name) ?? Number.POSITIVE_INFINITY
+      vendorLabel = model.vendor_name
+    }
+
+    if (!vendorKey) continue
+
+    for (const group of model.enable_groups ?? []) {
+      if (!visibleSet.has(group)) continue
+      let vendorsForGroup = groupVendors.get(group)
+      if (!vendorsForGroup) {
+        vendorsForGroup = new Map()
+        groupVendors.set(group, vendorsForGroup)
+      }
+      if (!vendorsForGroup.has(vendorKey)) {
+        vendorsForGroup.set(vendorKey, {
+          order: vendorOrder,
+          label: vendorLabel,
+        })
+      }
+    }
+  }
+
+  const groupMeta = new Map<
+    string,
+    {
+      bucketKind: number
+      bucketKey: string
+      vendorOrder: number
+      vendorLabel: string
+      seriesKey: string
+      ratio: number
+    }
+  >()
+  const seriesMinRatio = new Map<string, number>()
+
+  for (const groupName of groupNames) {
+    const vendorsForGroup = groupVendors.get(groupName)
+    let bucketKind = 2
+    let bucketKey = 'none'
+    let vendorOrder = Number.POSITIVE_INFINITY
+    let vendorLabel = ''
+
+    if (vendorsForGroup && vendorsForGroup.size === 1) {
+      const [[onlyVendorKey, vendorInfo]] = vendorsForGroup.entries()
+      bucketKind = 0
+      bucketKey = `vendor:${onlyVendorKey}`
+      vendorOrder = vendorInfo.order
+      vendorLabel = vendorInfo.label
+    } else if (vendorsForGroup && vendorsForGroup.size > 1) {
+      bucketKind = 1
+      bucketKey = 'shared'
+    }
+
+    const trimmed = groupName.trim()
+    const firstSegment = trimmed.split(GROUP_SERIES_DELIMITER).find(Boolean)
+    const seriesKey = (firstSegment ?? trimmed).toLowerCase()
+    const rawRatio = ratioMap?.[groupName]
+    const ratio =
+      typeof rawRatio === 'number' && Number.isFinite(rawRatio)
+        ? rawRatio
+        : Number.POSITIVE_INFINITY
+
+    groupMeta.set(groupName, {
+      bucketKind,
+      bucketKey,
+      vendorOrder,
+      vendorLabel,
+      seriesKey,
+      ratio,
+    })
+
+    const clusterKey = `${bucketKey}\0${seriesKey}`
+    const currentMin = seriesMinRatio.get(clusterKey)
+    if (currentMin === undefined || ratio < currentMin) {
+      seriesMinRatio.set(clusterKey, ratio)
+    }
+  }
+
+  return [...groupNames].sort((first, second) => {
+    const metaA = groupMeta.get(first)
+    const metaB = groupMeta.get(second)
+    if (!metaA || !metaB) return first.localeCompare(second)
+
+    if (metaA.bucketKind !== metaB.bucketKind) {
+      return metaA.bucketKind - metaB.bucketKind
+    }
+    if (metaA.bucketKind === 0) {
+      if (metaA.vendorOrder !== metaB.vendorOrder) {
+        return metaA.vendorOrder - metaB.vendorOrder
+      }
+      const vendorDiff = metaA.vendorLabel.localeCompare(metaB.vendorLabel)
+      if (vendorDiff !== 0) return vendorDiff
+    }
+
+    const minA =
+      seriesMinRatio.get(`${metaA.bucketKey}\0${metaA.seriesKey}`) ??
+      Number.POSITIVE_INFINITY
+    const minB =
+      seriesMinRatio.get(`${metaB.bucketKey}\0${metaB.seriesKey}`) ??
+      Number.POSITIVE_INFINITY
+    if (minA !== minB) return minA - minB
+
+    const seriesDiff = metaA.seriesKey.localeCompare(metaB.seriesKey)
+    if (seriesDiff !== 0) return seriesDiff
+
+    if (metaA.ratio !== metaB.ratio) return metaA.ratio - metaB.ratio
+
+    return first.localeCompare(second)
+  })
+}
+
 export function getCatalogFacets(
   models: readonly PricingModel[],
-  usableGroups: Record<string, unknown>
+  usableGroups: Record<string, unknown>,
+  options?: CatalogFacetsOptions
 ) {
   const categories = new Set<ModelCapabilityCategory>()
   const groups = new Set<string>()
@@ -530,13 +691,14 @@ export function getCatalogFacets(
     const quota = getModelQuotaType(model)
     if (quota) quotaTypes.add(quota)
   }
+  const visibleGroups = Object.keys(usableGroups).filter(
+    (group) => !EXCLUDED_GROUPS.includes(group) && groups.has(group)
+  )
   return {
     categories: MODEL_CAPABILITY_CATEGORIES.filter((category) =>
       categories.has(category)
     ),
-    groups: Object.keys(usableGroups).filter(
-      (group) => !EXCLUDED_GROUPS.includes(group) && groups.has(group)
-    ),
+    groups: sortCatalogGroups(visibleGroups, models, options),
     quotaTypes: [
       QUOTA_TYPES.TOKEN,
       QUOTA_TYPES.REQUEST,

@@ -138,6 +138,20 @@ export const sidebarIcons = {
       <line x1='6' y1='17.5' x2='6.01' y2='17.5' />
     </>
   ),
+  'admin-profit': glyph(
+    <>
+      <path d='M3 3v18h18' />
+      <path d='m19 9-5 5-4-4-3 3' />
+      <path d='M16 9h3v3' />
+    </>
+  ),
+  'admin-media-traffic': glyph(
+    <>
+      <path d='M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z' />
+      <path d='M12 12v5' />
+      <path d='m9.5 14.5 2.5-2.5 2.5 2.5' />
+    </>
+  ),
   'admin-settings': glyph(
     <>
       <circle cx='12' cy='12' r='3' />

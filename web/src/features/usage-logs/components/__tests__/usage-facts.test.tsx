@@ -215,8 +215,8 @@ test('shows explicitly free cache writes as zero in the tier table', () => {
     table.getByRole('columnheader', { name: 'Cache Write (12h)' })
   ).toBeVisible()
   expect(table.getAllByRole('cell').slice(-2)).toEqual([
-    expect.objectContaining({ textContent: '$0.0000' }),
-    expect.objectContaining({ textContent: '$0.0000' }),
+    expect.objectContaining({ textContent: '$0' }),
+    expect.objectContaining({ textContent: '$0' }),
   ])
   queryClient.clear()
 })

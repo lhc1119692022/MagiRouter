@@ -1,7 +1,10 @@
 package model
 
 import (
+	"cmp"
 	"errors"
+	"math"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -510,4 +513,541 @@ func ListMediaTrafficOverrides(keyword string, now time.Time) ([]MediaTrafficOve
 		})
 	}
 	return views, nil
+}
+
+type MediaTrafficPublicConfig struct {
+	Enabled                 bool           `json:"enabled"`
+	IsReady                 bool           `json:"is_ready"`
+	Provider                string         `json:"provider"`
+	Region                  string         `json:"region"`
+	Bucket                  string         `json:"bucket"`
+	RetentionDays           int            `json:"retention_days"`
+	MaxFileSizeMB           int            `json:"max_file_size_mb"`
+	DefaultDailyTrafficMB   int            `json:"default_daily_traffic_mb"`
+	GroupDailyBonusMB       map[string]int `json:"group_daily_bonus_mb"`
+	ActiveGlobalTempBonusMB int            `json:"active_global_temp_bonus_mb"`
+	TempGlobalExpiresAt     int64          `json:"temp_global_expires_at"`
+	TempGlobalNote          string         `json:"temp_global_note"`
+	TrafficDate             string         `json:"traffic_date"`
+	ResetAt                 int64          `json:"reset_at"`
+}
+
+type MediaTrafficAnalyticsSummary struct {
+	Days                 int    `json:"days"`
+	StartDate            string `json:"start_date"`
+	EndDate              string `json:"end_date"`
+	TodayUsedBytes       int64  `json:"today_used_bytes"`
+	YesterdayUsedBytes   int64  `json:"yesterday_used_bytes"`
+	TodayUploadCount     int64  `json:"today_upload_count"`
+	TodayActiveUsers     int    `json:"today_active_users"`
+	RangeUsedBytes       int64  `json:"range_used_bytes"`
+	RangeUploadCount     int64  `json:"range_upload_count"`
+	RangeActiveUsers     int    `json:"range_active_users"`
+	AvgDailyBytes        int64  `json:"avg_daily_bytes"`
+	PeakDailyBytes       int64  `json:"peak_daily_bytes"`
+	PeakDate             string `json:"peak_date"`
+	ActiveObjectsCount   int64  `json:"active_objects_count"`
+	ActiveObjectsBytes   int64  `json:"active_objects_bytes"`
+	ReadyObjectsCount    int64  `json:"ready_objects_count"`
+	PendingObjectsCount  int64  `json:"pending_objects_count"`
+	AbortedObjectsCount  int64  `json:"aborted_objects_count"`
+	ActiveOverridesCount int    `json:"active_overrides_count"`
+	NearLimitUsersCount  int    `json:"near_limit_users_count"`
+}
+
+type MediaDailyTrendPoint struct {
+	Date        string `json:"date"`
+	UsedBytes   int64  `json:"used_bytes"`
+	UploadCount int64  `json:"upload_count"`
+	ActiveUsers int    `json:"active_users"`
+}
+
+type MediaContentTypeStat struct {
+	Category     string  `json:"category"`
+	Count        int64   `json:"count"`
+	TotalBytes   int64   `json:"total_bytes"`
+	SharePercent float64 `json:"share_percent"`
+}
+
+type MediaUserTrafficRankItem struct {
+	UserId              int     `json:"user_id"`
+	Username            string  `json:"username"`
+	DisplayName         string  `json:"display_name"`
+	Group               string  `json:"group"`
+	TodayUsedBytes      int64   `json:"today_used_bytes"`
+	TodayUploadCount    int     `json:"today_upload_count"`
+	EffectiveDailyBytes int64   `json:"effective_daily_bytes"`
+	TodayUsagePercent   float64 `json:"today_usage_percent"`
+	RangeUsedBytes      int64   `json:"range_used_bytes"`
+	RangeUploadCount    int     `json:"range_upload_count"`
+	ActiveOverrideBytes int64   `json:"active_override_bytes"`
+	OverrideExpiresAt   int64   `json:"override_expires_at"`
+	OverrideNote        string  `json:"override_note"`
+}
+
+type MediaTrafficAnalyticsReport struct {
+	Config       MediaTrafficPublicConfig     `json:"config"`
+	Summary      MediaTrafficAnalyticsSummary `json:"summary"`
+	DailyTrend   []MediaDailyTrendPoint       `json:"daily_trend"`
+	ContentTypes []MediaContentTypeStat       `json:"content_types"`
+	TopUsers     []MediaUserTrafficRankItem   `json:"top_users"`
+}
+
+type MediaRelayObjectAdminView struct {
+	Id          int    `json:"id"`
+	UserId      int    `json:"user_id"`
+	Username    string `json:"username"`
+	DisplayName string `json:"display_name"`
+	Group       string `json:"group"`
+	ObjectKey   string `json:"object_key"`
+	FileName    string `json:"file_name"`
+	ContentType string `json:"content_type"`
+	Category    string `json:"category"`
+	SizeBytes   int64  `json:"size_bytes"`
+	Status      string `json:"status"`
+	TrafficDate string `json:"traffic_date"`
+	CreatedAt   int64  `json:"created_at"`
+	ExpiresAt   int64  `json:"expires_at"`
+	Expired     bool   `json:"expired"`
+}
+
+func classifyMediaContentType(contentType string) string {
+	lower := strings.ToLower(strings.TrimSpace(contentType))
+	switch {
+	case strings.HasPrefix(lower, "image/"):
+		return "image"
+	case strings.HasPrefix(lower, "video/"):
+		return "video"
+	case strings.HasPrefix(lower, "audio/"):
+		return "audio"
+	case lower == "application/pdf" ||
+		strings.HasPrefix(lower, "text/") ||
+		strings.Contains(lower, "document") ||
+		strings.Contains(lower, "word") ||
+		strings.Contains(lower, "sheet") ||
+		strings.Contains(lower, "presentation"):
+		return "document"
+	default:
+		return "other"
+	}
+}
+
+func GetAdminMediaTrafficAnalytics(days int, userKeyword string, now time.Time) (*MediaTrafficAnalyticsReport, error) {
+	if DB == nil {
+		return nil, errors.New("database is not initialized")
+	}
+	if days <= 0 {
+		days = 30
+	}
+	if days > 90 {
+		days = 90
+	}
+	cfg := operation_setting.GetMediaRelaySettingSnapshot()
+	todayDate, resetAt := operation_setting.MediaTrafficDayWindow(now)
+	nowUnix := now.Unix()
+	globalBonusBytes, globalExpiresAt, globalNote := cfg.ActiveGlobalTempBonusBytes(now)
+
+	loc := loadProfitLocation()
+	todayParsed, parseErr := time.ParseInLocation("2006-01-02", todayDate, loc)
+	if parseErr != nil {
+		todayParsed = now.In(loc)
+	}
+	startDay := todayParsed.AddDate(0, 0, -(days - 1))
+	startDate := startDay.Format("2006-01-02")
+	yesterdayDate := todayParsed.AddDate(0, 0, -1).Format("2006-01-02")
+
+	dailyOrder := make([]string, 0, days)
+	dailyMap := make(map[string]*MediaDailyTrendPoint, days)
+	for offset := 0; offset < days; offset++ {
+		dateKey := startDay.AddDate(0, 0, offset).Format("2006-01-02")
+		dailyOrder = append(dailyOrder, dateKey)
+		dailyMap[dateKey] = &MediaDailyTrendPoint{Date: dateKey}
+	}
+
+	queryStartDate := startDate
+	if yesterdayDate < queryStartDate {
+		queryStartDate = yesterdayDate
+	}
+	var trafficRows []MediaDailyTraffic
+	if err := DB.Where("traffic_date >= ? AND traffic_date <= ?", queryStartDate, todayDate).
+		Find(&trafficRows).Error; err != nil {
+		return nil, err
+	}
+
+	type userTrafficAgg struct {
+		todayUsed    int64
+		todayUploads int
+		rangeUsed    int64
+		rangeUploads int
+	}
+	userAggMap := make(map[int]*userTrafficAgg)
+	dayActiveUsers := make(map[string]map[int]struct{}, days)
+	rangeActiveUserSet := make(map[int]struct{})
+
+	summary := MediaTrafficAnalyticsSummary{
+		Days:      days,
+		StartDate: startDate,
+		EndDate:   todayDate,
+	}
+
+	for _, row := range trafficRows {
+		if row.TrafficDate == yesterdayDate {
+			summary.YesterdayUsedBytes += row.UsedBytes
+		}
+		if row.TrafficDate < startDate || row.TrafficDate > todayDate {
+			continue
+		}
+		if row.UsedBytes > 0 || row.UploadCount > 0 {
+			if row.TrafficDate == todayDate {
+				summary.TodayUsedBytes += row.UsedBytes
+				summary.TodayUploadCount += int64(row.UploadCount)
+			}
+			summary.RangeUsedBytes += row.UsedBytes
+			summary.RangeUploadCount += int64(row.UploadCount)
+
+			if point, ok := dailyMap[row.TrafficDate]; ok {
+				point.UsedBytes += row.UsedBytes
+				point.UploadCount += int64(row.UploadCount)
+				if dayActiveUsers[row.TrafficDate] == nil {
+					dayActiveUsers[row.TrafficDate] = make(map[int]struct{})
+				}
+				dayActiveUsers[row.TrafficDate][row.UserId] = struct{}{}
+			}
+			rangeActiveUserSet[row.UserId] = struct{}{}
+
+			agg := userAggMap[row.UserId]
+			if agg == nil {
+				agg = &userTrafficAgg{}
+				userAggMap[row.UserId] = agg
+			}
+			agg.rangeUsed += row.UsedBytes
+			agg.rangeUploads += row.UploadCount
+			if row.TrafficDate == todayDate {
+				agg.todayUsed += row.UsedBytes
+				agg.todayUploads += row.UploadCount
+			}
+		}
+	}
+
+	summary.RangeActiveUsers = len(rangeActiveUserSet)
+	if todayUsers := dayActiveUsers[todayDate]; todayUsers != nil {
+		summary.TodayActiveUsers = len(todayUsers)
+	}
+
+	dailyTrend := make([]MediaDailyTrendPoint, 0, len(dailyOrder))
+	for _, dateKey := range dailyOrder {
+		point := dailyMap[dateKey]
+		if users := dayActiveUsers[dateKey]; users != nil {
+			point.ActiveUsers = len(users)
+		}
+		if point.UsedBytes > summary.PeakDailyBytes {
+			summary.PeakDailyBytes = point.UsedBytes
+			summary.PeakDate = dateKey
+		}
+		dailyTrend = append(dailyTrend, *point)
+	}
+	summary.AvgDailyBytes = summary.RangeUsedBytes / int64(max(1, days))
+
+	// Active (ready & non-expired) stored object footprint snapshot.
+	var activeFootprint struct {
+		Count int64
+		Bytes int64
+	}
+	if err := DB.Model(&MediaRelayObject{}).
+		Select("COUNT(*) AS count, COALESCE(SUM(size_bytes), 0) AS bytes").
+		Where("status = ? AND (expires_at = 0 OR expires_at > ?)", MediaRelayObjectStatusReady, nowUnix).
+		Scan(&activeFootprint).Error; err != nil {
+		return nil, err
+	}
+	summary.ActiveObjectsCount = activeFootprint.Count
+	summary.ActiveObjectsBytes = activeFootprint.Bytes
+
+	// Range object stats by status and content type.
+	type objectRangeRow struct {
+		Status      string
+		ContentType string
+		SizeBytes   int64
+	}
+	var objectRows []objectRangeRow
+	if err := DB.Model(&MediaRelayObject{}).
+		Select("status, content_type, size_bytes").
+		Where("traffic_date >= ? AND traffic_date <= ?", startDate, todayDate).
+		Scan(&objectRows).Error; err != nil {
+		return nil, err
+	}
+
+	categoryMap := make(map[string]*MediaContentTypeStat)
+	var totalClassifiedBytes int64
+	for _, row := range objectRows {
+		switch row.Status {
+		case MediaRelayObjectStatusReady:
+			summary.ReadyObjectsCount++
+		case MediaRelayObjectStatusPending:
+			summary.PendingObjectsCount++
+		case MediaRelayObjectStatusAborted:
+			summary.AbortedObjectsCount++
+		}
+		if row.Status == MediaRelayObjectStatusAborted {
+			continue
+		}
+		category := classifyMediaContentType(row.ContentType)
+		stat := categoryMap[category]
+		if stat == nil {
+			stat = &MediaContentTypeStat{Category: category}
+			categoryMap[category] = stat
+		}
+		stat.Count++
+		stat.TotalBytes += row.SizeBytes
+		totalClassifiedBytes += row.SizeBytes
+	}
+
+	contentTypes := make([]MediaContentTypeStat, 0, len(categoryMap))
+	for _, stat := range categoryMap {
+		if totalClassifiedBytes > 0 {
+			stat.SharePercent = math.Round((float64(stat.TotalBytes)/float64(totalClassifiedBytes))*10000) / 100
+		}
+		contentTypes = append(contentTypes, *stat)
+	}
+	slices.SortFunc(contentTypes, func(a, b MediaContentTypeStat) int {
+		if res := cmp.Compare(b.TotalBytes, a.TotalBytes); res != 0 {
+			return res
+		}
+		return cmp.Compare(a.Category, b.Category)
+	})
+
+	// Overrides & user enrichment for top users ranking.
+	var overrides []MediaTrafficOverride
+	if err := DB.Find(&overrides).Error; err != nil {
+		return nil, err
+	}
+	overrideMap := make(map[int]*MediaTrafficOverride, len(overrides))
+	for idx := range overrides {
+		row := overrides[idx]
+		overrideMap[row.UserId] = &row
+		if row.ExtraDailyBytes > 0 && (row.ExpiresAt == 0 || row.ExpiresAt > nowUnix) {
+			summary.ActiveOverridesCount++
+		}
+	}
+
+	userIds := make([]int, 0, len(userAggMap))
+	for userId := range userAggMap {
+		userIds = append(userIds, userId)
+	}
+	userMap := make(map[int]User, len(userIds))
+	if len(userIds) > 0 {
+		var users []User
+		if err := DB.Select("id", "username", "display_name", "group").
+			Where("id IN ?", userIds).
+			Find(&users).Error; err != nil {
+			return nil, err
+		}
+		for _, user := range users {
+			userMap[user.Id] = user
+		}
+	}
+
+	needle := strings.ToLower(strings.TrimSpace(userKeyword))
+	topUsers := make([]MediaUserTrafficRankItem, 0, len(userAggMap))
+	for userId, agg := range userAggMap {
+		user := userMap[userId]
+		override := overrideMap[userId]
+		quotaSummary := computeMediaTrafficSummary(cfg, user.Group, MediaDailyTraffic{
+			UserId:      userId,
+			TrafficDate: todayDate,
+			UsedBytes:   agg.todayUsed,
+			UploadCount: agg.todayUploads,
+		}, override, now)
+
+		usagePercent := 0.0
+		if quotaSummary.EffectiveDailyBytes > 0 {
+			usagePercent = math.Round((float64(agg.todayUsed)/float64(quotaSummary.EffectiveDailyBytes))*10000) / 100
+			if usagePercent >= 80 {
+				summary.NearLimitUsersCount++
+			}
+		}
+
+		if needle != "" {
+			idStr := strconv.Itoa(userId)
+			if !strings.Contains(idStr, needle) &&
+				!strings.Contains(strings.ToLower(user.Username), needle) &&
+				!strings.Contains(strings.ToLower(user.DisplayName), needle) &&
+				!strings.Contains(strings.ToLower(quotaSummary.GroupName), needle) {
+				continue
+			}
+		}
+
+		topUsers = append(topUsers, MediaUserTrafficRankItem{
+			UserId:              userId,
+			Username:            user.Username,
+			DisplayName:         user.DisplayName,
+			Group:               quotaSummary.GroupName,
+			TodayUsedBytes:      agg.todayUsed,
+			TodayUploadCount:    agg.todayUploads,
+			EffectiveDailyBytes: quotaSummary.EffectiveDailyBytes,
+			TodayUsagePercent:   usagePercent,
+			RangeUsedBytes:      agg.rangeUsed,
+			RangeUploadCount:    agg.rangeUploads,
+			ActiveOverrideBytes: quotaSummary.UserBonusBytes,
+			OverrideExpiresAt:   quotaSummary.UserBonusExpiresAt,
+			OverrideNote:        quotaSummary.UserBonusNote,
+		})
+	}
+	slices.SortFunc(topUsers, func(a, b MediaUserTrafficRankItem) int {
+		if res := cmp.Compare(b.RangeUsedBytes, a.RangeUsedBytes); res != 0 {
+			return res
+		}
+		if res := cmp.Compare(b.TodayUsedBytes, a.TodayUsedBytes); res != 0 {
+			return res
+		}
+		return cmp.Compare(a.UserId, b.UserId)
+	})
+	if len(topUsers) > 100 {
+		topUsers = topUsers[:100]
+	}
+
+	return &MediaTrafficAnalyticsReport{
+		Config: MediaTrafficPublicConfig{
+			Enabled:                 cfg.Enabled,
+			IsReady:                 cfg.IsReady(),
+			Provider:                cfg.Provider,
+			Region:                  cfg.Region,
+			Bucket:                  cfg.Bucket,
+			RetentionDays:           cfg.RetentionDays,
+			MaxFileSizeMB:           cfg.MaxFileSizeMB,
+			DefaultDailyTrafficMB:   cfg.DefaultDailyTrafficMB,
+			GroupDailyBonusMB:       cfg.GroupDailyBonusMB,
+			ActiveGlobalTempBonusMB: int(globalBonusBytes / operation_setting.BytesPerMiB),
+			TempGlobalExpiresAt:     globalExpiresAt,
+			TempGlobalNote:          globalNote,
+			TrafficDate:             todayDate,
+			ResetAt:                 resetAt,
+		},
+		Summary:      summary,
+		DailyTrend:   dailyTrend,
+		ContentTypes: contentTypes,
+		TopUsers:     topUsers,
+	}, nil
+}
+
+func ListAdminMediaRelayObjects(page, pageSize int, status, category, keyword string, now time.Time) ([]MediaRelayObjectAdminView, int64, error) {
+	if DB == nil {
+		return nil, 0, errors.New("database is not initialized")
+	}
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+
+	tx := DB.Model(&MediaRelayObject{})
+	normalizedStatus := strings.ToLower(strings.TrimSpace(status))
+	switch normalizedStatus {
+	case MediaRelayObjectStatusReady, MediaRelayObjectStatusPending, MediaRelayObjectStatusAborted:
+		tx = tx.Where("status = ?", normalizedStatus)
+	}
+
+	normalizedCategory := strings.ToLower(strings.TrimSpace(category))
+	switch normalizedCategory {
+	case "image":
+		tx = tx.Where("LOWER(content_type) LIKE ?", "image/%")
+	case "video":
+		tx = tx.Where("LOWER(content_type) LIKE ?", "video/%")
+	case "audio":
+		tx = tx.Where("LOWER(content_type) LIKE ?", "audio/%")
+	case "document":
+		tx = tx.Where("(LOWER(content_type) = ? OR LOWER(content_type) LIKE ? OR LOWER(content_type) LIKE ? OR LOWER(content_type) LIKE ? OR LOWER(content_type) LIKE ? OR LOWER(content_type) LIKE ?)",
+			"application/pdf", "text/%", "%document%", "%word%", "%sheet%", "%presentation%")
+	case "other":
+		tx = tx.Where("LOWER(content_type) NOT LIKE ? AND LOWER(content_type) NOT LIKE ? AND LOWER(content_type) NOT LIKE ? AND LOWER(content_type) <> ? AND LOWER(content_type) NOT LIKE ? AND LOWER(content_type) NOT LIKE ? AND LOWER(content_type) NOT LIKE ? AND LOWER(content_type) NOT LIKE ? AND LOWER(content_type) NOT LIKE ?",
+			"image/%", "video/%", "audio/%", "application/pdf", "text/%", "%document%", "%word%", "%sheet%", "%presentation%")
+	}
+
+	trimmedKeyword := strings.TrimSpace(keyword)
+	if trimmedKeyword != "" {
+		lowerPattern := "%" + strings.ToLower(trimmedKeyword) + "%"
+		var matchedUserIds []int
+		userSearch := DB.Model(&User{}).Select("id").Where("LOWER(username) LIKE ? OR LOWER(display_name) LIKE ?", lowerPattern, lowerPattern)
+		if parsedID, err := strconv.Atoi(trimmedKeyword); err == nil && parsedID > 0 {
+			userSearch = userSearch.Or("id = ?", parsedID)
+		}
+		_ = userSearch.Pluck("id", &matchedUserIds).Error
+
+		if len(matchedUserIds) > 0 {
+			tx = tx.Where("(LOWER(file_name) LIKE ? OR LOWER(object_key) LIKE ? OR LOWER(content_type) LIKE ? OR user_id IN ?)",
+				lowerPattern, lowerPattern, lowerPattern, matchedUserIds)
+		} else if parsedID, err := strconv.Atoi(trimmedKeyword); err == nil && parsedID > 0 {
+			tx = tx.Where("(LOWER(file_name) LIKE ? OR LOWER(object_key) LIKE ? OR LOWER(content_type) LIKE ? OR user_id = ?)",
+				lowerPattern, lowerPattern, lowerPattern, parsedID)
+		} else {
+			tx = tx.Where("(LOWER(file_name) LIKE ? OR LOWER(object_key) LIKE ? OR LOWER(content_type) LIKE ?)",
+				lowerPattern, lowerPattern, lowerPattern)
+		}
+	}
+
+	var total int64
+	if err := tx.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	if total == 0 {
+		return []MediaRelayObjectAdminView{}, 0, nil
+	}
+
+	var objects []MediaRelayObject
+	if err := tx.Order("id DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&objects).Error; err != nil {
+		return nil, 0, err
+	}
+
+	userIdSet := make(map[int]struct{}, len(objects))
+	userIds := make([]int, 0, len(objects))
+	for _, obj := range objects {
+		if obj.UserId > 0 {
+			if _, seen := userIdSet[obj.UserId]; !seen {
+				userIdSet[obj.UserId] = struct{}{}
+				userIds = append(userIds, obj.UserId)
+			}
+		}
+	}
+	userMap := make(map[int]User, len(userIds))
+	if len(userIds) > 0 {
+		var users []User
+		if err := DB.Select("id", "username", "display_name", "group").
+			Where("id IN ?", userIds).
+			Find(&users).Error; err == nil {
+			for _, user := range users {
+				userMap[user.Id] = user
+			}
+		}
+	}
+
+	nowUnix := now.Unix()
+	views := make([]MediaRelayObjectAdminView, 0, len(objects))
+	for _, obj := range objects {
+		user := userMap[obj.UserId]
+		groupName := strings.TrimSpace(user.Group)
+		if groupName == "" {
+			groupName = "default"
+		}
+		views = append(views, MediaRelayObjectAdminView{
+			Id:          obj.Id,
+			UserId:      obj.UserId,
+			Username:    user.Username,
+			DisplayName: user.DisplayName,
+			Group:       groupName,
+			ObjectKey:   obj.ObjectKey,
+			FileName:    obj.FileName,
+			ContentType: obj.ContentType,
+			Category:    classifyMediaContentType(obj.ContentType),
+			SizeBytes:   obj.SizeBytes,
+			Status:      obj.Status,
+			TrafficDate: obj.TrafficDate,
+			CreatedAt:   obj.CreatedAt,
+			ExpiresAt:   obj.ExpiresAt,
+			Expired:     obj.ExpiresAt > 0 && obj.ExpiresAt <= nowUnix,
+		})
+	}
+	return views, total, nil
 }

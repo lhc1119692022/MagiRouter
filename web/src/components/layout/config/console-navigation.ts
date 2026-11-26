@@ -137,6 +137,12 @@ export function buildConsoleNavigation(
                 t('Models & operations'),
                 '/models/deployments'
               ),
+              entry('admin-profit', t('Profit Analysis'), '/profit-analytics'),
+              entry(
+                'admin-media-traffic',
+                t('Media Traffic'),
+                '/media-traffic'
+              ),
               ...(root
                 ? [
                     entry(

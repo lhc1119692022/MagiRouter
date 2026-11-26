@@ -64,6 +64,8 @@ export type DynamicPriceOptions = {
   groupRatioMultiplier?: number
   usageSchema?: BillingUsageSchema
   now?: Date
+  digitsLarge?: number
+  digitsSmall?: number
 }
 
 export type DynamicPriceLabelKind = 'i18n' | 'schema'
@@ -238,8 +240,12 @@ export function formatDynamicUnitPrice(
 
   return formatBillingCurrencyFromUSD(displayPrice, {
     showSymbol: options.showCurrencySymbol ?? true,
-    digitsLarge: 4,
-    digitsSmall: 6,
+    digitsLarge: options.digitsLarge ?? 2,
+    digitsSmall:
+      options.digitsSmall ??
+      (options.tokenUnit === 'K' || (displayPrice > 0 && displayPrice < 0.001)
+        ? 6
+        : 4),
     abbreviate: false,
   })
 }
@@ -270,8 +276,9 @@ export function formatTaskUsageUnitPrice(
 
   return formatBillingCurrencyFromUSD(displayPrice, {
     showSymbol: options.showCurrencySymbol ?? true,
-    digitsLarge: 4,
-    digitsSmall: 6,
+    digitsLarge: options.digitsLarge ?? 4,
+    digitsSmall:
+      options.digitsSmall ?? (displayPrice > 0 && displayPrice < 0.001 ? 6 : 4),
     abbreviate: false,
   })
 }

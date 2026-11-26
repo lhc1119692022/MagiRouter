@@ -30,6 +30,8 @@ const routes: Record<string, SidebarModuleRef> = {
   '/task-plugins': ['admin', 'task_plugins'],
   '/request-processing': ['admin', 'request_processing'],
   '/violation-audit': ['admin', 'violation_audit'],
+  '/profit-analytics': ['admin', 'profit_analytics'],
+  '/media-traffic': ['admin', 'media_traffic'],
   '/system-settings': ['admin', 'setting'],
   '/system-settings/site': ['admin', 'setting'],
 }

@@ -44,10 +44,12 @@ import { Route as AuthenticatedDashboardIndexRouteImport } from './routes/_authe
 import { Route as AuthenticatedDashboardSectionRouteImport } from './routes/_authenticated/dashboard/$section'
 import { Route as AuthenticatedErrorsErrorRouteImport } from './routes/_authenticated/errors/$error'
 import { Route as AuthenticatedKeysIndexRouteImport } from './routes/_authenticated/keys/index'
+import { Route as AuthenticatedMediaTrafficIndexRouteImport } from './routes/_authenticated/media-traffic/index'
 import { Route as AuthenticatedModelsIndexRouteImport } from './routes/_authenticated/models/index'
 import { Route as AuthenticatedModelsSectionRouteImport } from './routes/_authenticated/models/$section'
 import { Route as AuthenticatedPlaygroundIndexRouteImport } from './routes/_authenticated/playground/index'
 import { Route as AuthenticatedProfileIndexRouteImport } from './routes/_authenticated/profile/index'
+import { Route as AuthenticatedProfitAnalyticsIndexRouteImport } from './routes/_authenticated/profit-analytics/index'
 import { Route as AuthenticatedRedemptionCodesIndexRouteImport } from './routes/_authenticated/redemption-codes/index'
 import { Route as AuthenticatedRequestProcessingIndexRouteImport } from './routes/_authenticated/request-processing/index'
 import { Route as AuthenticatedSecurityIndexRouteImport } from './routes/_authenticated/security/index'
@@ -261,6 +263,12 @@ const AuthenticatedKeysIndexRoute = AuthenticatedKeysIndexRouteImport.update({
   path: '/keys/',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedMediaTrafficIndexRoute =
+  AuthenticatedMediaTrafficIndexRouteImport.update({
+    id: '/media-traffic/',
+    path: '/media-traffic/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedModelsIndexRoute =
   AuthenticatedModelsIndexRouteImport.update({
     id: '/models/',
@@ -283,6 +291,12 @@ const AuthenticatedProfileIndexRoute =
   AuthenticatedProfileIndexRouteImport.update({
     id: '/profile/',
     path: '/profile/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedProfitAnalyticsIndexRoute =
+  AuthenticatedProfitAnalyticsIndexRouteImport.update({
+    id: '/profit-analytics/',
+    path: '/profit-analytics/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedRedemptionCodesIndexRoute =
@@ -507,9 +521,11 @@ export interface FileRoutesByFullPath {
   '/create/': typeof AuthenticatedCreateIndexRoute
   '/dashboard/': typeof AuthenticatedDashboardIndexRoute
   '/keys/': typeof AuthenticatedKeysIndexRoute
+  '/media-traffic/': typeof AuthenticatedMediaTrafficIndexRoute
   '/models/': typeof AuthenticatedModelsIndexRoute
   '/playground/': typeof AuthenticatedPlaygroundIndexRoute
   '/profile/': typeof AuthenticatedProfileIndexRoute
+  '/profit-analytics/': typeof AuthenticatedProfitAnalyticsIndexRoute
   '/redemption-codes/': typeof AuthenticatedRedemptionCodesIndexRoute
   '/request-processing/': typeof AuthenticatedRequestProcessingIndexRoute
   '/security/': typeof AuthenticatedSecurityIndexRoute
@@ -576,9 +592,11 @@ export interface FileRoutesByTo {
   '/create': typeof AuthenticatedCreateIndexRoute
   '/dashboard': typeof AuthenticatedDashboardIndexRoute
   '/keys': typeof AuthenticatedKeysIndexRoute
+  '/media-traffic': typeof AuthenticatedMediaTrafficIndexRoute
   '/models': typeof AuthenticatedModelsIndexRoute
   '/playground': typeof AuthenticatedPlaygroundIndexRoute
   '/profile': typeof AuthenticatedProfileIndexRoute
+  '/profit-analytics': typeof AuthenticatedProfitAnalyticsIndexRoute
   '/redemption-codes': typeof AuthenticatedRedemptionCodesIndexRoute
   '/request-processing': typeof AuthenticatedRequestProcessingIndexRoute
   '/security': typeof AuthenticatedSecurityIndexRoute
@@ -649,9 +667,11 @@ export interface FileRoutesById {
   '/_authenticated/create/': typeof AuthenticatedCreateIndexRoute
   '/_authenticated/dashboard/': typeof AuthenticatedDashboardIndexRoute
   '/_authenticated/keys/': typeof AuthenticatedKeysIndexRoute
+  '/_authenticated/media-traffic/': typeof AuthenticatedMediaTrafficIndexRoute
   '/_authenticated/models/': typeof AuthenticatedModelsIndexRoute
   '/_authenticated/playground/': typeof AuthenticatedPlaygroundIndexRoute
   '/_authenticated/profile/': typeof AuthenticatedProfileIndexRoute
+  '/_authenticated/profit-analytics/': typeof AuthenticatedProfitAnalyticsIndexRoute
   '/_authenticated/redemption-codes/': typeof AuthenticatedRedemptionCodesIndexRoute
   '/_authenticated/request-processing/': typeof AuthenticatedRequestProcessingIndexRoute
   '/_authenticated/security/': typeof AuthenticatedSecurityIndexRoute
@@ -721,9 +741,11 @@ export interface FileRouteTypes {
     | '/create/'
     | '/dashboard/'
     | '/keys/'
+    | '/media-traffic/'
     | '/models/'
     | '/playground/'
     | '/profile/'
+    | '/profit-analytics/'
     | '/redemption-codes/'
     | '/request-processing/'
     | '/security/'
@@ -790,9 +812,11 @@ export interface FileRouteTypes {
     | '/create'
     | '/dashboard'
     | '/keys'
+    | '/media-traffic'
     | '/models'
     | '/playground'
     | '/profile'
+    | '/profit-analytics'
     | '/redemption-codes'
     | '/request-processing'
     | '/security'
@@ -862,9 +886,11 @@ export interface FileRouteTypes {
     | '/_authenticated/create/'
     | '/_authenticated/dashboard/'
     | '/_authenticated/keys/'
+    | '/_authenticated/media-traffic/'
     | '/_authenticated/models/'
     | '/_authenticated/playground/'
     | '/_authenticated/profile/'
+    | '/_authenticated/profit-analytics/'
     | '/_authenticated/redemption-codes/'
     | '/_authenticated/request-processing/'
     | '/_authenticated/security/'
@@ -1163,6 +1189,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedKeysIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/media-traffic/': {
+      id: '/_authenticated/media-traffic/'
+      path: '/media-traffic'
+      fullPath: '/media-traffic/'
+      preLoaderRoute: typeof AuthenticatedMediaTrafficIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/models/': {
       id: '/_authenticated/models/'
       path: '/models'
@@ -1189,6 +1222,13 @@ declare module '@tanstack/react-router' {
       path: '/profile'
       fullPath: '/profile/'
       preLoaderRoute: typeof AuthenticatedProfileIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/profit-analytics/': {
+      id: '/_authenticated/profit-analytics/'
+      path: '/profit-analytics'
+      fullPath: '/profit-analytics/'
+      preLoaderRoute: typeof AuthenticatedProfitAnalyticsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/redemption-codes/': {
@@ -1515,9 +1555,11 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedCreateIndexRoute: typeof AuthenticatedCreateIndexRoute
   AuthenticatedDashboardIndexRoute: typeof AuthenticatedDashboardIndexRoute
   AuthenticatedKeysIndexRoute: typeof AuthenticatedKeysIndexRoute
+  AuthenticatedMediaTrafficIndexRoute: typeof AuthenticatedMediaTrafficIndexRoute
   AuthenticatedModelsIndexRoute: typeof AuthenticatedModelsIndexRoute
   AuthenticatedPlaygroundIndexRoute: typeof AuthenticatedPlaygroundIndexRoute
   AuthenticatedProfileIndexRoute: typeof AuthenticatedProfileIndexRoute
+  AuthenticatedProfitAnalyticsIndexRoute: typeof AuthenticatedProfitAnalyticsIndexRoute
   AuthenticatedRedemptionCodesIndexRoute: typeof AuthenticatedRedemptionCodesIndexRoute
   AuthenticatedRequestProcessingIndexRoute: typeof AuthenticatedRequestProcessingIndexRoute
   AuthenticatedSecurityIndexRoute: typeof AuthenticatedSecurityIndexRoute
@@ -1547,9 +1589,12 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedCreateIndexRoute: AuthenticatedCreateIndexRoute,
   AuthenticatedDashboardIndexRoute: AuthenticatedDashboardIndexRoute,
   AuthenticatedKeysIndexRoute: AuthenticatedKeysIndexRoute,
+  AuthenticatedMediaTrafficIndexRoute: AuthenticatedMediaTrafficIndexRoute,
   AuthenticatedModelsIndexRoute: AuthenticatedModelsIndexRoute,
   AuthenticatedPlaygroundIndexRoute: AuthenticatedPlaygroundIndexRoute,
   AuthenticatedProfileIndexRoute: AuthenticatedProfileIndexRoute,
+  AuthenticatedProfitAnalyticsIndexRoute:
+    AuthenticatedProfitAnalyticsIndexRoute,
   AuthenticatedRedemptionCodesIndexRoute:
     AuthenticatedRedemptionCodesIndexRoute,
   AuthenticatedRequestProcessingIndexRoute:

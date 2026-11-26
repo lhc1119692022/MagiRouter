@@ -66,6 +66,8 @@ func RecordRelayResult(ctx context.Context, info *relaycommon.RelayInfo, apiErr 
 		Success:      outcome == OutcomeSuccess,
 		OutputTokens: info.PerformanceOutputTokens,
 		GenerationMs: generationMs,
+		PromptTokens: info.PerformancePromptTokens,
+		CachedTokens: info.PerformanceCachedTokens,
 	})
 }
 
@@ -184,6 +186,8 @@ func Query(params QueryParams) (QueryResult, error) {
 			ttftCount:      row.TtftCount,
 			outputTokens:   row.OutputTokens,
 			generationMs:   row.GenerationMs,
+			promptTokens:   row.PromptTokens,
+			cachedTokens:   row.CachedTokens,
 		})
 	}
 
@@ -254,6 +258,8 @@ func QuerySummaryAll(hours int, groups []string, recentModels ...string) (Summar
 			totalLatencyMs: row.TotalLatencyMs,
 			outputTokens:   row.OutputTokens,
 			generationMs:   row.GenerationMs,
+			promptTokens:   row.PromptTokens,
+			cachedTokens:   row.CachedTokens,
 		}
 		mergeModelBucket(modelBuckets, row.ModelName, row.BucketTs, value)
 	}
@@ -318,6 +324,8 @@ func QuerySummaryAll(hours int, groups []string, recentModels ...string) (Summar
 		all.totalLatencyMs += total.totalLatencyMs
 		all.outputTokens += total.outputTokens
 		all.generationMs += total.generationMs
+		all.promptTokens += total.promptTokens
+		all.cachedTokens += total.cachedTokens
 		avgLatency := total.totalLatencyMs / total.requestCount
 		successRate := float64(total.successCount) / float64(total.requestCount) * 100
 		avgTps := 0.0
@@ -329,6 +337,7 @@ func QuerySummaryAll(hours int, groups []string, recentModels ...string) (Summar
 			AvgLatencyMs:        avgLatency,
 			SuccessRate:         math.Round(successRate*100) / 100,
 			AvgTps:              math.Round(avgTps*100) / 100,
+			CacheHitRate:        cacheHitRate(total),
 			RecentSuccessSeries: recentSuccessSeries(modelBuckets[name]),
 			RequestCount:        total.requestCount,
 		})
@@ -355,6 +364,8 @@ func mergeModelTotals(totals map[string]counters, modelName string, value counte
 	current.ttftCount += value.ttftCount
 	current.outputTokens += value.outputTokens
 	current.generationMs += value.generationMs
+	current.promptTokens += value.promptTokens
+	current.cachedTokens += value.cachedTokens
 	totals[modelName] = current
 }
 
@@ -373,6 +384,8 @@ func mergeModelBucket(modelBuckets map[string]map[int64]counters, modelName stri
 	current.ttftCount += value.ttftCount
 	current.outputTokens += value.outputTokens
 	current.generationMs += value.generationMs
+	current.promptTokens += value.promptTokens
+	current.cachedTokens += value.cachedTokens
 	modelBuckets[modelName][bucketTs] = current
 }
 
@@ -442,6 +455,8 @@ func mergeCounters(merged map[bucketKey]counters, key bucketKey, value counters)
 	current.ttftCount += value.ttftCount
 	current.outputTokens += value.outputTokens
 	current.generationMs += value.generationMs
+	current.promptTokens += value.promptTokens
+	current.cachedTokens += value.cachedTokens
 	merged[key] = current
 }
 
@@ -488,6 +503,8 @@ func buildQueryResult(modelName string, merged map[bucketKey]counters) QueryResu
 			total.ttftCount += value.ttftCount
 			total.outputTokens += value.outputTokens
 			total.generationMs += value.generationMs
+			total.promptTokens += value.promptTokens
+			total.cachedTokens += value.cachedTokens
 			series = append(series, bucketPoint(ts, value))
 		}
 		all.requestCount += total.requestCount
@@ -495,6 +512,8 @@ func buildQueryResult(modelName string, merged map[bucketKey]counters) QueryResu
 		all.totalLatencyMs += total.totalLatencyMs
 		all.outputTokens += total.outputTokens
 		all.generationMs += total.generationMs
+		all.promptTokens += total.promptTokens
+		all.cachedTokens += total.cachedTokens
 
 		results = append(results, GroupResult{
 			Group:        group,
@@ -502,6 +521,7 @@ func buildQueryResult(modelName string, merged map[bucketKey]counters) QueryResu
 			AvgLatencyMs: avg(total.totalLatencyMs, total.requestCount),
 			SuccessRate:  successRate(total),
 			AvgTps:       avgTps(total),
+			CacheHitRate: cacheHitRate(total),
 			Series:       series,
 		})
 	}
@@ -533,6 +553,7 @@ func summarize(total counters) *Summary {
 		AvgLatencyMs: avg(total.totalLatencyMs, total.requestCount),
 		SuccessRate:  math.Round(successRate(total)*100) / 100,
 		AvgTps:       math.Round(avgTps(total)*100) / 100,
+		CacheHitRate: cacheHitRate(total),
 	}
 }
 
@@ -543,6 +564,7 @@ func bucketPoint(ts int64, value counters) BucketPoint {
 		AvgLatencyMs: avg(value.totalLatencyMs, value.requestCount),
 		SuccessRate:  successRate(value),
 		AvgTps:       avgTps(value),
+		CacheHitRate: cacheHitRate(value),
 	}
 }
 
@@ -565,6 +587,15 @@ func avgTps(value counters) float64 {
 		return 0
 	}
 	return float64(value.outputTokens) / (float64(value.generationMs) / 1000)
+}
+
+func cacheHitRate(value counters) *float64 {
+	if value.promptTokens <= 0 {
+		return nil
+	}
+	cached := min(max(value.cachedTokens, 0), value.promptTokens)
+	rate := math.Round(float64(cached)/float64(value.promptTokens)*10000) / 100
+	return &rate
 }
 
 func recordRedis(key bucketKey, sample Sample) {
@@ -590,6 +621,13 @@ func recordRedis(key bucketKey, sample Sample) {
 	if sample.OutputTokens > 0 && sample.GenerationMs > 0 {
 		pipe.HIncrBy(ctx, redisKey, "out", sample.OutputTokens)
 		pipe.HIncrBy(ctx, redisKey, "gen_ms", sample.GenerationMs)
+	}
+	if sample.PromptTokens > 0 {
+		cached := min(max(sample.CachedTokens, 0), sample.PromptTokens)
+		pipe.HIncrBy(ctx, redisKey, "in", sample.PromptTokens)
+		if cached > 0 {
+			pipe.HIncrBy(ctx, redisKey, "cache_in", cached)
+		}
 	}
 	pipe.Expire(ctx, redisKey, time.Hour)
 	_, _ = pipe.Exec(ctx)

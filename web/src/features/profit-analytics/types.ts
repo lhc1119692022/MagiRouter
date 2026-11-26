@@ -1,0 +1,186 @@
+export interface ProfitCurrencyMeta {
+  quota_per_unit: number
+  display_type: string
+  symbol: string
+  usd_exchange_rate: number
+  usd_to_currency_rate: number
+  topup_price: number
+}
+
+export interface ProfitChannelCostConfig {
+  cost_ratio?: number
+  monthly_fixed_cost: number
+  note: string
+}
+
+export interface ProfitFixedCostItem {
+  id: string
+  name: string
+  category: 'server' | 'media' | 'account_pool' | 'other'
+  monthly_cost: number
+  enabled: boolean
+  note: string
+}
+
+export interface ProfitAnalyticsSetting {
+  default_cost_ratio: number
+  payment_fee_rate: number
+  payment_fee_rates: Record<string, number>
+  channel_costs: Record<string, ProfitChannelCostConfig>
+  extra_fixed_costs: ProfitFixedCostItem[]
+}
+
+export interface ProfitSummary {
+  range_days: number
+  start_time: number
+  end_time: number
+  cash_revenue: number
+  wallet_topup_money: number
+  wallet_topup_orders: number
+  subscription_direct_money: number
+  subscription_direct_orders: number
+  subscription_balance_money: number
+  subscription_balance_orders: number
+  payment_fee_cost: number
+  net_cash_inflow: number
+  billed_quota: number
+  billed_usd: number
+  billed_local: number
+  total_requests: number
+  total_tokens: number
+  paying_users: number
+  active_users: number
+  upstream_variable_cost: number
+  channel_fixed_cost: number
+  platform_fixed_cost: number
+  total_estimated_cost: number
+  cash_net_profit: number
+  cash_net_margin: number
+  billed_gross_profit: number
+  billed_gross_margin: number
+  billed_net_profit: number
+  billed_net_margin: number
+}
+
+export interface ProfitLiabilitySnapshot {
+  user_remaining_quota: number
+  user_remaining_usd: number
+  user_remaining_local: number
+  subscription_remaining_quota: number
+  subscription_remaining_usd: number
+  subscription_remaining_local: number
+  redeemed_quota: number
+  redeemed_usd: number
+  redeemed_local: number
+  redeemed_count: number
+  checkin_quota: number
+  checkin_usd: number
+  checkin_local: number
+  checkin_count: number
+}
+
+export interface ProfitDailyTrendPoint {
+  date: string
+  cash_revenue: number
+  wallet_topup_money: number
+  subscription_direct_money: number
+  payment_fee: number
+  billed_usd: number
+  billed_local: number
+  upstream_cost: number
+  fixed_cost: number
+  total_cost: number
+  cash_net_profit: number
+  billed_gross_profit: number
+  billed_net_profit: number
+  requests: number
+  tokens: number
+  orders: number
+}
+
+export interface ProfitChannelBreakdown {
+  channel_id: number
+  channel_name: string
+  channel_type: number
+  group: string
+  tag: string
+  status: number
+  balance: number
+  requests: number
+  tokens: number
+  billed_quota: number
+  billed_usd: number
+  billed_local: number
+  cost_ratio: number
+  custom_cost_ratio: boolean
+  variable_cost: number
+  monthly_fixed_cost: number
+  amortized_fixed_cost: number
+  gross_profit: number
+  net_profit: number
+  margin_rate: number
+  note: string
+}
+
+export interface ProfitModelBreakdown {
+  model_name: string
+  requests: number
+  tokens: number
+  billed_quota: number
+  billed_usd: number
+  billed_local: number
+  estimated_cost: number
+  gross_profit: number
+  margin_rate: number
+}
+
+export interface ProfitGroupBreakdown {
+  group: string
+  requests: number
+  active_users: number
+  tokens: number
+  billed_quota: number
+  billed_usd: number
+  billed_local: number
+  estimated_cost: number
+  gross_profit: number
+  margin_rate: number
+}
+
+export interface ProfitPaymentMethodBreakdown {
+  payment_method: string
+  order_count: number
+  gross_money: number
+  fee_rate: number
+  estimated_fee: number
+  net_money: number
+  is_internal: boolean
+}
+
+export interface ProfitRecentOrderItem {
+  order_type: 'topup' | 'subscription' | 'subscription_balance'
+  trade_no: string
+  user_id: number
+  username: string
+  display_name: string
+  payment_method: string
+  payment_provider: string
+  money: number
+  amount: number
+  plan_title?: string
+  completed_at: number
+  is_internal: boolean
+}
+
+export interface ProfitAnalyticsReport {
+  currency: ProfitCurrencyMeta
+  cost_settings: ProfitAnalyticsSetting
+  summary: ProfitSummary
+  liability: ProfitLiabilitySnapshot
+  daily_trend: ProfitDailyTrendPoint[]
+  channels: ProfitChannelBreakdown[]
+  models: ProfitModelBreakdown[]
+  groups: ProfitGroupBreakdown[]
+  payment_methods: ProfitPaymentMethodBreakdown[]
+  recent_orders: ProfitRecentOrderItem[]
+}

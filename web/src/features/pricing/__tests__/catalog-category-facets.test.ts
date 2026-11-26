@@ -92,3 +92,96 @@ it('offers only categories, groups and billing types present in the visible dire
     quotaTypes: [],
   })
 })
+
+it('clusters multiplier groups by vendor and series before sorting by ratio ascending', () => {
+  const vendors = [
+    { id: 1, name: 'OpenAI' },
+    { id: 2, name: 'Anthropic' },
+  ]
+  const groupRatio = {
+    'GPT Fast 「企业」': 0.25,
+    'GPT Plus': 0.08,
+    'GPT Plus 「稳定」': 0.09,
+    'GPT Pro 「稳定」': 0.2,
+    'GPT Team': 0.055,
+    'GPT UltraFast 「企业」': 0.3,
+    'Codex 标准': 0.15,
+    'Codex 极速': 0.28,
+    'Claude 标准': 0.15,
+    'Claude 极速': 0.28,
+    通用专线: 0.12,
+    default: 1,
+  }
+  const usableGroups = Object.fromEntries(
+    Object.keys(groupRatio)
+      .sort()
+      .map((name) => [name, name])
+  )
+  const models = [
+    {
+      model_name: 'gpt-5.6-sol',
+      vendor_id: 1,
+      vendor_name: 'OpenAI',
+      supported_endpoint_types: ['openai'],
+      enable_groups: [
+        'GPT Fast 「企业」',
+        'GPT Plus',
+        'GPT Plus 「稳定」',
+        'GPT Pro 「稳定」',
+        'GPT Team',
+        'GPT UltraFast 「企业」',
+        'Codex 标准',
+        'Codex 极速',
+        '通用专线',
+        'default',
+      ],
+      quota_type: 0,
+    },
+    {
+      model_name: 'claude-4.5',
+      vendor_id: 2,
+      vendor_name: 'Anthropic',
+      supported_endpoint_types: ['anthropic'],
+      enable_groups: ['Claude 标准', 'Claude 极速', '通用专线', 'default'],
+      quota_type: 0,
+    },
+  ] as PricingModel[]
+
+  expect(
+    getCatalogFacets(models, usableGroups, { groupRatio, vendors }).groups
+  ).toEqual([
+    'GPT Team',
+    'GPT Plus',
+    'GPT Plus 「稳定」',
+    'GPT Pro 「稳定」',
+    'GPT Fast 「企业」',
+    'GPT UltraFast 「企业」',
+    'Codex 标准',
+    'Codex 极速',
+    'Claude 标准',
+    'Claude 极速',
+    '通用专线',
+    'default',
+  ])
+})
+
+it('sorts unprefixed single-vendor groups by ratio ascending and places unconfigured ratios last', () => {
+  const models = [
+    {
+      model_name: 'chat-model',
+      vendor_id: 1,
+      vendor_name: 'OpenAI',
+      supported_endpoint_types: ['openai'],
+      enable_groups: ['default', 'vip', 'svip', 'beta', 'alpha'],
+      quota_type: 0,
+    },
+  ] as PricingModel[]
+
+  expect(
+    getCatalogFacets(
+      models,
+      { alpha: '', beta: '', default: '', svip: '', vip: '' },
+      { groupRatio: { default: 1, vip: 0.5, svip: 0.3 } }
+    ).groups
+  ).toEqual(['svip', 'vip', 'default', 'alpha', 'beta'])
+})

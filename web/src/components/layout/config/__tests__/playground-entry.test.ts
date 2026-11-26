@@ -31,3 +31,22 @@ it.each([1, 10, 100])(
     )
   }
 )
+
+it('places Profit Analysis and Media Traffic inside the admin management sidebar group only for administrators', () => {
+  for (const nonAdminRole of [0, 1]) {
+    const adminGroup = buildConsoleNavigation(language.t, nonAdminRole).find(
+      (group) => group.id === 'admin'
+    )
+    expect(adminGroup).toBeUndefined()
+  }
+
+  for (const adminRole of [10, 100]) {
+    const adminGroup = buildConsoleNavigation(language.t, adminRole).find(
+      (group) => group.id === 'admin'
+    )
+    expect(adminGroup).toBeDefined()
+    const urls = adminGroup?.items.map((item) => item.url) ?? []
+    expect(urls).toContain('/profit-analytics')
+    expect(urls).toContain('/media-traffic')
+  }
+})

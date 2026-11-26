@@ -647,3 +647,69 @@ func ResetAdminUserMediaDailyTraffic(c *gin.Context) {
 	})
 	common.ApiSuccess(c, quota)
 }
+
+// GetAdminMediaTrafficAnalytics 返回媒体中转流量总览、趋势、类型分布及用户排行（Admin）
+func GetAdminMediaTrafficAnalytics(c *gin.Context) {
+	days := 30
+	if raw := strings.TrimSpace(c.Query("days")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 90 {
+			common.ApiErrorStatus(c, http.StatusBadRequest, common.NewMessage("Invalid parameters"))
+			return
+		}
+		days = parsed
+	}
+	keyword := strings.TrimSpace(c.Query("keyword"))
+	report, err := model.GetAdminMediaTrafficAnalytics(days, keyword, time.Now())
+	if err != nil {
+		common.ApiErrorStatus(c, http.StatusInternalServerError, common.NewMessage("Failed to load media traffic analytics"))
+		return
+	}
+	common.ApiSuccess(c, report)
+}
+
+// ListAdminMediaTrafficObjects 分页返回云端媒体中转上传对象明细（Admin）
+func ListAdminMediaTrafficObjects(c *gin.Context) {
+	page, _ := strconv.Atoi(c.Query("p"))
+	if page <= 0 {
+		page = 1
+	}
+	pageSize, _ := strconv.Atoi(c.Query("page_size"))
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+	status := strings.TrimSpace(c.Query("status"))
+	category := strings.TrimSpace(c.Query("category"))
+	keyword := strings.TrimSpace(c.Query("keyword"))
+	items, total, err := model.ListAdminMediaRelayObjects(page, pageSize, status, category, keyword, time.Now())
+	if err != nil {
+		common.ApiErrorStatus(c, http.StatusInternalServerError, common.NewMessage("Failed to load media relay objects"))
+		return
+	}
+	common.ApiSuccess(c, gin.H{
+		"items":     items,
+		"total":     total,
+		"page":      page,
+		"page_size": pageSize,
+	})
+}
+
+// ListAdminMediaTrafficOverrides 返回定向流量增量列表（Admin 只读查看）
+func ListAdminMediaTrafficOverrides(c *gin.Context) {
+	keyword := strings.TrimSpace(c.Query("keyword"))
+	now := time.Now()
+	items, err := model.ListMediaTrafficOverrides(keyword, now)
+	if err != nil {
+		common.ApiErrorStatus(c, http.StatusInternalServerError, common.NewMessage("Failed to load targeted traffic overrides"))
+		return
+	}
+	dateKey, resetAt := operation_setting.MediaTrafficDayWindow(now)
+	common.ApiSuccess(c, gin.H{
+		"items":        items,
+		"traffic_date": dateKey,
+		"reset_at":     resetAt,
+	})
+}

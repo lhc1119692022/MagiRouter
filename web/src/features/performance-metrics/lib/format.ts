@@ -33,6 +33,13 @@ export function formatUptimePct(pct: number): string {
   return `${pct.toFixed(2)}%`
 }
 
+export function formatCacheHitRate(pct: number | null | undefined): string {
+  if (pct == null || !Number.isFinite(pct)) return '—'
+  const clamped = Math.min(100, Math.max(0, pct))
+  const rounded = Math.round(clamped * 10) / 10
+  return `${Number.isInteger(rounded) ? rounded.toFixed(0) : rounded.toFixed(1)}%`
+}
+
 export type SuccessRateLevel =
   | 'excellent'
   | 'good'

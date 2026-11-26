@@ -158,7 +158,7 @@ it('expands filters by default, excludes remark tags from filters, and renders c
         id: 1,
         vendor_id: 1,
         model_name: 'Model A',
-        created_time: 1000,
+        created_time: 2000,
         supported_endpoint_types: ['openai'],
         tags: 'Text generation,推荐，200K 上下文,低延迟,@mr:catalog:v1=text',
         enable_groups: ['shared'],
@@ -171,7 +171,7 @@ it('expands filters by default, excludes remark tags from filters, and renders c
         id: 2,
         vendor_id: 1,
         model_name: 'Model B',
-        created_time: 2000,
+        created_time: 1000,
         supported_endpoint_types: ['openai'],
         enable_groups: ['shared'],
         quota_type: 0,
@@ -208,12 +208,13 @@ it('expands filters by default, excludes remark tags from filters, and renders c
 
   // Filters button sits directly after the sort dropdown in the top controls bar
   const sortTrigger = screen.getByRole('button', { name: '排序方式' })
-  expect(sortTrigger).toHaveTextContent('Time')
+  expect(sortTrigger).toHaveTextContent('Name')
+  expect(sortTrigger).toHaveAttribute('title', 'Name: Z to A')
   expect(sortTrigger.closest('.sort-dropdown-wrap')?.nextElementSibling).toBe(
     filtersToggle
   )
 
-  // Default sort is newest first (created_time descending: Model B before Model A)
+  // Default sort is name descending (Z to A: Model B before Model A even though Model A is newer)
   const cards = screen.getAllByRole('article')
   expect(cards).toHaveLength(2)
   expect(
@@ -239,7 +240,7 @@ it('expands filters by default, excludes remark tags from filters, and renders c
 
   // Default price mode is Your price (RMB with starting suffix)
   const priceModeBtn = screen.getByRole('button', { name: 'Your price' })
-  expect(within(modelACard).getByText('¥1')).toBeVisible()
+  expect(within(modelACard).getByText('¥1 / ¥3')).toBeVisible()
   expect(within(modelACard).getByText('/1M+')).toBeVisible()
 
   const user = userEvent.setup()
@@ -347,4 +348,92 @@ it('preserves a bookmarked group while the catalog cannot be loaded', async () =
     vendor: 'Alba',
     group: 'alpha',
   })
+})
+
+it('renders multiplier group pills clustered by vendor and series and ordered by ratio ascending', async () => {
+  vi.spyOn(api, 'get').mockResolvedValue({
+    data: { success: true, data: { models: [] } },
+  })
+  client = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+  })
+  client.setQueryData(['status'], {})
+  client.setQueryData(['pricing'], {
+    success: true,
+    vendors: [
+      { id: 1, name: 'OpenAI' },
+      { id: 2, name: 'Anthropic' },
+    ],
+    group_ratio: {
+      'GPT Fast 「企业」': 0.25,
+      'GPT Plus': 0.08,
+      'GPT Team': 0.055,
+      'Claude 标准': 0.15,
+      通用专线: 0.12,
+    },
+    data: [
+      {
+        id: 1,
+        vendor_id: 1,
+        model_name: 'gpt-5.6-sol',
+        supported_endpoint_types: ['openai'],
+        enable_groups: [
+          'GPT Fast 「企业」',
+          'GPT Plus',
+          'GPT Team',
+          '通用专线',
+        ],
+        quota_type: 0,
+        model_ratio: 1,
+        completion_ratio: 1,
+      },
+      {
+        id: 2,
+        vendor_id: 2,
+        model_name: 'claude-4.5',
+        supported_endpoint_types: ['anthropic'],
+        enable_groups: ['Claude 标准', '通用专线'],
+        quota_type: 0,
+        model_ratio: 1,
+        completion_ratio: 1,
+      },
+    ],
+    usable_group: {
+      'Claude 标准': 'Claude',
+      'GPT Fast 「企业」': 'Fast',
+      'GPT Plus': 'Plus',
+      'GPT Team': 'Team',
+      通用专线: 'Shared',
+    },
+  })
+  const root = createRootRoute()
+  const pricing = createRoute({
+    getParentRoute: () => root,
+    path: 'pricing/',
+    component: Pricing,
+    validateSearch: pricingRoute.options.validateSearch,
+  })
+  const router = createRouter({
+    routeTree: root.addChildren([pricing]),
+    history: createMemoryHistory({ initialEntries: ['/pricing'] }),
+  })
+  await router.load()
+  render(
+    <QueryClientProvider client={client}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>
+  )
+
+  const groupBar = within(
+    await screen.findByRole('group', { name: 'Multiplier groups' })
+  )
+  expect(
+    groupBar.getAllByRole('button').map((button) => button.textContent)
+  ).toEqual([
+    'GPT Team ×0.055',
+    'GPT Plus ×0.08',
+    'GPT Fast 「企业」 ×0.25',
+    'Claude 标准 ×0.15',
+    '通用专线 ×0.12',
+  ])
 })

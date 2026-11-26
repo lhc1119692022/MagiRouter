@@ -375,6 +375,53 @@ func TestPerformanceAggregationAndFlush(t *testing.T) {
 				assert.Empty(t, history.RecentSuccessSeries["history-expired"])
 				assert.Empty(t, history.RecentSuccessSeries["history-hot-expired"])
 			})
+
+			t.Run("tracks weighted per-group and summary cache hit rates and leaves unmeasured traffic nil", func(t *testing.T) {
+				previousHour := hour - 3600
+				require.NoError(t, model.UpsertPerfMetric(&model.PerfMetric{
+					ModelName:      "cache-model",
+					Group:          "a",
+					BucketTs:       previousHour,
+					RequestCount:   2,
+					SuccessCount:   2,
+					TotalLatencyMs: 2000,
+					PromptTokens:   1000,
+					CachedTokens:   600,
+				}))
+				RecordRelayResult(context.Background(), &relaycommon.RelayInfo{
+					OriginModelName:         "cache-model",
+					UsingGroup:              "a",
+					StartTime:               now.Add(-500 * time.Millisecond),
+					PerformanceOutputTokens: 50,
+					PerformancePromptTokens: 1000,
+					PerformanceCachedTokens: 200,
+				}, nil)
+				RecordRelayResult(context.Background(), &relaycommon.RelayInfo{
+					OriginModelName:         "cache-model",
+					UsingGroup:              "b",
+					StartTime:               now.Add(-400 * time.Millisecond),
+					PerformanceOutputTokens: 40,
+					PerformancePromptTokens: 0,
+					PerformanceCachedTokens: 0,
+				}, nil)
+
+				result, err := Query(QueryParams{Model: "cache-model", Hours: 24, AllowedGroups: groups})
+				require.NoError(t, err)
+				require.NotNil(t, result.Summary)
+				require.NotNil(t, result.Summary.CacheHitRate)
+				assert.Equal(t, 40.0, *result.Summary.CacheHitRate)
+
+				byGroup := lo.KeyBy(result.Groups, func(g GroupResult) string { return g.Group })
+				require.NotNil(t, byGroup["a"].CacheHitRate)
+				assert.Equal(t, 40.0, *byGroup["a"].CacheHitRate)
+				assert.Nil(t, byGroup["b"].CacheHitRate)
+
+				summaryAll, err := QuerySummaryAll(24, groups)
+				require.NoError(t, err)
+				modelsByName := lo.KeyBy(summaryAll.Models, func(m ModelSummary) string { return m.ModelName })
+				require.NotNil(t, modelsByName["cache-model"].CacheHitRate)
+				assert.Equal(t, 40.0, *modelsByName["cache-model"].CacheHitRate)
+			})
 		})
 	}
 }

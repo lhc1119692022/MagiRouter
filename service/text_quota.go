@@ -557,4 +557,12 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		Other:            other,
 	})
 	relayInfo.PerformanceOutputTokens = int64(summary.CompletionTokens)
+	totalInputTokens := int64(summary.PromptTokens)
+	if summary.IsClaudeUsageSemantic {
+		totalInputTokens += int64(summary.CacheTokens) + int64(cacheWriteTokens)
+	} else if int64(summary.CacheTokens) > totalInputTokens {
+		totalInputTokens = int64(summary.CacheTokens)
+	}
+	relayInfo.PerformancePromptTokens = max(totalInputTokens, 0)
+	relayInfo.PerformanceCachedTokens = max(int64(summary.CacheTokens), 0)
 }

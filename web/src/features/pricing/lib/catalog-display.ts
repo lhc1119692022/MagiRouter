@@ -254,12 +254,15 @@ export function resolveCatalogPriceDisplay(
         Number.isFinite(output) && output >= 0
           ? formatDynamicUnitPrice(output, dynamicPriceOptions)
           : null
+      const showStarting =
+        !displayGroup.isSelectedGroup ||
+        tokenTiers.length > 1 ||
+        dynamicSummary.tierCount > 1
       return {
-        primary:
-          isOfficialPrice && formattedOutput
-            ? `${formattedInput} / ${formattedOutput}`
-            : formattedInput,
-        suffix: formatSuffix(tokenUnitLabel, true),
+        primary: formattedOutput
+          ? `${formattedInput} / ${formattedOutput}`
+          : formattedInput,
+        suffix: formatSuffix(tokenUnitLabel, showStarting),
         tooltip: formattedOutput
           ? `${groupPrefix}${t('Input')} ${formattedInput} · ${t('Output')} ${formattedOutput} / ${tokenUnitLabel}`
           : `${groupPrefix}${formattedInput} / ${tokenUnitLabel}`,
@@ -320,10 +323,8 @@ export function resolveCatalogPriceDisplay(
     }
     return {
       primary:
-        isOfficialPrice && outputPrice !== '-'
-          ? `${inputPrice} / ${outputPrice}`
-          : inputPrice,
-      suffix: formatSuffix(tokenUnitLabel, true),
+        outputPrice !== '-' ? `${inputPrice} / ${outputPrice}` : inputPrice,
+      suffix: formatSuffix(tokenUnitLabel, !displayGroup.isSelectedGroup),
       tooltip: `${groupPrefix}${t('Input')} ${inputPrice} · ${t('Output')} ${outputPrice} / ${tokenUnitLabel}`,
     }
   }

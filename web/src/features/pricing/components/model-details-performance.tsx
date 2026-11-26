@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { HeartPulse, Timer } from 'lucide-react'
+import { DatabaseZap, HeartPulse, Timer } from 'lucide-react'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -26,6 +26,7 @@ import {
 } from '@/components/data-table'
 import { GroupBadge } from '@/components/group-badge'
 import {
+  formatCacheHitRate,
   formatLatency,
   formatThroughput,
   formatUptimePct,
@@ -89,12 +90,16 @@ function toLatencySeries(series: PerformanceSeriesPoint[]) {
     }))
 }
 
-export function ModelDetailsPerformance(props: { model: PricingModel }) {
+export function ModelDetailsPerformance(props: {
+  model: PricingModel
+  mode?: 'full' | 'trends'
+}) {
   const { t } = useTranslation()
   const metricsQuery = useModelMonitoring(props.model.model_name)
   const data = metricsQuery.data
   const summary = data?.summary
   const groups = data?.groups ?? []
+  const mode = props.mode ?? 'full'
   const latencySeries = useMemo(
     () => toLatencySeries(data?.series ?? []),
     [data]
@@ -115,11 +120,38 @@ export function ModelDetailsPerformance(props: { model: PricingModel }) {
     )
   }
 
+  if (mode === 'trends') {
+    return (
+      <div className='space-y-4'>
+        <section>
+          <SectionHeader
+            icon={Timer}
+            title={t('Latency trend (last 24h)')}
+            description={t('Average TTFT')}
+          />
+          <LatencyTrendChart series={latencySeries} />
+        </section>
+
+        <section>
+          <SectionHeader
+            icon={HeartPulse}
+            title={t('Sampled request success rates')}
+            description={t(
+              'Success rate excludes business rejections and includes the current partial hour.'
+            )}
+          />
+          <UptimeTrendChart series={uptimeSeries} />
+        </section>
+      </div>
+    )
+  }
+
   const avgTps = summary?.avg_tps ?? 0
   const avgLatency = summary?.avg_latency_ms ?? 0
   const successRate = isMeasuredRate(summary?.success_rate)
     ? summary.success_rate
     : Number.NaN
+  const cacheHitRate = summary?.cache_hit_rate
 
   return (
     <div className='flex flex-col gap-4'>
@@ -127,7 +159,7 @@ export function ModelDetailsPerformance(props: { model: PricingModel }) {
         {t('All visible groups')} · {t('Monitored relay requests')}{' '}
         {monitoringWindowLabel(data ?? undefined)}
       </p>
-      <div className='grid grid-cols-1 gap-2 sm:grid-cols-3'>
+      <div className='grid grid-cols-2 gap-2 sm:grid-cols-4'>
         <StatCard
           icon={Timer}
           label='TPS'
@@ -138,6 +170,11 @@ export function ModelDetailsPerformance(props: { model: PricingModel }) {
           icon={Timer}
           label={t('Average latency')}
           value={formatLatency(avgLatency)}
+        />
+        <StatCard
+          icon={DatabaseZap}
+          label={t('Cache hit rate')}
+          value={formatCacheHitRate(cacheHitRate)}
         />
         <StatCard
           icon={HeartPulse}
@@ -190,6 +227,13 @@ export function ModelDetailsPerformance(props: { model: PricingModel }) {
               className: tableStyles.compactHeaderCellRight,
               cellClassName: tableStyles.compactMutedNumericCell,
               cell: (perf) => formatLatency(perf.avg_latency_ms),
+            },
+            {
+              id: 'cache',
+              header: t('Cache hit rate'),
+              className: tableStyles.compactHeaderCellRight,
+              cellClassName: tableStyles.compactMutedNumericCell,
+              cell: (perf) => formatCacheHitRate(perf.cache_hit_rate),
             },
             {
               id: 'success',
