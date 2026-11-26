@@ -797,12 +797,65 @@ it('keeps all columns while collapsing tags and connection counts', async () => 
   expect(
     screen.getByRole('columnheader', { name: 'Sync policy' })
   ).toBeVisible()
+  expect(
+    screen.getByRole('columnheader', { name: 'Capability labels' })
+  ).toBeVisible()
   expect(screen.getByRole('columnheader', { name: 'Tags' })).toBeVisible()
   expect(screen.getByText('Tools')).toBeVisible()
   expect(screen.queryByText('Files')).not.toBeInTheDocument()
   await userEvent.click(screen.getByRole('button', { name: 'Show all tags' }))
   expect(await screen.findByText('Files')).toBeVisible()
   expect(screen.getByText('Vision')).toBeVisible()
+})
+
+it('displays manual, automatic, and cleared capability labels in the Capability labels column', async () => {
+  await renderList([
+    {
+      ...metadata,
+      id: 11,
+      model_name: 'manual-multi',
+      tags: 'Featured,@mr:catalog:v1=image+video+audio',
+    },
+    {
+      ...metadata,
+      id: 12,
+      model_name: 'auto-chat',
+      tags: '',
+      supported_endpoints: ['openai'],
+    },
+    {
+      ...metadata,
+      id: 13,
+      model_name: 'manual-none',
+      tags: '@mr:catalog:v1=none',
+      supported_endpoints: ['openai'],
+    },
+  ])
+
+  expect(
+    screen.getByRole('columnheader', { name: 'Capability labels' })
+  ).toBeVisible()
+
+  const manualRow = screen.getByText('manual-multi').closest('tr')
+  if (!manualRow) throw new Error('Expected manual-multi row')
+  const manualWithin = within(manualRow)
+  expect(manualWithin.getByText('Image Generation')).toBeVisible()
+  expect(manualWithin.getByText('Video Generation')).toBeVisible()
+  expect(manualWithin.queryByText('Audio generation')).not.toBeInTheDocument()
+  await userEvent.click(
+    manualWithin.getByRole('button', { name: 'Show all capability labels' })
+  )
+  expect(await screen.findByText('Audio generation')).toBeVisible()
+
+  const autoRow = screen.getByText('auto-chat').closest('tr')
+  if (!autoRow) throw new Error('Expected auto-chat row')
+  expect(within(autoRow).getByText('Reasoning generation')).toBeVisible()
+
+  const clearedRow = screen.getByText('manual-none').closest('tr')
+  if (!clearedRow) throw new Error('Expected manual-none row')
+  expect(
+    within(clearedRow).queryByText('Reasoning generation')
+  ).not.toBeInTheDocument()
 })
 
 it('keeps an active visibility filter when its server result is empty', async () => {

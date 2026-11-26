@@ -1,3 +1,5 @@
+export type ProfitChannelPricingMode = 'percent' | 'ratio' | 'unit_price'
+
 export interface ProfitCurrencyMeta {
   quota_per_unit: number
   display_type: string
@@ -7,10 +9,18 @@ export interface ProfitCurrencyMeta {
   topup_price: number
 }
 
+export interface ProfitPricingReference {
+  default_group_ratio: number
+  group_ratios: Record<string, number>
+}
+
 export interface ProfitChannelCostConfig {
   cost_ratio?: number
   monthly_fixed_cost: number
   note: string
+  pricing_mode?: ProfitChannelPricingMode | ''
+  upstream_value?: number
+  platform_value?: number
 }
 
 export interface ProfitFixedCostItem {
@@ -23,6 +33,7 @@ export interface ProfitFixedCostItem {
 }
 
 export interface ProfitAnalyticsSetting {
+  exclude_admin_users: boolean
   default_cost_ratio: number
   payment_fee_rate: number
   payment_fee_rates: Record<string, number>
@@ -34,6 +45,8 @@ export interface ProfitSummary {
   range_days: number
   start_time: number
   end_time: number
+  exclude_admin_users: boolean
+  excluded_admin_count: number
   cash_revenue: number
   wallet_topup_money: number
   wallet_topup_orders: number
@@ -113,6 +126,12 @@ export interface ProfitChannelBreakdown {
   billed_local: number
   cost_ratio: number
   custom_cost_ratio: boolean
+  pricing_mode?: ProfitChannelPricingMode | ''
+  upstream_value?: number
+  platform_value?: number
+  suggested_group_ratio: number
+  suggested_unit_price?: number
+  suggested_unit_price_model?: string
   variable_cost: number
   monthly_fixed_cost: number
   amortized_fixed_cost: number
@@ -174,6 +193,7 @@ export interface ProfitRecentOrderItem {
 
 export interface ProfitAnalyticsReport {
   currency: ProfitCurrencyMeta
+  pricing_ref?: ProfitPricingReference
   cost_settings: ProfitAnalyticsSetting
   summary: ProfitSummary
   liability: ProfitLiabilitySnapshot

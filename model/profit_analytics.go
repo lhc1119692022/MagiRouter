@@ -12,7 +12,19 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
+	"gorm.io/gorm"
 )
+
+type ProfitAnalyticsOptions struct {
+	RecentOrderLimit  int
+	ExcludeAdminUsers *bool
+}
+
+type ProfitPricingReference struct {
+	DefaultGroupRatio float64            `json:"default_group_ratio"`
+	GroupRatios       map[string]float64 `json:"group_ratios"`
+}
 
 type ProfitCurrencyMeta struct {
 	QuotaPerUnit      float64 `json:"quota_per_unit"`
@@ -27,6 +39,8 @@ type ProfitSummary struct {
 	RangeDays                int     `json:"range_days"`
 	StartTime                int64   `json:"start_time"`
 	EndTime                  int64   `json:"end_time"`
+	ExcludeAdminUsers        bool    `json:"exclude_admin_users"`
+	ExcludedAdminCount       int     `json:"excluded_admin_count"`
 	CashRevenue              float64 `json:"cash_revenue"`
 	WalletTopUpMoney         float64 `json:"wallet_topup_money"`
 	WalletTopUpOrders        int     `json:"wallet_topup_orders"`
@@ -92,27 +106,33 @@ type ProfitDailyTrendPoint struct {
 }
 
 type ProfitChannelBreakdown struct {
-	ChannelId          int     `json:"channel_id"`
-	ChannelName        string  `json:"channel_name"`
-	ChannelType        int     `json:"channel_type"`
-	Group              string  `json:"group"`
-	Tag                string  `json:"tag"`
-	Status             int     `json:"status"`
-	Balance            float64 `json:"balance"`
-	Requests           int64   `json:"requests"`
-	Tokens             int64   `json:"tokens"`
-	BilledQuota        int64   `json:"billed_quota"`
-	BilledUSD          float64 `json:"billed_usd"`
-	BilledLocal        float64 `json:"billed_local"`
-	CostRatio          float64 `json:"cost_ratio"`
-	CustomCostRatio    bool    `json:"custom_cost_ratio"`
-	VariableCost       float64 `json:"variable_cost"`
-	MonthlyFixedCost   float64 `json:"monthly_fixed_cost"`
-	AmortizedFixedCost float64 `json:"amortized_fixed_cost"`
-	GrossProfit        float64 `json:"gross_profit"`
-	NetProfit          float64 `json:"net_profit"`
-	MarginRate         float64 `json:"margin_rate"`
-	Note               string  `json:"note"`
+	ChannelId               int      `json:"channel_id"`
+	ChannelName             string   `json:"channel_name"`
+	ChannelType             int      `json:"channel_type"`
+	Group                   string   `json:"group"`
+	Tag                     string   `json:"tag"`
+	Status                  int      `json:"status"`
+	Balance                 float64  `json:"balance"`
+	Requests                int64    `json:"requests"`
+	Tokens                  int64    `json:"tokens"`
+	BilledQuota             int64    `json:"billed_quota"`
+	BilledUSD               float64  `json:"billed_usd"`
+	BilledLocal             float64  `json:"billed_local"`
+	CostRatio               float64  `json:"cost_ratio"`
+	CustomCostRatio         bool     `json:"custom_cost_ratio"`
+	PricingMode             string   `json:"pricing_mode,omitempty"`
+	UpstreamValue           *float64 `json:"upstream_value,omitempty"`
+	PlatformValue           *float64 `json:"platform_value,omitempty"`
+	SuggestedGroupRatio     float64  `json:"suggested_group_ratio"`
+	SuggestedUnitPrice      float64  `json:"suggested_unit_price,omitempty"`
+	SuggestedUnitPriceModel string   `json:"suggested_unit_price_model,omitempty"`
+	VariableCost            float64  `json:"variable_cost"`
+	MonthlyFixedCost        float64  `json:"monthly_fixed_cost"`
+	AmortizedFixedCost      float64  `json:"amortized_fixed_cost"`
+	GrossProfit             float64  `json:"gross_profit"`
+	NetProfit               float64  `json:"net_profit"`
+	MarginRate              float64  `json:"margin_rate"`
+	Note                    string   `json:"note"`
 }
 
 type ProfitModelBreakdown struct {
@@ -167,6 +187,7 @@ type ProfitRecentOrderItem struct {
 
 type ProfitAnalyticsReport struct {
 	Currency       ProfitCurrencyMeta                       `json:"currency"`
+	PricingRef     ProfitPricingReference                   `json:"pricing_ref"`
 	CostSettings   operation_setting.ProfitAnalyticsSetting `json:"cost_settings"`
 	Summary        ProfitSummary                            `json:"summary"`
 	Liability      ProfitLiabilitySnapshot                  `json:"liability"`
@@ -190,6 +211,13 @@ func roundPercent(value float64) float64 {
 		return 0
 	}
 	return math.Round(value*100) / 100
+}
+
+func roundRatio6(value float64) float64 {
+	if math.IsNaN(value) || math.IsInf(value, 0) {
+		return 0
+	}
+	return math.Round(value*1e6) / 1e6
 }
 
 func loadProfitLocation() *time.Location {
@@ -228,13 +256,14 @@ func quotaToUSDAndLocal(quota int64, meta ProfitCurrencyMeta) (float64, float64)
 	return usd, usd * meta.USDToCurrencyRate
 }
 
-func GetProfitAnalytics(startTime, endTime int64, recentOrderLimit int) (*ProfitAnalyticsReport, error) {
+func GetProfitAnalytics(startTime, endTime int64, opts ProfitAnalyticsOptions) (*ProfitAnalyticsReport, error) {
 	if DB == nil {
 		return nil, errors.New("database is not initialized")
 	}
 	if endTime < startTime {
 		return nil, common.NewMessage("Invalid time range")
 	}
+	recentOrderLimit := opts.RecentOrderLimit
 	if recentOrderLimit <= 0 || recentOrderLimit > 200 {
 		recentOrderLimit = 50
 	}
@@ -243,6 +272,46 @@ func GetProfitAnalytics(startTime, endTime int64, recentOrderLimit int) (*Profit
 	costCfg := operation_setting.GetProfitAnalyticsSettingSnapshot()
 	currency := profitCurrencyMeta()
 	nowUnix := time.Now().Unix()
+
+	groupRatios := ratio_setting.GetGroupRatioCopy()
+	defaultGroupRatio := groupRatios[ratio_setting.DefaultGroupName]
+	if defaultGroupRatio <= 0 {
+		defaultGroupRatio = ratio_setting.GetGroupRatio(ratio_setting.DefaultGroupName)
+	}
+	if defaultGroupRatio <= 0 {
+		defaultGroupRatio = 1
+	}
+	pricingRef := ProfitPricingReference{
+		DefaultGroupRatio: roundRatio6(defaultGroupRatio),
+		GroupRatios:       groupRatios,
+	}
+
+	excludeAdmins := costCfg.ExcludeAdminUsers
+	if opts.ExcludeAdminUsers != nil {
+		excludeAdmins = *opts.ExcludeAdminUsers
+	}
+	var adminUserIDs []int
+	adminUserIDSet := make(map[int]struct{})
+	if excludeAdmins {
+		if err := DB.Unscoped().Model(&User{}).
+			Where("role >= ?", common.RoleAdminUser).
+			Pluck("id", &adminUserIDs).Error; err != nil {
+			return nil, err
+		}
+		for _, uid := range adminUserIDs {
+			adminUserIDSet[uid] = struct{}{}
+		}
+	}
+	isExcludedAdmin := func(userID int) bool {
+		if !excludeAdmins || userID <= 0 {
+			return false
+		}
+		_, excluded := adminUserIDSet[userID]
+		return excluded
+	}
+	adminUserSubQuery := func() *gorm.DB {
+		return DB.Unscoped().Model(&User{}).Select("id").Where("role >= ?", common.RoleAdminUser)
+	}
 
 	startDate := time.Unix(startTime, 0).In(loc)
 	endDate := time.Unix(endTime, 0).In(loc)
@@ -335,9 +404,11 @@ func GetProfitAnalytics(startTime, endTime int64, recentOrderLimit int) (*Profit
 	}
 
 	summary := ProfitSummary{
-		RangeDays: rangeDays,
-		StartTime: startTime,
-		EndTime:   endTime,
+		RangeDays:          rangeDays,
+		StartTime:          startTime,
+		EndTime:            endTime,
+		ExcludeAdminUsers:  excludeAdmins,
+		ExcludedAdminCount: len(adminUserIDs),
 	}
 	payingUserSet := make(map[int]struct{})
 	methodMap := make(map[string]*ProfitPaymentMethodBreakdown)
@@ -373,6 +444,9 @@ func GetProfitAnalytics(startTime, endTime int64, recentOrderLimit int) (*Profit
 		if _, isSubMirror := subTradeNos[topUp.TradeNo]; isSubMirror {
 			continue
 		}
+		if isExcludedAdmin(topUp.UserId) {
+			continue
+		}
 		ts := topUp.CompleteTime
 		if ts <= 0 {
 			ts = topUp.CreateTime
@@ -405,6 +479,9 @@ func GetProfitAnalytics(startTime, endTime int64, recentOrderLimit int) (*Profit
 	}
 
 	for _, order := range subOrders {
+		if isExcludedAdmin(order.UserId) {
+			continue
+		}
 		ts := order.CompleteTime
 		if ts <= 0 {
 			ts = order.CreateTime
@@ -497,13 +574,14 @@ func GetProfitAnalytics(startTime, endTime int64, recentOrderLimit int) (*Profit
 		Name    string
 		Type    int
 		Group   string
+		Models  string
 		Tag     *string
 		Status  int
 		Balance float64
 	}
 	var channelRows []channelRow
 	if err := DB.Model(&Channel{}).
-		Select("id", "name", "type", "group", "tag", "status", "balance").
+		Select("id", "name", "type", "group", "models", "tag", "status", "balance").
 		Find(&channelRows).Error; err != nil {
 		return nil, err
 	}
@@ -524,20 +602,24 @@ func GetProfitAnalytics(startTime, endTime int64, recentOrderLimit int) (*Profit
 	}
 	startBucket := startTime - (startTime % 3600)
 	var quotaRows []quotaAggRow
-	if err := DB.Model(&QuotaData{}).
+	quotaQuery := DB.Model(&QuotaData{}).
 		Select("created_at, channel_id, model_name, use_group, SUM(quota) AS quota, SUM(count) AS count, SUM(token_used) AS token_used").
-		Where("created_at >= ? AND created_at <= ?", startBucket, endTime).
-		Group("created_at, channel_id, model_name, use_group").
-		Scan(&quotaRows).Error; err != nil {
+		Where("created_at >= ? AND created_at <= ?", startBucket, endTime)
+	if excludeAdmins && len(adminUserIDs) > 0 {
+		quotaQuery = quotaQuery.Where("user_id NOT IN (?)", adminUserSubQuery())
+	}
+	if err := quotaQuery.Group("created_at, channel_id, model_name, use_group").Scan(&quotaRows).Error; err != nil {
 		return nil, err
 	}
 
 	// Distinct active user counts (total and per group).
 	var activeUserCount int64
-	if err := DB.Model(&QuotaData{}).
-		Where("created_at >= ? AND created_at <= ?", startBucket, endTime).
-		Distinct("user_id").
-		Count(&activeUserCount).Error; err == nil {
+	activeUserQuery := DB.Model(&QuotaData{}).
+		Where("created_at >= ? AND created_at <= ?", startBucket, endTime)
+	if excludeAdmins && len(adminUserIDs) > 0 {
+		activeUserQuery = activeUserQuery.Where("user_id NOT IN (?)", adminUserSubQuery())
+	}
+	if err := activeUserQuery.Distinct("user_id").Count(&activeUserCount).Error; err == nil {
 		summary.ActiveUsers = int(activeUserCount)
 	}
 	type groupUserRow struct {
@@ -546,11 +628,13 @@ func GetProfitAnalytics(startTime, endTime int64, recentOrderLimit int) (*Profit
 	}
 	var groupUserRows []groupUserRow
 	groupActiveUsers := make(map[string]int)
-	if err := DB.Model(&QuotaData{}).
+	groupUserQuery := DB.Model(&QuotaData{}).
 		Select("use_group, COUNT(DISTINCT user_id) AS users").
-		Where("created_at >= ? AND created_at <= ?", startBucket, endTime).
-		Group("use_group").
-		Scan(&groupUserRows).Error; err == nil {
+		Where("created_at >= ? AND created_at <= ?", startBucket, endTime)
+	if excludeAdmins && len(adminUserIDs) > 0 {
+		groupUserQuery = groupUserQuery.Where("user_id NOT IN (?)", adminUserSubQuery())
+	}
+	if err := groupUserQuery.Group("use_group").Scan(&groupUserRows).Error; err == nil {
 		for _, row := range groupUserRows {
 			groupName := strings.TrimSpace(row.UseGroup)
 			if groupName == "" {
@@ -563,6 +647,8 @@ func GetProfitAnalytics(startTime, endTime int64, recentOrderLimit int) (*Profit
 	channelBreakdownMap := make(map[int]*ProfitChannelBreakdown)
 	modelBreakdownMap := make(map[string]*ProfitModelBreakdown)
 	groupBreakdownMap := make(map[string]*ProfitGroupBreakdown)
+	channelGroupWeights := make(map[int]map[string]float64)
+	channelModelWeights := make(map[int]map[string]float64)
 
 	ensureChannelEntry := func(channelID int) *ProfitChannelBreakdown {
 		if entry, ok := channelBreakdownMap[channelID]; ok {
@@ -575,6 +661,9 @@ func GetProfitAnalytics(startTime, endTime int64, recentOrderLimit int) (*Profit
 			ChannelName:      fmt.Sprintf("#%d", channelID),
 			CostRatio:        ratio,
 			CustomCostRatio:  custom,
+			PricingMode:      chCfg.PricingMode,
+			UpstreamValue:    chCfg.UpstreamValue,
+			PlatformValue:    chCfg.PlatformValue,
 			MonthlyFixedCost: chCfg.MonthlyFixedCost,
 			Note:             chCfg.Note,
 		}
@@ -644,6 +733,20 @@ func GetProfitAnalytics(startTime, endTime int64, recentOrderLimit int) (*Profit
 		if groupName == "" {
 			groupName = "default"
 		}
+		weight := float64(row.Quota)
+		if weight <= 0 {
+			weight = float64(max(int64(1), row.Count))
+		}
+		if channelGroupWeights[row.ChannelID] == nil {
+			channelGroupWeights[row.ChannelID] = make(map[string]float64)
+		}
+		channelGroupWeights[row.ChannelID][groupName] += weight
+		if modelName != "unknown" {
+			if channelModelWeights[row.ChannelID] == nil {
+				channelModelWeights[row.ChannelID] = make(map[string]float64)
+			}
+			channelModelWeights[row.ChannelID][modelName] += weight
+		}
 		gEntry, ok := groupBreakdownMap[groupName]
 		if !ok {
 			gEntry = &ProfitGroupBreakdown{
@@ -681,6 +784,99 @@ func GetProfitAnalytics(startTime, endTime int64, recentOrderLimit int) (*Profit
 	amortizeFactor := float64(rangeDays) / 30.0
 	channels := make([]ProfitChannelBreakdown, 0, len(channelBreakdownMap))
 	for _, entry := range channelBreakdownMap {
+		suggestedRatio := 0.0
+		if weights := channelGroupWeights[entry.ChannelId]; len(weights) > 0 {
+			weightedSum := 0.0
+			totalWeight := 0.0
+			for gName, w := range weights {
+				if w <= 0 {
+					continue
+				}
+				gRatio, ok := groupRatios[gName]
+				if !ok || gRatio <= 0 {
+					gRatio = defaultGroupRatio
+				}
+				weightedSum += gRatio * w
+				totalWeight += w
+			}
+			if totalWeight > 0 {
+				suggestedRatio = weightedSum / totalWeight
+			}
+		}
+		if suggestedRatio <= 0 && entry.Group != "" {
+			fallbackRatio := 0.0
+			for _, rawGroup := range strings.Split(entry.Group, ",") {
+				gName := strings.TrimSpace(rawGroup)
+				if gName == "" {
+					continue
+				}
+				gRatio, ok := groupRatios[gName]
+				if !ok || gRatio <= 0 {
+					continue
+				}
+				if !ratio_setting.IsUserManagementGroup(gName) {
+					suggestedRatio = gRatio
+					break
+				}
+				if fallbackRatio <= 0 {
+					fallbackRatio = gRatio
+				}
+			}
+			if suggestedRatio <= 0 {
+				suggestedRatio = fallbackRatio
+			}
+		}
+		if suggestedRatio <= 0 {
+			suggestedRatio = defaultGroupRatio
+		}
+		entry.SuggestedGroupRatio = roundRatio6(suggestedRatio)
+
+		bestModelName := ""
+		bestModelWeight := 0.0
+		for mName, w := range channelModelWeights[entry.ChannelId] {
+			if w > bestModelWeight || (w == bestModelWeight && (bestModelName == "" || mName < bestModelName)) {
+				bestModelWeight = w
+				bestModelName = mName
+			}
+		}
+		if bestModelName != "" {
+			if price, ok := ratio_setting.GetModelPrice(bestModelName, false); ok && price > 0 {
+				entry.SuggestedUnitPrice = roundRatio6(price * suggestedRatio * currency.USDToCurrencyRate)
+				entry.SuggestedUnitPriceModel = bestModelName
+			}
+		}
+		if entry.SuggestedUnitPrice <= 0 {
+			if meta, ok := channelMeta[entry.ChannelId]; ok && strings.TrimSpace(meta.Models) != "" {
+				var firstModel string
+				firstPrice := 0.0
+				uniform := true
+				modelCount := 0
+				for _, rawModel := range strings.Split(meta.Models, ",") {
+					mName := strings.TrimSpace(rawModel)
+					if mName == "" {
+						continue
+					}
+					modelCount++
+					price, hasPrice := ratio_setting.GetModelPrice(mName, false)
+					if !hasPrice || price <= 0 {
+						uniform = false
+						break
+					}
+					if firstModel == "" {
+						firstModel = mName
+						firstPrice = price
+					} else if math.Abs(price-firstPrice) > 1e-9 {
+						uniform = false
+						break
+					}
+				}
+				if uniform && modelCount > 0 && firstPrice > 0 {
+					entry.SuggestedUnitPrice = roundRatio6(firstPrice * suggestedRatio * currency.USDToCurrencyRate)
+					entry.SuggestedUnitPriceModel = firstModel
+				}
+			}
+		}
+
 		entry.AmortizedFixedCost = entry.MonthlyFixedCost * amortizeFactor
 		summary.ChannelFixedCost += entry.AmortizedFixedCost
 		entry.GrossProfit = entry.BilledLocal - entry.VariableCost
@@ -833,10 +1029,13 @@ func GetProfitAnalytics(startTime, endTime int64, recentOrderLimit int) (*Profit
 	var userQuotaSum struct {
 		Total int64
 	}
-	if err := DB.Model(&User{}).
+	userQuotaQuery := DB.Model(&User{}).
 		Select("COALESCE(SUM(quota), 0) AS total").
-		Where("quota > 0").
-		Scan(&userQuotaSum).Error; err == nil {
+		Where("quota > 0")
+	if excludeAdmins {
+		userQuotaQuery = userQuotaQuery.Where("role < ?", common.RoleAdminUser)
+	}
+	if err := userQuotaQuery.Scan(&userQuotaSum).Error; err == nil {
 		liability.UserRemainingQuota = userQuotaSum.Total
 		usd, local := quotaToUSDAndLocal(userQuotaSum.Total, currency)
 		liability.UserRemainingUSD = roundMoney(usd)
@@ -846,10 +1045,13 @@ func GetProfitAnalytics(startTime, endTime int64, recentOrderLimit int) (*Profit
 	var subQuotaSum struct {
 		Total int64
 	}
-	if err := DB.Model(&UserSubscription{}).
+	subQuotaQuery := DB.Model(&UserSubscription{}).
 		Select("COALESCE(SUM(CASE WHEN amount_total > amount_used THEN amount_total - amount_used ELSE 0 END), 0) AS total").
-		Where("status = ? AND (end_time = 0 OR end_time > ?)", "active", nowUnix).
-		Scan(&subQuotaSum).Error; err == nil {
+		Where("status = ? AND (end_time = 0 OR end_time > ?)", "active", nowUnix)
+	if excludeAdmins && len(adminUserIDs) > 0 {
+		subQuotaQuery = subQuotaQuery.Where("user_id NOT IN (?)", adminUserSubQuery())
+	}
+	if err := subQuotaQuery.Scan(&subQuotaSum).Error; err == nil {
 		liability.SubscriptionRemainingQuota = subQuotaSum.Total
 		usd, local := quotaToUSDAndLocal(subQuotaSum.Total, currency)
 		liability.SubscriptionRemainingUSD = roundMoney(usd)
@@ -860,10 +1062,13 @@ func GetProfitAnalytics(startTime, endTime int64, recentOrderLimit int) (*Profit
 		Total int64
 		Count int64
 	}
-	if err := DB.Model(&Redemption{}).
+	redemptionQuery := DB.Model(&Redemption{}).
 		Select("COALESCE(SUM(quota), 0) AS total, COUNT(*) AS count").
-		Where("status = ? AND redeemed_time >= ? AND redeemed_time <= ?", common.RedemptionCodeStatusUsed, startTime, endTime).
-		Scan(&redemptionSum).Error; err == nil {
+		Where("status = ? AND redeemed_time >= ? AND redeemed_time <= ?", common.RedemptionCodeStatusUsed, startTime, endTime)
+	if excludeAdmins && len(adminUserIDs) > 0 {
+		redemptionQuery = redemptionQuery.Where("(used_user_id IS NULL OR used_user_id NOT IN (?))", adminUserSubQuery())
+	}
+	if err := redemptionQuery.Scan(&redemptionSum).Error; err == nil {
 		liability.RedeemedQuota = redemptionSum.Total
 		liability.RedeemedCount = redemptionSum.Count
 		usd, local := quotaToUSDAndLocal(redemptionSum.Total, currency)
@@ -875,10 +1080,13 @@ func GetProfitAnalytics(startTime, endTime int64, recentOrderLimit int) (*Profit
 		Total int64
 		Count int64
 	}
-	if err := DB.Model(&Checkin{}).
+	checkinQuery := DB.Model(&Checkin{}).
 		Select("COALESCE(SUM(quota_awarded), 0) AS total, COUNT(*) AS count").
-		Where("created_at >= ? AND created_at <= ?", startTime, endTime).
-		Scan(&checkinSum).Error; err == nil {
+		Where("created_at >= ? AND created_at <= ?", startTime, endTime)
+	if excludeAdmins && len(adminUserIDs) > 0 {
+		checkinQuery = checkinQuery.Where("user_id NOT IN (?)", adminUserSubQuery())
+	}
+	if err := checkinQuery.Scan(&checkinSum).Error; err == nil {
 		liability.CheckinQuota = checkinSum.Total
 		liability.CheckinCount = checkinSum.Count
 		usd, local := quotaToUSDAndLocal(checkinSum.Total, currency)
@@ -888,6 +1096,7 @@ func GetProfitAnalytics(startTime, endTime int64, recentOrderLimit int) (*Profit
 
 	return &ProfitAnalyticsReport{
 		Currency:       currency,
+		PricingRef:     pricingRef,
 		CostSettings:   costCfg,
 		Summary:        summary,
 		Liability:      liability,

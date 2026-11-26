@@ -10,6 +10,11 @@ import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
 import { ProfitAnalytics } from '../index'
+import {
+  computeQuickCostMetrics,
+  formatEditableDecimal,
+  formatSignedDecimal,
+} from '../lib/cost-calc'
 
 vi.mock('@visactor/react-vchart', () => ({
   VChart: () => <div data-testid='mock-vchart' />,
@@ -64,7 +69,7 @@ afterEach(() => {
 describe('ProfitAnalytics page', () => {
   it('renders profit metrics, switches breakdown tabs, and allows root to update cost settings', async () => {
     const user = userEvent.setup()
-    vi.spyOn(api, 'get').mockImplementation(async (url) => {
+    const getSpy = vi.spyOn(api, 'get').mockImplementation(async (url) => {
       if (url === '/api/data/profit') {
         return {
           data: {
@@ -79,7 +84,12 @@ describe('ProfitAnalytics page', () => {
                 usd_to_currency_rate: 7,
                 topup_price: 7,
               },
+              pricing_ref: {
+                default_group_ratio: 1,
+                group_ratios: { default: 1, vip: 1.2 },
+              },
               cost_settings: {
+                exclude_admin_users: true,
                 default_cost_ratio: 0.5,
                 payment_fee_rate: 0.01,
                 payment_fee_rates: { alipay: 0.02 },
@@ -90,6 +100,8 @@ describe('ProfitAnalytics page', () => {
                 range_days: 30,
                 start_time: 1700000000,
                 end_time: 1702592000,
+                exclude_admin_users: true,
+                excluded_admin_count: 2,
                 cash_revenue: 170,
                 wallet_topup_money: 100,
                 wallet_topup_orders: 1,
@@ -169,6 +181,7 @@ describe('ProfitAnalytics page', () => {
                   billed_local: 70,
                   cost_ratio: 0.6,
                   custom_cost_ratio: true,
+                  suggested_group_ratio: 1.2,
                   variable_cost: 42,
                   monthly_fixed_cost: 0,
                   amortized_fixed_cost: 0,
@@ -176,6 +189,32 @@ describe('ProfitAnalytics page', () => {
                   net_profit: 28,
                   margin_rate: 40,
                   note: 'API relay',
+                },
+                {
+                  channel_id: 8,
+                  channel_name: 'Flux Per-Image',
+                  channel_type: 1,
+                  group: 'default',
+                  tag: '',
+                  status: 1,
+                  balance: 0,
+                  requests: 100,
+                  tokens: 0,
+                  billed_quota: 100000,
+                  billed_usd: 0.2,
+                  billed_local: 2.5,
+                  cost_ratio: 0.5,
+                  custom_cost_ratio: false,
+                  suggested_group_ratio: 1,
+                  suggested_unit_price: 0.025,
+                  suggested_unit_price_model: 'flux-pro',
+                  variable_cost: 1.25,
+                  monthly_fixed_cost: 0,
+                  amortized_fixed_cost: 0,
+                  gross_profit: 1.25,
+                  net_profit: 1.25,
+                  margin_rate: 50,
+                  note: '',
                 },
               ],
               models: [
@@ -243,6 +282,7 @@ describe('ProfitAnalytics page', () => {
         success: true,
         message: '',
         data: {
+          exclude_admin_users: true,
           default_cost_ratio: 0.4,
           payment_fee_rate: 0.01,
           payment_fee_rates: { alipay: 0.02 },
@@ -256,6 +296,19 @@ describe('ProfitAnalytics page', () => {
 
     expect(await screen.findByText('OpenAI Relay')).toBeInTheDocument()
     expect(screen.getByText('¥170.00')).toBeInTheDocument()
+    expect(screen.getByText('Admins excluded (2)')).toBeInTheDocument()
+
+    // Toggle admin exclusion switch on the toolbar -> triggers refetch with exclude_admins: false.
+    const excludeSwitch = screen.getByRole('switch', {
+      name: 'Exclude admins',
+    })
+    expect(excludeSwitch).toBeChecked()
+    await user.click(excludeSwitch)
+    await waitFor(() => {
+      expect(getSpy).toHaveBeenCalledWith('/api/data/profit', {
+        params: { days: 30, order_limit: 50, exclude_admins: false },
+      })
+    })
 
     await user.click(screen.getByRole('tab', { name: /By model/ }))
     expect(await screen.findByText('gpt-4o')).toBeInTheDocument()
@@ -274,7 +327,233 @@ describe('ProfitAnalytics page', () => {
     await waitFor(() => {
       expect(putSpy).toHaveBeenCalledWith(
         '/api/option/profit_analytics',
-        expect.objectContaining({ default_cost_ratio: 0.4 })
+        expect.objectContaining({
+          exclude_admin_users: true,
+          default_cost_ratio: 0.4,
+        })
+      )
+    })
+  })
+
+  it('auto-fills platform ratio & unit price and computes quick cost ratios in settings dialog', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(api, 'get').mockResolvedValue({
+      data: {
+        success: true,
+        message: '',
+        data: {
+          currency: {
+            quota_per_unit: 500000,
+            display_type: 'CNY',
+            symbol: '¥',
+            usd_exchange_rate: 7,
+            usd_to_currency_rate: 7,
+            topup_price: 7,
+          },
+          pricing_ref: {
+            default_group_ratio: 1,
+            group_ratios: { default: 1, vip: 1.2 },
+          },
+          cost_settings: {
+            exclude_admin_users: true,
+            default_cost_ratio: 0.5,
+            payment_fee_rate: 0,
+            payment_fee_rates: {},
+            channel_costs: {},
+            extra_fixed_costs: [],
+          },
+          summary: {
+            range_days: 30,
+            start_time: 1700000000,
+            end_time: 1702592000,
+            exclude_admin_users: true,
+            excluded_admin_count: 1,
+            cash_revenue: 0,
+            wallet_topup_money: 0,
+            wallet_topup_orders: 0,
+            subscription_direct_money: 0,
+            subscription_direct_orders: 0,
+            subscription_balance_money: 0,
+            subscription_balance_orders: 0,
+            payment_fee_cost: 0,
+            net_cash_inflow: 0,
+            billed_quota: 0,
+            billed_usd: 0,
+            billed_local: 0,
+            total_requests: 0,
+            total_tokens: 0,
+            paying_users: 0,
+            active_users: 0,
+            upstream_variable_cost: 0,
+            channel_fixed_cost: 0,
+            platform_fixed_cost: 0,
+            total_estimated_cost: 0,
+            cash_net_profit: 0,
+            cash_net_margin: 0,
+            billed_gross_profit: 0,
+            billed_gross_margin: 0,
+            billed_net_profit: 0,
+            billed_net_margin: 0,
+          },
+          liability: {
+            user_remaining_quota: 0,
+            user_remaining_usd: 0,
+            user_remaining_local: 0,
+            subscription_remaining_quota: 0,
+            subscription_remaining_usd: 0,
+            subscription_remaining_local: 0,
+            redeemed_quota: 0,
+            redeemed_usd: 0,
+            redeemed_local: 0,
+            redeemed_count: 0,
+            checkin_quota: 0,
+            checkin_usd: 0,
+            checkin_local: 0,
+            checkin_count: 0,
+          },
+          daily_trend: [],
+          channels: [
+            {
+              channel_id: 7,
+              channel_name: 'OpenAI Relay',
+              channel_type: 1,
+              group: 'vip',
+              tag: '',
+              status: 1,
+              balance: 0,
+              requests: 20,
+              tokens: 12000,
+              billed_quota: 5000000,
+              billed_usd: 10,
+              billed_local: 70,
+              cost_ratio: 0.5,
+              custom_cost_ratio: false,
+              suggested_group_ratio: 1.2,
+              variable_cost: 35,
+              monthly_fixed_cost: 0,
+              amortized_fixed_cost: 0,
+              gross_profit: 35,
+              net_profit: 35,
+              margin_rate: 50,
+              note: '',
+            },
+            {
+              channel_id: 8,
+              channel_name: 'Flux Per-Image',
+              channel_type: 1,
+              group: 'default',
+              tag: '',
+              status: 1,
+              balance: 0,
+              requests: 100,
+              tokens: 0,
+              billed_quota: 100000,
+              billed_usd: 0.2,
+              billed_local: 2.5,
+              cost_ratio: 0.5,
+              custom_cost_ratio: false,
+              suggested_group_ratio: 1,
+              suggested_unit_price: 0.025,
+              suggested_unit_price_model: 'flux-pro',
+              variable_cost: 1.25,
+              monthly_fixed_cost: 0,
+              amortized_fixed_cost: 0,
+              gross_profit: 1.25,
+              net_profit: 1.25,
+              margin_rate: 50,
+              note: '',
+            },
+          ],
+          models: [],
+          groups: [],
+          payment_methods: [],
+          recent_orders: [],
+        },
+      },
+    })
+
+    const putSpy = vi.spyOn(api, 'put').mockResolvedValue({
+      data: {
+        success: true,
+        message: '',
+        data: {
+          exclude_admin_users: false,
+          default_cost_ratio: 0.8,
+          payment_fee_rate: 0,
+          payment_fee_rates: {},
+          channel_costs: {},
+          extra_fixed_costs: [],
+        },
+      },
+    })
+
+    renderWithQuery(<ProfitAnalytics />)
+    expect(await screen.findByText('OpenAI Relay')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Cost model' }))
+
+    // Default quick calculator auto-fills default group ratio (1), typing 0.8 fills default cost ratio to 80%.
+    const defaultQuickPlatform =
+      await screen.findByLabelText('My ratio / price')
+    expect(defaultQuickPlatform).toHaveValue(1)
+    const defaultQuickUpstream = screen.getByLabelText('Upstream ratio / price')
+    await user.type(defaultQuickUpstream, '0.8')
+    expect(
+      screen.getByLabelText('Default upstream cost ratio (%)')
+    ).toHaveValue(80)
+
+    // Switch OpenAI Relay to By ratio -> My ratio auto-fills 1.2 from group vip.
+    const ratioButtons = screen.getAllByRole('button', { name: 'By ratio' })
+    await user.click(ratioButtons[0])
+    const relayPlatformInput = screen.getByLabelText('OpenAI Relay My ratio')
+    expect(relayPlatformInput).toHaveValue(1.2)
+    await user.type(
+      screen.getByLabelText('OpenAI Relay Upstream ratio'),
+      '0.72'
+    )
+
+    // Switch Flux Per-Image to Unit price -> My unit price auto-fills 0.025 from model price.
+    const unitPriceButtons = screen.getAllByRole('button', {
+      name: 'Unit price',
+    })
+    await user.click(unitPriceButtons[1])
+    const imagePlatformInput = screen.getByLabelText(
+      'Flux Per-Image My unit price'
+    )
+    expect(imagePlatformInput).toHaveValue(0.025)
+    await user.type(
+      screen.getByLabelText('Flux Per-Image Upstream unit price'),
+      '0.02'
+    )
+
+    // Toggle persistent Exclude admin accounts by default off.
+    await user.click(
+      screen.getByRole('switch', { name: 'Exclude admin accounts by default' })
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Save settings' }))
+
+    await waitFor(() => {
+      expect(putSpy).toHaveBeenCalledWith(
+        '/api/option/profit_analytics',
+        expect.objectContaining({
+          exclude_admin_users: false,
+          default_cost_ratio: 0.8,
+          channel_costs: {
+            '7': expect.objectContaining({
+              cost_ratio: 0.6,
+              pricing_mode: 'ratio',
+              upstream_value: 0.72,
+              platform_value: 1.2,
+            }),
+            '8': expect.objectContaining({
+              cost_ratio: 0.8,
+              pricing_mode: 'unit_price',
+              upstream_value: 0.02,
+              platform_value: 0.025,
+            }),
+          },
+        })
       )
     })
   })
@@ -299,6 +578,7 @@ describe('ProfitAnalytics page', () => {
             topup_price: 7,
           },
           cost_settings: {
+            exclude_admin_users: true,
             default_cost_ratio: 0.5,
             payment_fee_rate: 0,
             payment_fee_rates: {},
@@ -309,6 +589,8 @@ describe('ProfitAnalytics page', () => {
             range_days: 30,
             start_time: 1700000000,
             end_time: 1702592000,
+            exclude_admin_users: true,
+            excluded_admin_count: 1,
             cash_revenue: 0,
             wallet_topup_money: 0,
             wallet_topup_orders: 0,
@@ -370,6 +652,38 @@ describe('ProfitAnalytics page', () => {
   })
 })
 
+describe('profit cost quick calculator utilities', () => {
+  it('computes ratio spread, cent/milli markups, and loss margins cleanly', () => {
+    expect(computeQuickCostMetrics('0.5', '0.6')).toEqual({
+      costRatio: 0.833333,
+      costRatioPercent: 83.33,
+      grossMarginPercent: 16.67,
+      spread: 0.1,
+    })
+    expect(computeQuickCostMetrics('0.02', '0.025')).toEqual({
+      costRatio: 0.8,
+      costRatioPercent: 80,
+      grossMarginPercent: 20,
+      spread: 0.005,
+    })
+    expect(computeQuickCostMetrics('0.02', '0.023')).toEqual({
+      costRatio: 0.869565,
+      costRatioPercent: 86.96,
+      grossMarginPercent: 13.04,
+      spread: 0.003,
+    })
+    expect(computeQuickCostMetrics('1.2', '1')).toEqual({
+      costRatio: 1.2,
+      costRatioPercent: 120,
+      grossMarginPercent: -20,
+      spread: -0.2,
+    })
+    expect(computeQuickCostMetrics('0.5', '0')).toBeNull()
+    expect(formatEditableDecimal(0.0005)).toBe('0.0005')
+    expect(formatSignedDecimal(0.005)).toBe('+0.005')
+    expect(formatSignedDecimal(-0.002)).toBe('-0.002')
+  })
+})
 describe('MediaTraffic page', () => {
   it('renders media traffic summary, browses uploaded objects, and resets user traffic for root', async () => {
     const user = userEvent.setup()

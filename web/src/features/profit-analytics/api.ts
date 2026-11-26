@@ -14,6 +14,7 @@ export async function getProfitAnalytics(params: {
   start_timestamp?: number
   end_timestamp?: number
   order_limit?: number
+  exclude_admins?: boolean
 }) {
   const res = await api.get<ApiEnvelope<ProfitAnalyticsReport>>(
     '/api/data/profit',

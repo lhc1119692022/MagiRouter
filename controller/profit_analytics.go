@@ -3,6 +3,7 @@ package controller
 import (
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -59,7 +60,19 @@ func GetProfitAnalytics(c *gin.Context) {
 			limit = parsed
 		}
 	}
-	report, err := model.GetProfitAnalytics(startTs, endTs, limit)
+	var excludeAdmins *bool
+	if raw := strings.TrimSpace(c.Query("exclude_admins")); raw != "" {
+		parsed, err := strconv.ParseBool(raw)
+		if err != nil {
+			common.ApiErrorStatus(c, http.StatusBadRequest, common.NewMessage("Invalid parameters"))
+			return
+		}
+		excludeAdmins = &parsed
+	}
+	report, err := model.GetProfitAnalytics(startTs, endTs, model.ProfitAnalyticsOptions{
+		RecentOrderLimit:  limit,
+		ExcludeAdminUsers: excludeAdmins,
+	})
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -72,7 +85,9 @@ func GetProfitAnalyticsSettings(c *gin.Context) {
 }
 
 func UpdateProfitAnalyticsSettings(c *gin.Context) {
-	var req operation_setting.ProfitAnalyticsSetting
+	req := operation_setting.ProfitAnalyticsSetting{
+		ExcludeAdminUsers: operation_setting.GetProfitAnalyticsSettingSnapshot().ExcludeAdminUsers,
+	}
 	if err := common.DecodeJsonBody(c.Request.Body, &req); err != nil {
 		common.ApiErrorStatus(c, http.StatusBadRequest, common.NewMessage("Invalid parameters"))
 		return
@@ -92,10 +107,11 @@ func UpdateProfitAnalyticsSettings(c *gin.Context) {
 		return
 	}
 	recordManageAudit(c, "option.profit_analytics_update", map[string]any{
-		"default_cost_ratio": normalized.DefaultCostRatio,
-		"payment_fee_rate":   normalized.PaymentFeeRate,
-		"channel_overrides":  len(normalized.ChannelCosts),
-		"extra_fixed_costs":  len(normalized.ExtraFixedCosts),
+		"exclude_admin_users": normalized.ExcludeAdminUsers,
+		"default_cost_ratio":  normalized.DefaultCostRatio,
+		"payment_fee_rate":    normalized.PaymentFeeRate,
+		"channel_overrides":   len(normalized.ChannelCosts),
+		"extra_fixed_costs":   len(normalized.ExtraFixedCosts),
 	})
 	common.ApiSuccess(c, operation_setting.GetProfitAnalyticsSettingSnapshot())
 }

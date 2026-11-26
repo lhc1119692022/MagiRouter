@@ -26,6 +26,8 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import {
   Table,
   TableBody,
@@ -48,6 +50,7 @@ import {
   ProfitTrendChart,
   type ProfitChartBasis,
 } from './components/profit-trend-chart'
+import { formatEditableDecimal } from './lib/cost-calc'
 import type { ProfitAnalyticsSetting } from './types'
 
 const RANGE_OPTIONS = [7, 14, 30, 90] as const
@@ -70,6 +73,12 @@ function formatMoney(
 
 function formatOneDecimal(value: number, locale: string | undefined): string {
   return new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(
+    value
+  )
+}
+
+function formatPercent(value: number, locale: string | undefined): string {
+  return new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(
     value
   )
 }
@@ -102,6 +111,9 @@ export function ProfitAnalytics() {
   )
 
   const [days, setDays] = useState<number>(30)
+  const [excludeAdminsOverride, setExcludeAdminsOverride] = useState<
+    boolean | null
+  >(null)
   const [chartBasis, setChartBasis] = useState<ProfitChartBasis>('cash')
   const [activeTab, setActiveTab] = useState('channels')
   const [keyword, setKeyword] = useState('')
@@ -109,8 +121,15 @@ export function ProfitAnalytics() {
   const [focusChannelId, setFocusChannelId] = useState<number | null>(null)
 
   const reportQuery = useQuery({
-    queryKey: ['profit-analytics', days],
-    queryFn: () => getProfitAnalytics({ days, order_limit: 50 }),
+    queryKey: ['profit-analytics', days, excludeAdminsOverride],
+    queryFn: () =>
+      getProfitAnalytics({
+        days,
+        order_limit: 50,
+        ...(excludeAdminsOverride !== null
+          ? { exclude_admins: excludeAdminsOverride }
+          : {}),
+      }),
   })
 
   const saveSettingsMutation = useMutation({
@@ -120,6 +139,7 @@ export function ProfitAnalytics() {
       toast.success(t('Profit cost settings saved'))
       setSettingsOpen(false)
       setFocusChannelId(null)
+      setExcludeAdminsOverride(null)
       void queryClient.invalidateQueries({ queryKey: ['profit-analytics'] })
     },
     onError: (error) => {
@@ -131,6 +151,24 @@ export function ProfitAnalytics() {
   const symbol = report?.currency.symbol ?? '$'
   const summary = report?.summary
   const liability = report?.liability
+  const effectiveExcludeAdmins =
+    excludeAdminsOverride ??
+    summary?.exclude_admin_users ??
+    report?.cost_settings.exclude_admin_users ??
+    true
+  let adminFilterBadgeText = ''
+  if (summary) {
+    if (summary.exclude_admin_users) {
+      adminFilterBadgeText =
+        summary.excluded_admin_count > 0
+          ? t('Admins excluded ({{count}})', {
+              count: summary.excluded_admin_count,
+            })
+          : t('Admins excluded')
+    } else {
+      adminFilterBadgeText = t('Includes admins')
+    }
+  }
 
   const needle = keyword.trim().toLowerCase()
 
@@ -214,11 +252,19 @@ export function ProfitAnalytics() {
           {report && (
             <Badge variant='outline' className='font-normal'>
               {t('Default cost ratio')}:{' '}
-              {formatOneDecimal(
+              {formatPercent(
                 report.cost_settings.default_cost_ratio * 100,
                 locale
               )}
               %
+            </Badge>
+          )}
+          {summary && (
+            <Badge
+              variant={summary.exclude_admin_users ? 'secondary' : 'outline'}
+              className='font-normal'
+            >
+              {adminFilterBadgeText}
             </Badge>
           )}
         </div>
@@ -226,6 +272,19 @@ export function ProfitAnalytics() {
 
       <SectionPageLayout.Actions>
         <div className='flex flex-wrap items-center gap-2'>
+          <div className='bg-muted/60 inline-flex h-8 items-center gap-2 rounded-md border px-2.5'>
+            <Switch
+              id='profit-exclude-admins'
+              checked={effectiveExcludeAdmins}
+              onCheckedChange={(checked) => setExcludeAdminsOverride(checked)}
+            />
+            <Label
+              htmlFor='profit-exclude-admins'
+              className='cursor-pointer text-xs font-normal whitespace-nowrap'
+            >
+              {t('Exclude admins')}
+            </Label>
+          </div>
           <div className='bg-muted/60 inline-flex items-center rounded-md border p-0.5'>
             {RANGE_OPTIONS.map((option) => (
               <Button
@@ -725,12 +784,26 @@ export function ProfitAnalytics() {
                                         : 'outline'
                                     }
                                   >
-                                    {formatOneDecimal(
+                                    {formatPercent(
                                       item.cost_ratio * 100,
                                       locale
                                     )}
                                     %
                                   </Badge>
+                                  {(item.pricing_mode === 'ratio' ||
+                                    item.pricing_mode === 'unit_price') &&
+                                    item.upstream_value != null &&
+                                    item.platform_value != null && (
+                                      <div className='text-muted-foreground mt-0.5 text-xs'>
+                                        {formatEditableDecimal(
+                                          item.upstream_value
+                                        )}{' '}
+                                        /{' '}
+                                        {formatEditableDecimal(
+                                          item.platform_value
+                                        )}
+                                      </div>
+                                    )}
                                 </TableCell>
                                 <TableCell className='text-right tabular-nums'>
                                   {formatMoney(
@@ -1092,6 +1165,7 @@ export function ProfitAnalytics() {
             }}
             settings={report?.cost_settings}
             channels={report?.channels ?? []}
+            pricingRef={report?.pricing_ref}
             symbol={symbol}
             focusChannelId={focusChannelId}
             isSaving={saveSettingsMutation.isPending}

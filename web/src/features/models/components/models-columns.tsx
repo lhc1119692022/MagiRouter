@@ -22,7 +22,7 @@ import { useTranslation } from 'react-i18next'
 
 import { CopyButton } from '@/components/copy-button'
 import { BadgeListCell, TruncatedCell } from '@/components/data-table'
-import { StatusBadge } from '@/components/status-badge'
+import { StatusBadge, type StatusVariant } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -38,6 +38,12 @@ import { modelPricingDisplay } from '@/features/model-pricing/pricing'
 import { ModelPriceCell } from '@/features/pricing/components/model-price-cell'
 import { formatTimestampToDate } from '@/lib/format'
 import { getLobeIcon } from '@/lib/lobe-icon'
+import {
+  CATEGORY_LABEL_KEYS,
+  getConfiguredModelCategories,
+  getModelCategories,
+  type ModelCapabilityCategory,
+} from '@/lib/model-task-capabilities'
 
 import { getNameRuleConfig } from '../constants'
 import { parseModelTags, formatEndpointsDisplay } from '../lib'
@@ -49,6 +55,16 @@ import { ModelSquareStatus } from './model-square-status'
 import { useModels } from './models-provider'
 
 const EMPTY_VENDORS: Vendor[] = []
+
+const CAPABILITY_BADGE_VARIANT: Record<ModelCapabilityCategory, StatusVariant> =
+  {
+    text: 'blue',
+    image: 'purple',
+    video: 'pink',
+    audio: 'cyan',
+    transcription: 'amber',
+    other: 'neutral',
+  }
 
 export function useModelsColumns(
   vendors: Vendor[] = EMPTY_VENDORS,
@@ -239,6 +255,52 @@ export function useModelsColumns(
                   {t(state.description)}
                 </TooltipContent>
               </Tooltip>
+            </div>
+          )
+        },
+      },
+      {
+        id: 'capability_labels',
+        header: t('Capability labels'),
+        meta: { label: t('Capability labels') },
+        size: 190,
+        enableSorting: false,
+        cell: ({ row }) => {
+          const model = row.original
+          const configured = getConfiguredModelCategories(model.tags)
+          const endpointTypes = [
+            ...(model.supported_endpoints ?? []),
+            ...formatEndpointsDisplay(model.endpoints),
+          ]
+          const categories =
+            configured !== undefined
+              ? configured
+              : getModelCategories({
+                  tags: model.tags,
+                  supported_endpoint_types: endpointTypes,
+                })
+          const sourceHint =
+            configured !== undefined
+              ? t('Manual: only selected labels appear in the catalog.')
+              : t(
+                  'Automatic: labels follow model metadata until you select one.'
+                )
+          return (
+            <div title={sourceHint}>
+              <BadgeListCell
+                expandable
+                expandLabel={t('Show all capability labels')}
+                max={2}
+                items={categories.map((category) => (
+                  <StatusBadge
+                    key={category}
+                    label={t(CATEGORY_LABEL_KEYS[category])}
+                    variant={CAPABILITY_BADGE_VARIANT[category]}
+                    size='sm'
+                    copyable={false}
+                  />
+                ))}
+              />
             </div>
           )
         },

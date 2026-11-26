@@ -16,12 +16,19 @@ const (
 	DefaultProfitCostRatio = 0.5
 	MaxProfitCostRatio     = 10.0
 	MaxProfitFixedCost     = 100000000.0
+
+	ProfitPricingModePercent   = "percent"
+	ProfitPricingModeRatio     = "ratio"
+	ProfitPricingModeUnitPrice = "unit_price"
 )
 
 type ProfitChannelCostConfig struct {
 	CostRatio        *float64 `json:"cost_ratio,omitempty"`
 	MonthlyFixedCost float64  `json:"monthly_fixed_cost"`
 	Note             string   `json:"note"`
+	PricingMode      string   `json:"pricing_mode,omitempty"`
+	UpstreamValue    *float64 `json:"upstream_value,omitempty"`
+	PlatformValue    *float64 `json:"platform_value,omitempty"`
 }
 
 type ProfitFixedCostItem struct {
@@ -34,19 +41,21 @@ type ProfitFixedCostItem struct {
 }
 
 type ProfitAnalyticsSetting struct {
-	DefaultCostRatio float64                            `json:"default_cost_ratio"`
-	PaymentFeeRate   float64                            `json:"payment_fee_rate"`
-	PaymentFeeRates  map[string]float64                 `json:"payment_fee_rates"`
-	ChannelCosts     map[string]ProfitChannelCostConfig `json:"channel_costs"`
-	ExtraFixedCosts  []ProfitFixedCostItem              `json:"extra_fixed_costs"`
+	ExcludeAdminUsers bool                               `json:"exclude_admin_users"`
+	DefaultCostRatio  float64                            `json:"default_cost_ratio"`
+	PaymentFeeRate    float64                            `json:"payment_fee_rate"`
+	PaymentFeeRates   map[string]float64                 `json:"payment_fee_rates"`
+	ChannelCosts      map[string]ProfitChannelCostConfig `json:"channel_costs"`
+	ExtraFixedCosts   []ProfitFixedCostItem              `json:"extra_fixed_costs"`
 }
 
 var profitAnalyticsSetting = ProfitAnalyticsSetting{
-	DefaultCostRatio: DefaultProfitCostRatio,
-	PaymentFeeRate:   0,
-	PaymentFeeRates:  map[string]float64{},
-	ChannelCosts:     map[string]ProfitChannelCostConfig{},
-	ExtraFixedCosts:  []ProfitFixedCostItem{},
+	ExcludeAdminUsers: true,
+	DefaultCostRatio:  DefaultProfitCostRatio,
+	PaymentFeeRate:    0,
+	PaymentFeeRates:   map[string]float64{},
+	ChannelCosts:      map[string]ProfitChannelCostConfig{},
+	ExtraFixedCosts:   []ProfitFixedCostItem{},
 }
 
 func init() {
@@ -71,6 +80,14 @@ func cloneProfitChannelCostMap(source map[string]ProfitChannelCostConfig) map[st
 			val := *item.CostRatio
 			cloned.CostRatio = &val
 		}
+		if item.UpstreamValue != nil {
+			val := *item.UpstreamValue
+			cloned.UpstreamValue = &val
+		}
+		if item.PlatformValue != nil {
+			val := *item.PlatformValue
+			cloned.PlatformValue = &val
+		}
 		result[key] = cloned
 	}
 	return result
@@ -78,11 +95,12 @@ func cloneProfitChannelCostMap(source map[string]ProfitChannelCostConfig) map[st
 
 func (setting ProfitAnalyticsSetting) Normalized() ProfitAnalyticsSetting {
 	out := ProfitAnalyticsSetting{
-		DefaultCostRatio: setting.DefaultCostRatio,
-		PaymentFeeRate:   setting.PaymentFeeRate,
-		PaymentFeeRates:  make(map[string]float64, len(setting.PaymentFeeRates)),
-		ChannelCosts:     make(map[string]ProfitChannelCostConfig, len(setting.ChannelCosts)),
-		ExtraFixedCosts:  make([]ProfitFixedCostItem, 0, len(setting.ExtraFixedCosts)),
+		ExcludeAdminUsers: setting.ExcludeAdminUsers,
+		DefaultCostRatio:  setting.DefaultCostRatio,
+		PaymentFeeRate:    setting.PaymentFeeRate,
+		PaymentFeeRates:   make(map[string]float64, len(setting.PaymentFeeRates)),
+		ChannelCosts:      make(map[string]ProfitChannelCostConfig, len(setting.ChannelCosts)),
+		ExtraFixedCosts:   make([]ProfitFixedCostItem, 0, len(setting.ExtraFixedCosts)),
 	}
 	if math.IsNaN(out.DefaultCostRatio) || math.IsInf(out.DefaultCostRatio, 0) || out.DefaultCostRatio < 0 {
 		out.DefaultCostRatio = DefaultProfitCostRatio
@@ -109,9 +127,26 @@ func (setting ProfitAnalyticsSetting) Normalized() ProfitAnalyticsSetting {
 		if len(normalized.Note) > 255 {
 			normalized.Note = normalized.Note[:255]
 		}
-		if item.CostRatio != nil {
-			ratio := *item.CostRatio
-			normalized.CostRatio = &ratio
+		mode := strings.ToLower(strings.TrimSpace(item.PricingMode))
+		if (mode == ProfitPricingModeRatio || mode == ProfitPricingModeUnitPrice) &&
+			item.UpstreamValue != nil && item.PlatformValue != nil &&
+			!math.IsNaN(*item.UpstreamValue) && !math.IsInf(*item.UpstreamValue, 0) && *item.UpstreamValue >= 0 &&
+			!math.IsNaN(*item.PlatformValue) && !math.IsInf(*item.PlatformValue, 0) && *item.PlatformValue > 0 {
+			upstream := math.Round(*item.UpstreamValue*1e6) / 1e6
+			platform := math.Round(*item.PlatformValue*1e6) / 1e6
+			derived := math.Round((upstream/platform)*1e6) / 1e6
+			normalized.PricingMode = mode
+			normalized.UpstreamValue = &upstream
+			normalized.PlatformValue = &platform
+			normalized.CostRatio = &derived
+		} else {
+			if mode == ProfitPricingModePercent {
+				normalized.PricingMode = ""
+			}
+			if item.CostRatio != nil {
+				ratio := *item.CostRatio
+				normalized.CostRatio = &ratio
+			}
 		}
 		if normalized.CostRatio == nil && normalized.MonthlyFixedCost == 0 && normalized.Note == "" {
 			continue
@@ -177,6 +212,31 @@ func (setting ProfitAnalyticsSetting) Validate() error {
 		if parsedID, err := strconv.Atoi(channelID); err != nil || parsedID <= 0 {
 			return common.NewMessage("Invalid channel ID in cost configuration")
 		}
+		mode := strings.ToLower(strings.TrimSpace(item.PricingMode))
+		switch mode {
+		case "", ProfitPricingModePercent, ProfitPricingModeRatio, ProfitPricingModeUnitPrice:
+		default:
+			return common.NewMessage("Invalid pricing mode in cost configuration")
+		}
+		if mode == ProfitPricingModeRatio || mode == ProfitPricingModeUnitPrice {
+			if item.UpstreamValue != nil || item.PlatformValue != nil {
+				if item.UpstreamValue == nil || item.PlatformValue == nil {
+					return common.NewMessage("Both upstream and platform values are required")
+				}
+				upstream := *item.UpstreamValue
+				platform := *item.PlatformValue
+				if math.IsNaN(upstream) || math.IsInf(upstream, 0) || upstream < 0 || upstream > MaxProfitFixedCost {
+					return common.NewMessage("Upstream ratio or unit price must be non-negative")
+				}
+				if math.IsNaN(platform) || math.IsInf(platform, 0) || platform <= 0 || platform > MaxProfitFixedCost {
+					return common.NewMessage("Platform ratio or unit price must be greater than 0")
+				}
+				derived := upstream / platform
+				if math.IsNaN(derived) || math.IsInf(derived, 0) || derived < 0 || derived > MaxProfitCostRatio {
+					return common.NewMessage("Channel cost ratio must be between 0 and 10")
+				}
+			}
+		}
 		if item.CostRatio != nil {
 			ratio := *item.CostRatio
 			if math.IsNaN(ratio) || math.IsInf(ratio, 0) || ratio < 0 || ratio > MaxProfitCostRatio {
@@ -233,10 +293,11 @@ func (setting ProfitAnalyticsSetting) ToOptionMap() (map[string]string, error) {
 		return nil, err
 	}
 	return map[string]string{
-		"profit_analytics_setting.default_cost_ratio": strconv.FormatFloat(cfg.DefaultCostRatio, 'f', -1, 64),
-		"profit_analytics_setting.payment_fee_rate":   strconv.FormatFloat(cfg.PaymentFeeRate, 'f', -1, 64),
-		"profit_analytics_setting.payment_fee_rates":  string(feeRatesRaw),
-		"profit_analytics_setting.channel_costs":      string(channelCostsRaw),
-		"profit_analytics_setting.extra_fixed_costs":  string(fixedCostsRaw),
+		"profit_analytics_setting.exclude_admin_users": strconv.FormatBool(cfg.ExcludeAdminUsers),
+		"profit_analytics_setting.default_cost_ratio":  strconv.FormatFloat(cfg.DefaultCostRatio, 'f', -1, 64),
+		"profit_analytics_setting.payment_fee_rate":    strconv.FormatFloat(cfg.PaymentFeeRate, 'f', -1, 64),
+		"profit_analytics_setting.payment_fee_rates":   string(feeRatesRaw),
+		"profit_analytics_setting.channel_costs":       string(channelCostsRaw),
+		"profit_analytics_setting.extra_fixed_costs":   string(fixedCostsRaw),
 	}, nil
 }
