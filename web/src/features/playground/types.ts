@@ -41,6 +41,32 @@ export const CHAT_API_PROTOCOLS = [
 export type ChatApiProtocol = (typeof CHAT_API_PROTOCOLS)[number]
 export type ResolvedChatApiProtocol = Exclude<ChatApiProtocol, 'auto'>
 
+export const CHAT_FILE_OUTPUT_FORMATS = [
+  'off',
+  'auto',
+  'md',
+  'json',
+  'csv',
+  'html',
+  'txt',
+  'code',
+] as const
+export type ChatFileOutputFormat = (typeof CHAT_FILE_OUTPUT_FORMATS)[number]
+
+export type ChatAttachmentKind = 'image' | 'pdf' | 'text'
+
+export interface MessageAttachment {
+  name: string
+  mediaType: string
+  kind: ChatAttachmentKind
+  size?: number
+}
+
+export interface ChatAttachment extends MessageAttachment {
+  url?: string
+  textContent?: string
+}
+
 export type MessageStatus = 'loading' | 'streaming' | 'complete' | 'error'
 
 export type PlaygroundMessageLayoutMode = 'alternating' | 'left'
@@ -54,6 +80,7 @@ export interface Message {
   key: string
   from: MessageRole
   versions: MessageVersion[]
+  attachments?: MessageAttachment[]
   createdAt?: number
   startedAt?: number
   completedAt?: number
@@ -80,10 +107,14 @@ export interface ChatCompletionMessage {
 }
 
 export interface ContentPart {
-  type: 'text' | 'image_url'
+  type: 'text' | 'image_url' | 'file'
   text?: string
   image_url?: {
     url: string
+  }
+  file?: {
+    filename?: string
+    file_data?: string
   }
 }
 
@@ -149,6 +180,7 @@ export interface PlaygroundConfig {
   protocol: ChatApiProtocol
   reasoning_effort: ChatReasoningEffort | ''
   web_search: boolean
+  fileOutput: ChatFileOutputFormat
   historyTurns: (typeof CHAT_HISTORY_TURNS)[number]
   parameterEnabled: ParameterEnabled
   group: string

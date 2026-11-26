@@ -20,6 +20,7 @@ import type { Table } from '@tanstack/react-table'
 import { useTranslation } from 'react-i18next'
 
 import { Combobox } from '@/components/ui/combobox'
+import { cn } from '@/lib/utils'
 
 import { CompactDateTimeRangePicker } from '../../components/compact-date-time-range-picker'
 import {
@@ -28,6 +29,14 @@ import {
   LogsFilterToolbar,
 } from '../../components/logs-filter-toolbar'
 import type { AuditFilters, AuditLog } from '../api'
+
+const AUDIT_CATEGORY_OPTIONS = [
+  { value: '', labelKey: 'All' },
+  { value: 'login', labelKey: 'Login' },
+  { value: 'security', labelKey: 'Account security' },
+  { value: 'operation', labelKey: 'Operation audit' },
+  { value: 'access_token', labelKey: 'Access Token' },
+] as const
 
 function AuditFilterSelect(props: {
   label: string
@@ -56,6 +65,8 @@ export function AuditLogFilterBar(props: {
   onChange: (patch: Partial<AuditFilters>) => void
   scope: 'all' | 'self'
   accessOnly?: boolean
+  editorial?: boolean
+  totalCount?: number
   tokenScope: string
   defaultTokenScope: string
   currentTokenRef?: string
@@ -89,55 +100,59 @@ export function AuditLogFilterBar(props: {
       />
     </LogsFilterField>
   )
+  const resultFilter = (
+    <AuditFilterSelect
+      label={t('Result')}
+      value={props.filters.success ?? 'all'}
+      options={[
+        { value: 'all', label: t('All results') },
+        { value: 'true', label: t('Success') },
+        { value: 'false', label: t('Failed') },
+      ]}
+      onChange={(value) =>
+        props.onChange({ success: value === 'all' ? undefined : value })
+      }
+    />
+  )
+  const categoryOrTokenScopeFilter = props.accessOnly ? (
+    <AuditFilterSelect
+      label={t('Token scope')}
+      value={props.tokenScope}
+      options={[
+        { value: 'all', label: t('All tokens') },
+        {
+          value: 'current',
+          label: t('Current token'),
+          disabled: !props.currentTokenRef,
+        },
+        {
+          value: 'historical',
+          label: t('Historical tokens'),
+          disabled: props.currentTokenRef === undefined,
+        },
+      ]}
+      onChange={props.onTokenScopeChange}
+    />
+  ) : (
+    <AuditFilterSelect
+      label={t('Category')}
+      value={props.filters.category ?? 'all'}
+      options={[
+        { value: 'all', label: t('All categories') },
+        { value: 'login', label: t('Login') },
+        { value: 'security', label: t('Account security') },
+        { value: 'operation', label: t('Operation audit') },
+        { value: 'access_token', label: t('Access Token') },
+      ]}
+      onChange={(value) =>
+        props.onChange({ category: value === 'all' ? undefined : value })
+      }
+    />
+  )
   const mainFilters = (
     <>
-      <AuditFilterSelect
-        label={t('Result')}
-        value={props.filters.success ?? 'all'}
-        options={[
-          { value: 'all', label: t('All results') },
-          { value: 'true', label: t('Success') },
-          { value: 'false', label: t('Failed') },
-        ]}
-        onChange={(value) =>
-          props.onChange({ success: value === 'all' ? undefined : value })
-        }
-      />
-      {props.accessOnly ? (
-        <AuditFilterSelect
-          label={t('Token scope')}
-          value={props.tokenScope}
-          options={[
-            { value: 'all', label: t('All tokens') },
-            {
-              value: 'current',
-              label: t('Current token'),
-              disabled: !props.currentTokenRef,
-            },
-            {
-              value: 'historical',
-              label: t('Historical tokens'),
-              disabled: props.currentTokenRef === undefined,
-            },
-          ]}
-          onChange={props.onTokenScopeChange}
-        />
-      ) : (
-        <AuditFilterSelect
-          label={t('Category')}
-          value={props.filters.category ?? 'all'}
-          options={[
-            { value: 'all', label: t('All categories') },
-            { value: 'login', label: t('Login') },
-            { value: 'security', label: t('Account security') },
-            { value: 'operation', label: t('Operation audit') },
-            { value: 'access_token', label: t('Access Token') },
-          ]}
-          onChange={(value) =>
-            props.onChange({ category: value === 'all' ? undefined : value })
-          }
-        />
-      )}
+      {resultFilter}
+      {categoryOrTokenScopeFilter}
     </>
   )
   const advancedFilters =
@@ -199,13 +214,48 @@ export function AuditLogFilterBar(props: {
     filterCount > 0 ||
     props.filters.start_timestamp !== undefined ||
     props.filters.end_timestamp !== undefined
+  const isEditorial = Boolean(props.editorial && !props.accessOnly)
+  const activeCategory = props.filters.category ?? ''
+  const categoryPills = isEditorial ? (
+    <div
+      className='keys-status-pills'
+      role='group'
+      aria-label={t('Filter by category')}
+    >
+      {AUDIT_CATEGORY_OPTIONS.map((option) => (
+        <button
+          key={option.value || 'all'}
+          type='button'
+          className={cn(
+            'keys-status-pill',
+            activeCategory === option.value && 'is-active'
+          )}
+          onClick={() =>
+            props.onChange({ category: option.value || undefined })
+          }
+        >
+          {t(option.labelKey)}
+        </button>
+      ))}
+    </div>
+  ) : undefined
+
   return (
     <LogsFilterToolbar
       table={props.table}
+      variant={isEditorial ? 'editorial' : 'default'}
+      editorialTopLeft={categoryPills}
+      editorialTopRight={
+        isEditorial && props.totalCount !== undefined ? (
+          <span className='console-head-meta tabular-nums'>
+            {t('{{count}} records', { count: props.totalCount })}
+          </span>
+        ) : undefined
+      }
       primaryFilters={
         <>
           {dateFilter}
-          {mainFilters}
+          {isEditorial ? resultFilter : mainFilters}
         </>
       }
       advancedFilters={advancedFilters}

@@ -369,4 +369,5 @@ export interface GroupChannelStatusResponse {
   bucket_seconds: number
   summary: GroupChannelStatusSummary
   groups: GroupChannelStatusItem[]
+  custom_order?: string[]
 }

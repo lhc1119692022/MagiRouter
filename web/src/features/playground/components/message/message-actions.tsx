@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import {
   Check,
   Copy,
+  Download,
   Edit,
   FileCode2,
   MoreHorizontal,
@@ -29,6 +30,7 @@ import {
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
+import { downloadTextFile } from '@/components/ai-elements/code-block-file'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -43,6 +45,7 @@ import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { MESSAGE_ACTION_LABELS } from '../../constants'
 import { useMessageActionGuard } from '../../hooks/use-message-action-guard'
 import {
+  getAssistantDownloadTarget,
   getMessageActionState,
   getMessageActionsVisibilityClass,
 } from '../../lib'
@@ -102,6 +105,11 @@ export function MessageActions({
 
   const handleRegenerate = guardAction(() => onRegenerate?.(message))
   const handleToggleSource = () => onToggleSource?.(message)
+  const handleDownload = () => {
+    if (!content) return
+    const target = getAssistantDownloadTarget(content, message.createdAt)
+    downloadTextFile(target.content, target.filename, target.mimeType)
+  }
   const handleEdit = guardAction(() => onEdit?.(message))
   const handleDelete = guardAction(() => onDelete?.(message))
 
@@ -126,6 +134,14 @@ export function MessageActions({
         ? MESSAGE_ACTION_LABELS.SHOW_PREVIEW
         : MESSAGE_ACTION_LABELS.SHOW_SOURCE,
       onClick: handleToggleSource,
+    })
+  }
+
+  if (isAssistant && hasContent && !isLoading) {
+    actions.push({
+      icon: Download,
+      label: MESSAGE_ACTION_LABELS.DOWNLOAD,
+      onClick: handleDownload,
     })
   }
 

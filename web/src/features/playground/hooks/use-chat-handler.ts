@@ -38,6 +38,7 @@ import {
   updateCurrentVersionContent,
 } from '../lib'
 import type {
+  ChatAttachment,
   ChatCompletionRequest,
   Message,
   PlaygroundConfig,
@@ -48,6 +49,7 @@ import { useStreamRequest } from './use-stream-request'
 interface UseChatHandlerOptions {
   config: PlaygroundConfig
   billingKeyId?: number | null
+  acceptsAttachments?: boolean
   acceptsChatImages?: boolean
   protocol?: ResolvedChatApiProtocol
   onMessageUpdate: (updater: (prev: Message[]) => Message[]) => void
@@ -79,11 +81,13 @@ function mergePendingStreamChunk(
 export function useChatHandler({
   config,
   billingKeyId,
+  acceptsAttachments,
   acceptsChatImages,
   protocol = 'openai_chat',
   onMessageUpdate,
 }: UseChatHandlerOptions) {
   const { t } = useTranslation()
+  const attachmentsEnabled = acceptsAttachments ?? acceptsChatImages ?? false
   const { sendStreamRequest, stopStream, isStreaming } = useStreamRequest()
   const [isRequesting, setIsRequesting] = useState(false)
   const abortControllerRef = useRef<AbortController | null>(null)
@@ -355,14 +359,19 @@ export function useChatHandler({
 
   // Send chat request (stream or non-stream based on config)
   const sendChat = useCallback(
-    (messages: Message[], imageUrls?: string[]) => {
+    (
+      messages: Message[],
+      attachments?: (string | ChatAttachment)[],
+      sessionAttachmentsByKey?: ReadonlyMap<string, ChatAttachment[]>
+    ) => {
       if (billingKeyId == null || !config.model) return
-      if (imageUrls?.length && !acceptsChatImages) return
+      if (attachments?.length && !attachmentsEnabled) return
       const payload = buildChatCompletionPayload(
         messages,
         config,
         undefined,
-        acceptsChatImages ? imageUrls : undefined
+        attachmentsEnabled ? attachments : undefined,
+        attachmentsEnabled ? sessionAttachmentsByKey : undefined
       )
       delete payload.group
       if (payload.stream) {
@@ -374,7 +383,7 @@ export function useChatHandler({
     [
       config,
       billingKeyId,
-      acceptsChatImages,
+      attachmentsEnabled,
       sendStreamingChat,
       sendNonStreamingChat,
     ]

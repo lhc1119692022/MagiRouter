@@ -425,6 +425,7 @@ func updateOptionMap(key string, value string) (err error) {
 	}
 	common.OptionMapRWMutex.Lock()
 	defer common.OptionMapRWMutex.Unlock()
+	prevValue, hadPrev := common.OptionMap[key]
 	common.OptionMap[key] = value
 
 	// 检查是否是模型配置 - 使用更规范的方式处理
@@ -677,12 +678,24 @@ func updateOptionMap(key string, value string) (err error) {
 		common.TurnstileSiteKey = value
 	case "TurnstileSecretKey":
 		common.TurnstileSecretKey = value
-	case "QuotaForNewUser":
-		common.QuotaForNewUser, _ = strconv.Atoi(value)
-	case "QuotaForInviter":
-		common.QuotaForInviter, _ = strconv.Atoi(value)
-	case "QuotaForInvitee":
-		common.QuotaForInvitee, _ = strconv.Atoi(value)
+	case "QuotaForNewUser", "QuotaForInviter", "QuotaForInvitee":
+		if validateErr := operation_setting.ValidateQuotaOption(key, value); validateErr != nil {
+			if hadPrev {
+				common.OptionMap[key] = prevValue
+			} else {
+				delete(common.OptionMap, key)
+			}
+			return validateErr
+		}
+		parsed, _ := strconv.Atoi(value)
+		switch key {
+		case "QuotaForNewUser":
+			common.QuotaForNewUser = parsed
+		case "QuotaForInviter":
+			common.QuotaForInviter = parsed
+		case "QuotaForInvitee":
+			common.QuotaForInvitee = parsed
+		}
 	case "QuotaRemindThreshold":
 		common.QuotaRemindThreshold, _ = strconv.Atoi(value)
 	case "PreConsumedQuota":

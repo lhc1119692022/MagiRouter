@@ -1,9 +1,14 @@
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { useStatus } from '@/hooks/use-status'
 import { requireServerSuccess } from '@/lib/server-error-message'
 
-import { getGroupChannelStatus, getUptimeStatus } from '../api'
+import {
+  getGroupChannelStatus,
+  getUptimeStatus,
+  updateGroupChannelStatusOrder,
+} from '../api'
+import { applyGroupChannelStatusOrder } from '../lib/channel-status-order'
 import type { GroupChannelStatusResponse } from '../types'
 
 function isGroupChannelStatusResponse(
@@ -28,6 +33,35 @@ export function usePublicMonitoring() {
     staleTime: 30_000,
   })
   return { enabled, publication, query }
+}
+
+export function useUpdateGroupChannelStatusOrder() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (groups: string[]) => {
+      const payload = requireServerSuccess(
+        await updateGroupChannelStatusOrder(groups)
+      )
+      return payload.data?.groups ?? groups
+    },
+    onSuccess: (savedGroups) => {
+      queryClient.setQueriesData<GroupChannelStatusResponse | null>(
+        { queryKey: ['group-channel-status'] },
+        (prev) => {
+          if (!prev) return prev
+          return {
+            ...prev,
+            groups: applyGroupChannelStatusOrder(prev.groups, savedGroups),
+            custom_order: savedGroups.length > 0 ? savedGroups : undefined,
+          }
+        }
+      )
+      void queryClient.invalidateQueries({
+        queryKey: ['group-channel-status'],
+      })
+    },
+    meta: { errorToast: false },
+  })
 }
 
 export function useGroupChannelStatus(hours = 24) {

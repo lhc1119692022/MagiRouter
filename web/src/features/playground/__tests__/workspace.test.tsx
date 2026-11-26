@@ -1354,3 +1354,39 @@ it('hides the chat composer for an unsupported model and lets the user switch to
   )
   expect(post).not.toHaveBeenCalled()
 })
+
+it('enables file/image attachment and file-output mode for any text chat model without requiring hardcoded image_input metadata', async () => {
+  const user = userEvent.setup()
+  await renderPlayground(
+    'qwen4-max',
+    undefined,
+    ['qwen4-max'],
+    undefined,
+    undefined,
+    'chat'
+  )
+
+  await chooseWorkspaceOption(user, 'API Key', 'Test key')
+  const input = await screen.findByRole('textbox', { name: 'Ask anything' })
+  await waitFor(() => expect(input).toBeEnabled())
+
+  expect(
+    screen.getByRole('button', { name: 'Attach images or files' })
+  ).toBeEnabled()
+  const fileOutputSelect = screen.getByRole('combobox', { name: 'File output' })
+  await user.click(fileOutputSelect)
+  await user.click(screen.getByRole('option', { name: 'CSV (.csv)' }))
+
+  await user.type(input, 'Generate sales report')
+  await user.click(screen.getByRole('button', { name: 'Request preview' }))
+  const preview = JSON.parse(
+    screen.getByText(/"qwen4-max"/, { selector: 'code' }).textContent ?? 'null'
+  )
+  expect(preview.messages[0].role).toBe('system')
+  expect(preview.messages[0].content).toContain('filename="<name>.<ext>"')
+  expect(preview.messages[0].content).toContain('RFC 4180 CSV')
+  expect(preview.messages[1]).toEqual({
+    role: 'user',
+    content: 'Generate sales report',
+  })
+})

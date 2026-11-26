@@ -17,12 +17,24 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import type { ColumnDef } from '@tanstack/react-table'
-import { GitBranch, Sparkles, KeyRound } from 'lucide-react'
+import {
+  ArrowLeftRight,
+  Brain,
+  CircleArrowRight,
+  Clock,
+  Database,
+  GitBranch,
+  KeyRound,
+  Layers,
+  Plug,
+  Radio,
+  Sparkles,
+  Zap,
+} from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { GroupBadge } from '@/components/group-badge'
-import { StatusBadge, type StatusBadgeProps } from '@/components/status-badge'
+import { StatusBadge } from '@/components/status-badge'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
   Popover,
@@ -49,11 +61,16 @@ import { taskUsageUnitLabel } from '@/features/pricing/lib/task-price-display'
 import type { BillingUsageSchema } from '@/features/pricing/types'
 import { getUserAvatarFallback, getUserAvatarStyle } from '@/lib/avatar'
 import { formatBillingCurrencyFromUSD } from '@/lib/currency'
-import { formatLogQuota, formatTimestampToDate } from '@/lib/format'
+import dayjs from '@/lib/dayjs'
+import {
+  formatLogQuota,
+  formatTimestampToDate,
+  formatUseTime,
+} from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { useSystemConfigStore } from '@/stores/system-config-store'
 
-import { LOG_TYPE_ALL_VALUE } from '../../constants'
+import { LOG_TYPE_ALL_VALUE, LOG_TYPE_ENUM } from '../../constants'
 import type { UsageLog } from '../../data/schema'
 import {
   formatModelName,
@@ -75,10 +92,17 @@ import {
 import type { LogOtherData } from '../../types'
 import { DetailsDialog } from '../dialogs/details-dialog'
 import { LogCostDisplay } from '../log-cost-display'
+import {
+  LogsStatusPill,
+  type LogsStatusTone,
+} from '../logs-editorial-primitives'
 import { ModelBadge } from '../model-badge'
 import { RequestPluginLogMarker } from '../request-plugin-record'
-import { TimingMetricsCell, StreamTpsCell } from '../timing-metrics-cell'
-import { useUsageLogsContext } from '../usage-logs-provider'
+import { StreamTpsCell } from '../timing-metrics-cell'
+import {
+  useSensitiveVisible,
+  useUsageLogsContext,
+} from '../usage-logs-provider'
 
 interface DetailSegment {
   text: string
@@ -91,6 +115,119 @@ function formatRatioCompact(ratio: number | undefined): string {
   return ratio % 1 === 0
     ? String(ratio)
     : ratio.toFixed(4).replace(/\.?0+$/, '')
+}
+
+function formatCompactTokenCount(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return '0'
+  if (value < 1000) return String(Math.round(value))
+  if (value < 1_000_000) return `${Number((value / 1000).toFixed(1))}K`
+  return `${Number((value / 1_000_000).toFixed(2))}M`
+}
+
+function formatLatencyMs(ms: number): string {
+  if (!Number.isFinite(ms) || ms <= 0) return '—'
+  if (ms < 1000) return `${Math.round(ms)}ms`
+  return `${(ms / 1000).toFixed(2)}s`
+}
+
+function formatEndpointShort(requestPath?: string): string | null {
+  if (!requestPath) return null
+  const normalized = requestPath.trim()
+  if (!normalized) return null
+  const lower = normalized.toLowerCase()
+  if (lower.includes('/responses')) return 'Responses'
+  if (lower.includes('/messages')) return 'Messages'
+  if (lower.includes('/v1beta') || lower.includes('/gemini')) return 'Gemini'
+  if (lower.includes('/chat/completions')) return 'Chat'
+  if (lower.includes('/embeddings')) return 'Embeddings'
+  if (lower.includes('/images')) return 'Images'
+  if (lower.includes('/audio')) return 'Audio'
+  if (lower.includes('/rerank')) return 'Rerank'
+  if (lower.includes('/completions')) return 'Completions'
+  const segments = normalized.split('/')
+  let segment: string | undefined
+  for (let index = segments.length - 1; index >= 0; index -= 1) {
+    if (segments[index]) {
+      segment = segments[index]
+      break
+    }
+  }
+  return segment ? segment.slice(0, 16) : null
+}
+
+function formatShortLogTime(timestamp: number): string {
+  if (!timestamp) return '—'
+  return dayjs(timestamp * 1000).format('MM-DD HH:mm:ss')
+}
+
+function getLogTypeTagTone(logType: number): string {
+  switch (logType) {
+    case LOG_TYPE_ENUM.ERROR:
+      return 'is-err'
+    case LOG_TYPE_ENUM.TOPUP:
+      return 'is-ok'
+    case LOG_TYPE_ENUM.REFUND:
+      return 'is-info'
+    default:
+      return ''
+  }
+}
+
+function resolveBillingModeBadge(
+  log: UsageLog,
+  other: LogOtherData | null,
+  t: (key: string, opts?: Record<string, unknown>) => string
+): { label: string; tone: LogsStatusTone; title?: string } | null {
+  if (log.type === LOG_TYPE_ENUM.ERROR) {
+    if (isViolationFeeLog(other)) {
+      return { label: t('Violation Fee'), tone: 'err' }
+    }
+    return { label: t('Free on failure'), tone: 'warn' }
+  }
+  if (log.type === LOG_TYPE_ENUM.TOPUP) {
+    return { label: t('Top-up'), tone: 'muted' }
+  }
+  if (log.type === LOG_TYPE_ENUM.REFUND) {
+    return { label: t('Refund'), tone: 'running' }
+  }
+  if (!isDisplayableLogType(log.type)) {
+    return null
+  }
+  if (isViolationFeeLog(other)) {
+    return { label: t('Violation Fee'), tone: 'err' }
+  }
+  if (other?.billing_source === 'subscription') {
+    let underlying = t('Per-token')
+    if (other.billing_mode === 'tiered_expr') {
+      underlying = t('Dynamic Pricing')
+    } else if (
+      isPerCallBilling(other.model_price) ||
+      other.billing_unit === 'request'
+    ) {
+      underlying = t('Per-call')
+    }
+    return {
+      label: t('Subscription'),
+      tone: 'running',
+      title: `${t('Subscription')} · ${underlying}`,
+    }
+  }
+  if (other?.billing_mode === 'tiered_expr') {
+    return {
+      label: t('Dynamic Pricing'),
+      tone: 'running',
+      title: other.matched_tier
+        ? `${t('Dynamic Pricing')} · ${other.matched_tier}`
+        : t('Dynamic Pricing'),
+    }
+  }
+  if (
+    isPerCallBilling(other?.model_price) ||
+    other?.billing_unit === 'request'
+  ) {
+    return { label: t('Per-call'), tone: 'warn' }
+  }
+  return { label: t('Per-token'), tone: 'success' }
 }
 
 function getGroupRatio(other: LogOtherData | null): number | null {
@@ -360,24 +497,59 @@ export function useCommonLogsColumns(
     const columns: ColumnDef<UsageLog>[] = [
       {
         accessorKey: 'created_at',
-        header: t('Time'),
-        cell: ({ row }) => {
+        header: t('Time / Key'),
+        cell: function TimeKeyCell({ row, table }) {
+          const sensitiveVisible = useSensitiveVisible()
           const log = row.original
           const timestamp = row.getValue('created_at') as number
           const config = getLogTypeConfig(log.type)
+          const tokenHidden =
+            table.getState().columnVisibility.token_name === false
+          const tokenName =
+            isDisplayableLogType(log.type) && !tokenHidden
+              ? logTokenName(log, t)
+              : ''
+          const displayTokenName = sensitiveVisible ? tokenName : '••••'
 
           return (
-            <div className='flex min-w-0 flex-col gap-0.5'>
-              <span className='truncate font-mono text-xs tabular-nums'>
-                {formatTimestampToDate(timestamp)}
-              </span>
-              <StatusBadge
-                label={t(config.label)}
-                variant={config.color as StatusBadgeProps['variant']}
-                size='sm'
-                copyable={false}
-                className='-ml-1.5 !text-xs [&_span]:!text-xs'
-              />
+            <div className='logs-model-cell'>
+              <div className='logs-time-row'>
+                <span
+                  className='logs-mono'
+                  title={formatTimestampToDate(timestamp)}
+                >
+                  {formatShortLogTime(timestamp)}
+                </span>
+                {log.type !== LOG_TYPE_ENUM.CONSUME && (
+                  <span
+                    className={cn(
+                      'logs-type-tag',
+                      getLogTypeTagTone(log.type)
+                    )}
+                  >
+                    {t(config.label)}
+                  </span>
+                )}
+              </div>
+              {tokenName ? (
+                <TooltipProvider delay={300}>
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <span className='logs-metric-line logs-key-line is-muted' />
+                      }
+                    >
+                      <KeyRound aria-hidden='true' />
+                      <span className='truncate'>{displayTokenName}</span>
+                    </TooltipTrigger>
+                    {sensitiveVisible && (
+                      <TooltipContent side='top' className='max-w-xs break-all'>
+                        {tokenName}
+                      </TooltipContent>
+                    )}
+                  </Tooltip>
+                </TooltipProvider>
+              ) : null}
             </div>
           )
         },
@@ -387,7 +559,8 @@ export function useCommonLogsColumns(
           return value.includes(String(row.original.type))
         },
         enableHiding: false,
-        size: 180,
+        meta: { label: t('Time / Key') },
+        size: 168,
       },
     ]
 
@@ -615,100 +788,122 @@ export function useCommonLogsColumns(
       )
     }
 
-    columns.push({
-      accessorKey: 'token_name',
-      header: t('Token'),
-      cell: function TokenNameCell({ row }) {
-        const { sensitiveVisible } = useUsageLogsContext()
-        const log = row.original
-        if (!isDisplayableLogType(log.type)) return null
-
-        const tokenName = logTokenName(log, t)
-        if (!tokenName) return null
-
-        const other = parseLogOther(log.other)
-        const displayName = sensitiveVisible ? tokenName : '••••'
-        let group = log.group
-        if (!group) group = other?.group || ''
-        const groupRatio = getGroupRatio(other)
-
-        return (
-          <div className='flex max-w-[200px] flex-col gap-0.5'>
-            <TooltipProvider delay={300}>
-              <Tooltip>
-                <TooltipTrigger render={<div className='max-w-full' />}>
-                  <StatusBadge
-                    label={displayName}
-                    icon={KeyRound}
-                    copyText={sensitiveVisible ? log.token_name : undefined}
-                    size='sm'
-                    showDot={false}
-                    className='border-border/60 bg-muted/30 text-foreground h-6 max-w-full gap-1.5 overflow-hidden rounded-md border px-2 py-0.5 [font-family:var(--font-body)]'
-                  />
-                </TooltipTrigger>
-                {sensitiveVisible && tokenName.length > 16 && (
-                  <TooltipContent side='top' className='max-w-xs break-all'>
-                    {tokenName}
-                  </TooltipContent>
-                )}
-              </Tooltip>
-            </TooltipProvider>
-            {(group || groupRatio != null) && (
-              <span className='block max-w-full truncate text-xs leading-none'>
-                {group ? (
-                  <GroupBadge
-                    group={group}
-                    label={sensitiveVisible ? undefined : '••••'}
-                    type='text'
-                    size='sm'
-                    className='inline align-baseline text-xs leading-none [&>span]:leading-none'
-                  />
-                ) : null}
-                {group && groupRatio != null ? ' ' : null}
-                {groupRatio != null ? (
-                  <span className='text-muted-foreground/60 relative top-px align-baseline tabular-nums'>
-                    {formatRatioCompact(groupRatio)}x
-                  </span>
-                ) : null}
-              </span>
-            )}
-          </div>
-        )
-      },
-      size: 160,
-    })
     columns.push(
       {
         accessorKey: 'model_name',
-        header: t('Model'),
-        cell: function ModelCell({ row }) {
+        header: t('Model / Attributes'),
+        cell: function ModelCell({ row, table }) {
+          const sensitiveVisible = useSensitiveVisible()
           const log = row.original
           if (!isDisplayableLogType(log.type)) return null
 
           const modelInfo = formatModelName(log)
-          const requestPlugins = parseLogOther(log.other)?.request_plugins
+          const other = parseLogOther(log.other)
+          const requestPlugins = other?.request_plugins
+          const endpointLabel = formatEndpointShort(other?.request_path)
+          const reasoningEffort = other?.reasoning_effort?.trim()
+          const tokenHidden =
+            table.getState().columnVisibility.token_name === false
+          const group = !tokenHidden ? log.group || other?.group || '' : ''
+          const groupRatio = !tokenHidden ? getGroupRatio(other) : null
+          let displayGroup = ''
+          if (group) {
+            displayGroup = sensitiveVisible ? group : '••••'
+          }
+          const groupChipText = [
+            displayGroup,
+            groupRatio != null ? `${formatRatioCompact(groupRatio)}x` : '',
+          ]
+            .filter(Boolean)
+            .join(' ')
+          const showStreamIcon = isTimingLogType(log.type)
+          let streamTooltip = log.is_stream ? t('Stream') : t('Non-stream')
+          if (other?.is_task) {
+            streamTooltip = other.task_sync ? t('Sync') : t('Async')
+          }
+          const hasAttributeChips =
+            !!endpointLabel ||
+            !!reasoningEffort ||
+            !!groupChipText ||
+            showStreamIcon
 
           return (
-            <div className='flex w-fit flex-col gap-0.5'>
-              <ModelBadge
-                modelName={modelInfo.name}
-                actualModel={modelInfo.actualModel}
-                responseModel={modelInfo.responseModel}
-              />
+            <div className='logs-model-cell'>
+              <div className='logs-model-top'>
+                <ModelBadge
+                  modelName={modelInfo.name}
+                  actualModel={modelInfo.actualModel}
+                  responseModel={modelInfo.responseModel}
+                  className='logs-editorial-model-badge'
+                />
+              </div>
+              {hasAttributeChips && (
+                <div className='logs-chip-row'>
+                  {endpointLabel && (
+                    <span
+                      className='logs-icon-chip'
+                      title={`${t('Endpoint')}: ${other?.request_path}`}
+                    >
+                      <Plug aria-hidden='true' />
+                      <span>{endpointLabel}</span>
+                    </span>
+                  )}
+                  {reasoningEffort && (
+                    <span
+                      className='logs-icon-chip'
+                      title={`${t('Reasoning Effort')}: ${reasoningEffort}`}
+                    >
+                      <Brain aria-hidden='true' />
+                      <span>{reasoningEffort}</span>
+                    </span>
+                  )}
+                  {groupChipText && (
+                    <span
+                      className='logs-icon-chip'
+                      title={`${t('Group')}: ${groupChipText}`}
+                    >
+                      <Layers aria-hidden='true' />
+                      <span>{groupChipText}</span>
+                    </span>
+                  )}
+                  {showStreamIcon && (
+                    <span
+                      className='logs-icon-chip'
+                      title={`${t('Stream / Sync')}: ${streamTooltip}`}
+                      aria-label={streamTooltip}
+                    >
+                      {log.is_stream ? (
+                        <Radio aria-hidden='true' />
+                      ) : (
+                        <CircleArrowRight aria-hidden='true' />
+                      )}
+                    </span>
+                  )}
+                </div>
+              )}
               {requestPlugins?.length ? (
                 <RequestPluginLogMarker items={requestPlugins} />
               ) : null}
             </div>
           )
         },
-        meta: { mobileTitle: true },
+        meta: { mobileTitle: true, label: t('Model / Attributes') },
       },
       {
         accessorKey: 'is_stream',
-        header: t('Stream'),
+        header: t('Type'),
         cell: ({ row }) => {
           const log = row.original
-          if (!isTimingLogType(log.type)) return null
+          if (!isTimingLogType(log.type)) {
+            const config = getLogTypeConfig(log.type)
+            return (
+              <span
+                className={cn('logs-type-tag', getLogTypeTagTone(log.type))}
+              >
+                {t(config.label)}
+              </span>
+            )
+          }
 
           const useTime = row.getValue('use_time') as number
           const other = parseLogOther(log.other)
@@ -727,11 +922,11 @@ export function useCommonLogsColumns(
             />
           )
         },
-        meta: { label: t('Stream') },
+        meta: { label: t('Type') },
       },
       {
         accessorKey: 'prompt_tokens',
-        header: t('Tokens', { context: 'usage' }),
+        header: t('Tokens & Cache'),
         cell: ({ row }) => {
           const log = row.original
           if (!isDisplayableLogType(log.type)) return null
@@ -741,44 +936,140 @@ export function useCommonLogsColumns(
           const promptTokens = log.prompt_tokens || 0
           const completionTokens = log.completion_tokens || 0
           if (promptTokens === 0 && completionTokens === 0) {
-            return <span className='text-muted-foreground text-xs'>-</span>
+            return (
+              <div className='logs-model-cell'>
+                <span className='logs-metric-line is-muted'>
+                  <ArrowLeftRight aria-hidden='true' />
+                  <span>—</span>
+                </span>
+                <span className='logs-metric-line is-muted'>
+                  <Database aria-hidden='true' />
+                  <span>0 (0%)</span>
+                </span>
+              </div>
+            )
           }
 
           const cacheReadTokens = other?.cache_tokens || 0
           const cacheWrite5m = other?.cache_creation_tokens_5m || 0
           const cacheWrite1h = other?.cache_creation_tokens_1h || 0
-          const hasSplitCache = cacheWrite5m > 0 || cacheWrite1h > 0
+          const cacheWrite12h = other?.cache_creation_tokens_12h || 0
+          const hasSplitCache =
+            cacheWrite5m > 0 || cacheWrite1h > 0 || cacheWrite12h > 0
           const cacheWriteTokens = hasSplitCache
-            ? cacheWrite5m + cacheWrite1h
+            ? cacheWrite5m + cacheWrite1h + cacheWrite12h
             : other?.cache_creation_tokens || 0
+          const cachePct =
+            promptTokens > 0
+              ? Math.round((cacheReadTokens / promptTokens) * 100)
+              : 0
+          const cacheLine = `${formatCompactTokenCount(cacheReadTokens)} (${cachePct}%)${
+            cacheWriteTokens > 0
+              ? ` · +${formatCompactTokenCount(cacheWriteTokens)}`
+              : ''
+          }`
 
           return (
-            <div className='flex flex-col gap-0.5'>
-              <span className='font-mono text-xs font-medium tabular-nums'>
-                {promptTokens.toLocaleString()} /{' '}
-                {completionTokens.toLocaleString()}
+            <div className='logs-model-cell'>
+              <span
+                className='logs-metric-line is-strong'
+                title={`${promptTokens.toLocaleString()} → ${completionTokens.toLocaleString()}`}
+              >
+                <ArrowLeftRight aria-hidden='true' />
+                <span>
+                  {formatCompactTokenCount(promptTokens)} →{' '}
+                  {formatCompactTokenCount(completionTokens)}
+                </span>
               </span>
-              {(cacheReadTokens > 0 || cacheWriteTokens > 0) && (
-                <div className='flex items-center gap-1 text-[11px]'>
-                  {cacheReadTokens > 0 && (
-                    <span className='text-muted-foreground/60'>
-                      {t('Cache')}↓ {cacheReadTokens.toLocaleString()}
-                    </span>
-                  )}
-                  {cacheWriteTokens > 0 && (
-                    <span className='text-muted-foreground/60'>
-                      ↑ {cacheWriteTokens.toLocaleString()}
-                    </span>
-                  )}
-                </div>
-              )}
+              <span
+                className='logs-metric-line is-muted'
+                title={`${t('Cache')}: ${cacheReadTokens.toLocaleString()} (${cachePct}%)${
+                  cacheWriteTokens > 0
+                    ? ` · +${cacheWriteTokens.toLocaleString()}`
+                    : ''
+                }`}
+              >
+                <Database aria-hidden='true' />
+                <span>{cacheLine}</span>
+              </span>
             </div>
           )
         },
+        meta: { label: t('Tokens & Cache') },
+      },
+      {
+        accessorKey: 'use_time',
+        header: t('Timing (TTFT · TPT)'),
+        cell: ({ row }) => {
+          const log = row.original
+          if (!isTimingLogType(log.type)) return null
+
+          const useTime = row.getValue('use_time') as number
+          const other = parseLogOther(log.other)
+          const ttftMs = other?.frt != null && other.frt > 0 ? other.frt : null
+          const totalMs = useTime > 0 ? useTime * 1000 : null
+          let genMs: number | null = null
+          if (totalMs != null) {
+            genMs =
+              ttftMs != null && totalMs > ttftMs ? totalMs - ttftMs : totalMs
+          }
+          const tptLabel =
+            genMs != null && log.completion_tokens > 0
+              ? `${(genMs / log.completion_tokens).toFixed(1)} ms/tok`
+              : null
+          const durationLabel = useTime > 0 ? formatUseTime(useTime) : '—'
+
+          return (
+            <div className='logs-model-cell'>
+              <span
+                className={cn(
+                  'logs-metric-line',
+                  ttftMs != null ? 'is-strong' : 'is-muted'
+                )}
+                title={`${t('First token')}: ${ttftMs != null ? formatLatencyMs(ttftMs) : '—'}`}
+              >
+                <Zap aria-hidden='true' />
+                <span>{ttftMs != null ? formatLatencyMs(ttftMs) : '—'}</span>
+              </span>
+              <span
+                className='logs-metric-line is-muted'
+                title={
+                  tptLabel
+                    ? `${tptLabel} · ${t('Duration')}: ${durationLabel}`
+                    : `${t('Duration')}: ${durationLabel}`
+                }
+              >
+                <Clock aria-hidden='true' />
+                <span>
+                  {tptLabel ? `${tptLabel} · ${durationLabel}` : durationLabel}
+                </span>
+              </span>
+            </div>
+          )
+        },
+        meta: { label: t('Timing (TTFT · TPT)') },
+      },
+      {
+        id: 'billing_mode',
+        header: t('Billing Mode'),
+        cell: ({ row }) => {
+          const log = row.original
+          const other = parseLogOther(log.other)
+          const badge = resolveBillingModeBadge(log, other, t)
+          if (!badge) {
+            return <span className='text-muted-foreground/50 text-xs'>—</span>
+          }
+          return (
+            <span title={badge.title ?? badge.label}>
+              <LogsStatusPill label={badge.label} tone={badge.tone} />
+            </span>
+          )
+        },
+        meta: { label: t('Billing Mode') },
       },
       {
         accessorKey: 'quota',
-        header: t('Cost'),
+        header: t('This Cost'),
         cell: ({ row }) => {
           const log = row.original
           if (!isDisplayableLogType(log.type)) return null
@@ -786,36 +1077,17 @@ export function useCommonLogsColumns(
           const quota = row.getValue('quota') as number
           const other = parseLogOther(log.other)
           return (
-            <LogCostDisplay
-              quota={quota}
-              other={other}
-              showBillingSource={showBillingSource}
-            />
+            <div className='logs-cost-cell'>
+              <LogCostDisplay
+                quota={quota}
+                other={other}
+                showBillingSource={showBillingSource}
+              />
+            </div>
           )
         },
+        meta: { label: t('This Cost') },
       },
-
-      {
-        accessorKey: 'use_time',
-        header: t('Timing'),
-        cell: ({ row }) => {
-          const log = row.original
-          if (!isTimingLogType(log.type)) return null
-
-          const useTime = row.getValue('use_time') as number
-          const other = parseLogOther(log.other)
-
-          return (
-            <TimingMetricsCell
-              useTimeSec={useTime}
-              completionTokens={log.completion_tokens}
-              frtMs={other?.frt}
-              isStream={log.is_stream}
-            />
-          )
-        },
-      },
-
       {
         accessorKey: 'content',
         header: t('Details'),
@@ -883,7 +1155,7 @@ export function useCommonLogsColumns(
             <>
               <button
                 type='button'
-                className='group flex max-w-[200px] items-center gap-1 text-left text-xs'
+                className='logs-detail-trigger group'
                 onClick={() => setDialogOpen(true)}
                 title={t('Click to view full details')}
               >
@@ -901,6 +1173,7 @@ export function useCommonLogsColumns(
         },
         size: 180,
         maxSize: 200,
+        meta: { label: t('Details') },
       }
     )
 

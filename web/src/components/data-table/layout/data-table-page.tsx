@@ -1,21 +1,3 @@
-/*
-Copyright (C) 2023-2026 QuantumNous
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU Affero General Public License as
-published by the Free Software Foundation, either version 3 of the
-License, or (at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU Affero General Public License for more details.
-
-You should have received a copy of the GNU Affero General Public License
-along with this program. If not, see <https://www.gnu.org/licenses/>.
-
-For commercial licensing, please contact support@quantumnous.com
-*/
 import type {
   ColumnDef,
   Row,
@@ -227,6 +209,11 @@ export type DataTablePageProps<TData> = {
   className?: string
 
   /**
+   * Inline pagination wrapper className (used when `paginationInFooter` is false).
+   */
+  paginationClassName?: string
+
+  /**
    * Make the desktop table consume the available page height and scroll inside
    * the table body while keeping the header fixed. Defaults to `true`.
    */
@@ -405,7 +392,7 @@ function renderPagination<TData>(
   return props.paginationInFooter !== false ? (
     <PageFooterPortal>{pagination}</PageFooterPortal>
   ) : (
-    <div className='pt-2'>{pagination}</div>
+    <div className={cn('pt-2', props.paginationClassName)}>{pagination}</div>
   )
 }
 

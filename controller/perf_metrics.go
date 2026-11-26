@@ -1,9 +1,10 @@
 package controller
 
 import (
+	"cmp"
 	"math"
 	"net/http"
-	"sort"
+	"slices"
 	"strconv"
 
 	"github.com/QuantumNous/new-api/common"
@@ -12,6 +13,7 @@ import (
 	perfmetrics "github.com/QuantumNous/new-api/pkg/perf_metrics"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
+	"github.com/QuantumNous/new-api/setting/console_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"github.com/gin-gonic/gin"
@@ -110,6 +112,37 @@ type groupChannelStatusResponse struct {
 	BucketSeconds int64                     `json:"bucket_seconds"`
 	Summary       groupChannelStatusSummary `json:"summary"`
 	Groups        []groupChannelStatusItem  `json:"groups"`
+	CustomOrder   []string                  `json:"custom_order,omitempty"`
+}
+
+func sortGroupChannelStatusItems(items []groupChannelStatusItem, customOrder []string) {
+	orderIndex := make(map[string]int, len(customOrder))
+	for idx, groupName := range customOrder {
+		orderIndex[groupName] = idx
+	}
+	slices.SortFunc(items, func(left, right groupChannelStatusItem) int {
+		leftIdx, leftPinned := orderIndex[left.Group]
+		rightIdx, rightPinned := orderIndex[right.Group]
+		if leftPinned && rightPinned {
+			return cmp.Compare(leftIdx, rightIdx)
+		}
+		if leftPinned {
+			return -1
+		}
+		if rightPinned {
+			return 1
+		}
+		if left.Group == "default" && right.Group != "default" {
+			return -1
+		}
+		if right.Group == "default" && left.Group != "default" {
+			return 1
+		}
+		if left.RequestCount != right.RequestCount {
+			return cmp.Compare(right.RequestCount, left.RequestCount)
+		}
+		return cmp.Compare(left.Group, right.Group)
+	})
 }
 
 func classifyGroupChannelStatus(hasActiveChannels bool, requestCount int64, successRate float64, probe *perfmetrics.GroupProbeSummary) string {
@@ -322,18 +355,8 @@ func GetPerfMetricsGroups(c *gin.Context) {
 		}
 	}
 
-	sort.Slice(items, func(i, j int) bool {
-		if items[i].Group == "default" && items[j].Group != "default" {
-			return true
-		}
-		if items[j].Group == "default" && items[i].Group != "default" {
-			return false
-		}
-		if items[i].RequestCount != items[j].RequestCount {
-			return items[i].RequestCount > items[j].RequestCount
-		}
-		return items[i].Group < items[j].Group
-	})
+	customOrder := console_setting.GetChannelStatusGroupOrder()
+	sortGroupChannelStatusItems(items, customOrder)
 
 	if summary.TotalRequests > 0 {
 		summary.SuccessRate = math.Round(float64(totalSuccess)/float64(summary.TotalRequests)*10000) / 100
@@ -346,6 +369,11 @@ func GetPerfMetricsGroups(c *gin.Context) {
 		summary.AvgTps = math.Round(tpsWeighted/float64(tpsWeight)*100) / 100
 	}
 
+	var responseCustomOrder []string
+	if c.GetInt("role") >= common.RoleAdminUser && len(customOrder) > 0 {
+		responseCustomOrder = customOrder
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
@@ -356,7 +384,36 @@ func GetPerfMetricsGroups(c *gin.Context) {
 			BucketSeconds: metricsResult.BucketSeconds,
 			Summary:       summary,
 			Groups:        items,
+			CustomOrder:   responseCustomOrder,
 		},
+	})
+}
+
+func UpdatePerfMetricsGroupOrder(c *gin.Context) {
+	var req struct {
+		Groups []string `json:"groups"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ApiErrorStatus(c, http.StatusBadRequest, common.NewMessage("Invalid channel status group order configuration."))
+		return
+	}
+	serialized, normalized, err := console_setting.MarshalChannelStatusGroupOrder(req.Groups)
+	if err != nil {
+		common.ApiErrorStatus(c, http.StatusBadRequest, err)
+		return
+	}
+	if err := model.UpdateOptionsBulk(map[string]string{
+		console_setting.ChannelStatusGroupOrderOption: serialized,
+	}); err != nil {
+		common.ApiErrorStatus(c, http.StatusInternalServerError, common.NewMessage("Failed to save configuration"))
+		return
+	}
+	recordManageAudit(c, "option.update", map[string]any{
+		"key":   console_setting.ChannelStatusGroupOrderOption,
+		"count": len(normalized),
+	})
+	common.ApiSuccess(c, gin.H{
+		"groups": normalized,
 	})
 }
 

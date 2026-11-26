@@ -21,7 +21,9 @@ import type { Message } from '../../types'
 import { parseThinkTags } from './message-reasoning-utils'
 
 type MessageContentStateBase = {
+  attachments: NonNullable<Message['attachments']>
   displayContent: string
+  hasAttachments: boolean
   hasSources: boolean
   isAssistant: boolean
   showLoader: boolean
@@ -60,7 +62,7 @@ function shouldShowMessageContent(
 ): boolean {
   return (
     (message.from === MESSAGE_ROLES.USER || !message.isReasoningStreaming) &&
-    versionContent.length > 0
+    (versionContent.length > 0 || (message.attachments?.length ?? 0) > 0)
   )
 }
 
@@ -81,6 +83,7 @@ export function getMessageContentState(
   versionContent: string
 ): MessageContentState {
   const isAssistant = message.from === MESSAGE_ROLES.ASSISTANT
+  const attachments = message.attachments ?? []
   const sources = message.sources ?? []
   const reasoningContent = isAssistant ? message.reasoning?.content : undefined
   const showLoader = shouldShowMessageLoader(
@@ -91,7 +94,9 @@ export function getMessageContentState(
   const showMessageContent = shouldShowMessageContent(message, versionContent)
 
   const baseState: MessageContentStateBase = {
+    attachments,
     displayContent: getDisplayContent(message, versionContent),
+    hasAttachments: attachments.length > 0,
     hasSources: sources.length > 0,
     isAssistant,
     showLoader,

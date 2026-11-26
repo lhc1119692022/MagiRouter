@@ -142,6 +142,7 @@ export function usePlaygroundState(
             group: prev.group,
             protocol: prev.protocol,
             stream: prev.stream,
+            fileOutput: prev.fileOutput,
             historyTurns: prev.historyTurns,
             [key]: value,
           }
@@ -182,6 +183,7 @@ export function usePlaygroundState(
       ...previous,
       ...DEFAULT_NUMERIC_PARAMETERS,
       web_search: false,
+      fileOutput: 'off',
     }))
   }, [updateMessages])
 

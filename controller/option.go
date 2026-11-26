@@ -382,6 +382,30 @@ func UpdateOption(c *gin.Context) {
 		common.ApiSuccess(c, nil)
 		return
 	}
+	if option.Key == console_setting.ChannelStatusGroupOrderOption {
+		raw, ok := option.Value.(string)
+		if !ok {
+			common.ApiErrorStatus(c, http.StatusBadRequest, common.NewMessage("Invalid channel status group order configuration."))
+			return
+		}
+		parsed, err := console_setting.ParseChannelStatusGroupOrder(raw)
+		if err != nil {
+			common.ApiErrorStatus(c, http.StatusBadRequest, err)
+			return
+		}
+		serialized, _, err := console_setting.MarshalChannelStatusGroupOrder(parsed)
+		if err != nil {
+			common.ApiErrorStatus(c, http.StatusBadRequest, err)
+			return
+		}
+		if err := model.UpdateOptionsBulk(map[string]string{option.Key: serialized}); err != nil {
+			common.ApiErrorStatus(c, http.StatusInternalServerError, common.NewMessage("Failed to save configuration"))
+			return
+		}
+		recordManageAudit(c, "option.update", map[string]any{"key": option.Key})
+		common.ApiSuccess(c, nil)
+		return
+	}
 	if option.Key == console_setting.DocsConfigOption {
 		raw, ok := option.Value.(string)
 		if !ok {

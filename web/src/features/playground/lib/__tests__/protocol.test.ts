@@ -193,6 +193,85 @@ describe('protocol endpoints, headers, and request payloads', () => {
     })
   })
 
+  test('converts PDF file content parts across OpenAI Responses, Anthropic Messages, and Gemini protocols', () => {
+    const pdfPayload: ChatCompletionRequest = {
+      model: 'gpt-6.2-astra',
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'Summarize this PDF' },
+            {
+              type: 'file',
+              file: {
+                filename: 'report.pdf',
+                file_data: 'data:application/pdf;base64,JVBERi0xLjQK',
+              },
+            },
+          ],
+        },
+      ],
+      stream: true,
+    }
+
+    expect(buildProtocolRequestBody('openai_chat', pdfPayload)).toBe(pdfPayload)
+    expect(buildProtocolRequestBody('openai_responses', pdfPayload)).toEqual({
+      model: 'gpt-6.2-astra',
+      input: [
+        {
+          role: 'user',
+          content: [
+            { type: 'input_text', text: 'Summarize this PDF' },
+            {
+              type: 'input_file',
+              filename: 'report.pdf',
+              file_data: 'data:application/pdf;base64,JVBERi0xLjQK',
+            },
+          ],
+        },
+      ],
+      stream: true,
+    })
+    expect(buildProtocolRequestBody('anthropic_messages', pdfPayload)).toEqual({
+      model: 'gpt-6.2-astra',
+      max_tokens: 4096,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'Summarize this PDF' },
+            {
+              type: 'document',
+              source: {
+                type: 'base64',
+                media_type: 'application/pdf',
+                data: 'JVBERi0xLjQK',
+              },
+            },
+          ],
+        },
+      ],
+      stream: true,
+    })
+    const geminiProtocol = resolveChatApiProtocol('auto', 'gemini-4-neon')
+    expect(buildProtocolRequestBody(geminiProtocol, pdfPayload)).toEqual({
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            { text: 'Summarize this PDF' },
+            {
+              inlineData: {
+                mimeType: 'application/pdf',
+                data: 'JVBERi0xLjQK',
+              },
+            },
+          ],
+        },
+      ],
+    })
+  })
+
   test('converts chat payload to Google Gemini v1beta format', () => {
     const body = buildProtocolRequestBody('gemini_v1beta', {
       ...basePayload,

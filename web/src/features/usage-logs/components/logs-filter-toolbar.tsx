@@ -44,6 +44,9 @@ interface LogsFilterToolbarProps<TData> {
   table: Table<TData>
   primaryFilters: ReactNode
   advancedFilters?: ReactNode
+  variant?: 'default' | 'editorial'
+  editorialTopLeft?: ReactNode
+  editorialTopRight?: ReactNode
   compactMobile?: boolean
   mobilePinnedFilters?: ReactNode
   mobileFilters?: ReactNode
@@ -95,6 +98,7 @@ export function LogsFilterToolbar<TData>(props: LogsFilterToolbarProps<TData>) {
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false)
   const isMobile = useMediaQuery('(max-width: 640px)')
+  const isEditorial = props.variant === 'editorial'
 
   const hasAdvancedFilters = props.advancedFilters != null
   const activeAdvancedCount =
@@ -144,7 +148,10 @@ export function LogsFilterToolbar<TData>(props: LogsFilterToolbarProps<TData>) {
       <Drawer open={mobileFiltersOpen} onOpenChange={setMobileFiltersOpen}>
         <DataTableMobileFilterPanel
           compact={props.compactMobile}
-          className={props.className}
+          className={cn(
+            isEditorial && 'logs-editorial-mobile-toolbar',
+            props.className
+          )}
           actions={
             <>
               {props.actionStart}
@@ -239,6 +246,71 @@ export function LogsFilterToolbar<TData>(props: LogsFilterToolbarProps<TData>) {
           </div>
         </DrawerContent>
       </Drawer>
+    )
+  }
+
+  if (isEditorial) {
+    const hasTopRow =
+      props.editorialTopLeft != null || props.editorialTopRight != null
+
+    return (
+      <div className={cn('logs-editorial-toolbar', props.className)}>
+        {hasTopRow && (
+          <div className='logs-editorial-toolbar-main'>
+            <div className='logs-editorial-toolbar-left'>
+              {props.editorialTopLeft}
+            </div>
+            {props.editorialTopRight != null && (
+              <div className='logs-editorial-toolbar-right'>
+                {props.editorialTopRight}
+              </div>
+            )}
+          </div>
+        )}
+
+        <div
+          className={
+            hasTopRow
+              ? 'logs-editorial-toolbar-secondary'
+              : 'logs-editorial-toolbar-main'
+          }
+        >
+          <div className='logs-editorial-toolbar-filters'>
+            {props.primaryFilters}
+            {advancedToggle}
+            {props.stats}
+          </div>
+          <div className='logs-editorial-toolbar-actions'>
+            {props.actionStart}
+            <Button
+              type='button'
+              variant='outline'
+              size='sm'
+              onClick={props.onReset}
+              disabled={!props.hasActiveFilters}
+            >
+              {t('Reset')}
+            </Button>
+            <Button
+              type='button'
+              size='sm'
+              onClick={props.onSearch}
+              disabled={props.searchLoading}
+            >
+              {props.searchLoading && <Loader2 className='animate-spin' />}
+              {t('Search')}
+            </Button>
+            {props.actionEnd}
+            <DataTableViewOptions table={props.table} />
+          </div>
+        </div>
+
+        {advancedOpen && props.advancedFilters && (
+          <div className='logs-editorial-toolbar-advanced'>
+            {props.advancedFilters}
+          </div>
+        )}
+      </div>
     )
   }
 

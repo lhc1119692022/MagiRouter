@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import type { GroupOption, ModelOption } from '../../types'
 
 type InputControlStateOptions = {
+  attachmentCount?: number
   disabled?: boolean
   groups: GroupOption[]
   hasStopHandler: boolean
@@ -36,6 +37,7 @@ type InputControlState = {
 
 type SubmittableInputMessage = {
   text?: string | null
+  files?: unknown[] | null
 }
 
 export function getSubmittableInputText(
@@ -49,7 +51,18 @@ export function getSubmittableInputText(
   return message.text
 }
 
+export function canSubmitInputMessage(
+  message: SubmittableInputMessage,
+  disabled?: boolean
+): boolean {
+  if (disabled) {
+    return false
+  }
+  return Boolean(message.text?.trim()) || (message.files?.length ?? 0) > 0
+}
+
 export function getInputControlState({
+  attachmentCount = 0,
   disabled,
   groups,
   hasStopHandler,
@@ -61,7 +74,8 @@ export function getInputControlState({
   const hasModels = models.length > 0
 
   return {
-    canSubmit: !disabled && hasModels && text.trim().length > 0,
+    canSubmit:
+      !disabled && hasModels && (text.trim().length > 0 || attachmentCount > 0),
     isSelectorDisabled: disabled || isModelLoading || groups.length === 0,
     shouldShowStop: Boolean(isGenerating && hasStopHandler),
   }

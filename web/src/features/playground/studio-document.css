@@ -592,6 +592,16 @@ html[data-theme='dark']
   color: var(--ink-strong);
   box-shadow: inset 0 0 0 var(--hairline) var(--ring-strong);
 }
+.pg-document [data-slot='select-trigger'].pg-composer-select.is-on {
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-fg);
+  box-shadow: none;
+}
+.pg-document
+  [data-slot='select-trigger'].pg-composer-select.is-on:hover:not(:disabled) {
+  background: var(--btn-primary-hover);
+  color: var(--btn-primary-fg);
+}
 .pg-composer-select-content {
   min-width: 176px;
 }
@@ -1121,6 +1131,122 @@ html[data-theme='dark'] .pg-compare-table tr[aria-current] .pg-compare-dot,
 }
 .pg-document-page > .el-footer .el-container {
   width: 100%;
+}
+.pg-message-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.pg-message-attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  background: var(--bg-elevated);
+  color: var(--ink-body);
+  font-size: 12px;
+  line-height: 1.3;
+  box-shadow: inset 0 0 0 var(--hairline) var(--ring-color);
+}
+html[data-theme='dark'] .pg-message-attachment-chip,
+.dark .pg-message-attachment-chip {
+  background: #1c1917;
+}
+.pg-message-attachment-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 220px;
+  font-weight: 500;
+  color: var(--ink-strong);
+}
+.pg-message-attachment-meta {
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+.pg-output-files {
+  width: 100%;
+  max-width: 78ch;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--bg-subtle);
+  box-shadow: inset 0 0 0 var(--hairline) var(--ring-color);
+}
+html[data-theme='dark'] .pg-output-files,
+.dark .pg-output-files {
+  background: #141210;
+}
+.pg-output-files-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.pg-output-files-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-strong);
+}
+.pg-output-files-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding-inline: 5px;
+  border-radius: 9999px;
+  background: var(--bg-elevated);
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.pg-output-file-list {
+  display: grid;
+  gap: 6px;
+}
+.pg-output-file-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 9px;
+  background: var(--bg-elevated);
+  box-shadow: inset 0 0 0 var(--hairline) var(--ring-color);
+}
+html[data-theme='dark'] .pg-output-file-card,
+.dark .pg-output-file-card {
+  background: #1c1917;
+}
+.pg-output-file-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.pg-output-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ink-strong);
+}
+.pg-output-file-meta {
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
 }
 @media (max-width: 640px) {
   .pg-document .pg-head-right .theme-switch {

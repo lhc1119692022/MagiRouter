@@ -30,7 +30,9 @@ const MARKDOWN_EXAMPLE_LANGUAGES = new Set(['markdown', 'md', 'mdx'])
 type MarkdownExampleFence = {
   contentLines: string[]
   fenceChar: string
-  language: string
+  infoString: string
+  openingFenceLength: number
+  nestedFenceLength: number
   nestedFence: boolean
 }
 
@@ -49,7 +51,7 @@ function getFenceRunLength(line: string, fenceChar: string): number {
 }
 
 function getMarkdownExampleFenceLength(block: MarkdownExampleFence): number {
-  let maxFenceLength = 3
+  let maxFenceLength = Math.max(3, block.openingFenceLength)
 
   for (const line of block.contentLines) {
     if (!line.startsWith(block.fenceChar)) {
@@ -71,7 +73,7 @@ function appendMarkdownExampleFence(
 ): void {
   const fence = block.fenceChar.repeat(getMarkdownExampleFenceLength(block))
 
-  output.push(`${fence}${block.language}`)
+  output.push(`${fence}${block.infoString}`)
   output.push(...block.contentLines)
   output.push(fence)
 }
@@ -90,12 +92,15 @@ function normalizeMarkdownExampleFences(input: string): string {
         continue
       }
 
-      const language = match[2].trim().toLowerCase()
+      const infoString = match[2].trim()
+      const language = (infoString.split(/[\s:]/, 1)[0] ?? '').toLowerCase()
       if (MARKDOWN_EXAMPLE_LANGUAGES.has(language)) {
         exampleFence = {
           contentLines: [],
           fenceChar: match[1][0],
-          language,
+          infoString,
+          openingFenceLength: match[1].length,
+          nestedFenceLength: 0,
           nestedFence: false,
         }
         continue
@@ -112,22 +117,36 @@ function normalizeMarkdownExampleFences(input: string): string {
       continue
     }
 
-    if (exampleFence.nestedFence && FENCE_END_PATTERN.test(line)) {
-      exampleFence.contentLines.push(line)
-      exampleFence.nestedFence = false
-      continue
+    const endMatch = line.match(FENCE_END_PATTERN)
+    if (exampleFence.nestedFence && endMatch) {
+      const endRun = endMatch[1]
+      if (
+        endRun[0] === exampleFence.fenceChar &&
+        endRun.length >= exampleFence.nestedFenceLength
+      ) {
+        exampleFence.contentLines.push(line)
+        exampleFence.nestedFence = false
+        exampleFence.nestedFenceLength = 0
+        continue
+      }
+    }
+
+    const innerStartMatch = !endMatch ? line.match(FENCE_START_PATTERN) : null
+    if (!exampleFence.nestedFence && innerStartMatch) {
+      const innerRun = innerStartMatch[1]
+      if (innerRun[0] === exampleFence.fenceChar) {
+        exampleFence.contentLines.push(line)
+        exampleFence.nestedFence = true
+        exampleFence.nestedFenceLength = innerRun.length
+        continue
+      }
     }
 
     if (
-      line.startsWith(exampleFence.fenceChar.repeat(3)) &&
-      !FENCE_END_PATTERN.test(line)
+      endMatch &&
+      endMatch[1][0] === exampleFence.fenceChar &&
+      endMatch[1].length >= exampleFence.openingFenceLength
     ) {
-      exampleFence.contentLines.push(line)
-      exampleFence.nestedFence = true
-      continue
-    }
-
-    if (FENCE_END_PATTERN.test(line)) {
       appendMarkdownExampleFence(output, exampleFence)
       exampleFence = null
       continue

@@ -181,33 +181,33 @@ it('renders synced model switching, real web search toggle, and price readout be
   expect(disabledSearch).toHaveAttribute('aria-pressed', 'false')
 })
 
-it('previews removable local images and sends only validated content after explicit permitted submission', async () => {
+it('previews removable local images and files, rejects unsupported or oversized uploads, and sends validated attachments', async () => {
   const { create, image, read } = installLocalImagePreview()
   const user = userEvent.setup()
   const submit = vi.fn()
   const view = render(
     <PlaygroundInput
       {...defaults}
-      acceptsChatImages
+      acceptsAttachments
       canSubmit={false}
       onSubmit={submit}
     />
   )
   const upload = screen.getByLabelText('Upload files')
   const openDialog = vi.spyOn(upload, 'click')
-  await user.click(screen.getByRole('button', { name: 'Upload photo' }))
+  await user.click(
+    screen.getByRole('button', { name: 'Attach images or files' })
+  )
   expect(openDialog).toHaveBeenCalledOnce()
   const form = screen.getByRole('form', { name: 'Text Chat' })
   fireEvent.drop(form, {
     dataTransfer: {
-      files: [
-        new File(['fixture'], 'not-an-image.pdf', { type: 'application/pdf' }),
-      ],
+      files: [new File(['binary'], 'archive.zip', { type: 'application/zip' })],
       types: ['Files'],
     },
   })
   const large = new File(['fixture'], 'large.png', { type: 'image/png' })
-  Object.defineProperty(large, 'size', { value: 4 * 1024 * 1024 + 1 })
+  Object.defineProperty(large, 'size', { value: 10 * 1024 * 1024 + 1 })
   fireEvent.drop(form, { dataTransfer: { files: [large], types: ['Files'] } })
   expect(create).not.toHaveBeenCalled()
   await user.upload(upload, image)
@@ -216,7 +216,10 @@ it('previews removable local images and sends only validated content after expli
   expect(
     screen.queryByRole('img', { name: 'fixture.png' })
   ).not.toBeInTheDocument()
-  await user.upload(upload, image)
+  const csvFile = new File(['name,score\nAlice,95\n'], 'scores.csv', {
+    type: 'text/csv',
+  })
+  await user.upload(upload, [image, csvFile])
   const input = screen.getByRole('textbox', { name: 'Ask anything' })
   await user.type(input, 'Describe the fixture{Enter}')
   expect(submit).not.toHaveBeenCalled()
@@ -226,14 +229,27 @@ it('previews removable local images and sends only validated content after expli
   view.rerender(
     <PlaygroundInput
       {...defaults}
-      acceptsChatImages
+      acceptsAttachments
       canSubmit
       onSubmit={submit}
     />
   )
   await user.click(screen.getByRole('button', { name: 'Send' }))
   await waitFor(() =>
-    expect(submit).toHaveBeenCalledWith('Describe the fixture', [sampleImage])
+    expect(submit).toHaveBeenCalledWith('Describe the fixture', [
+      expect.objectContaining({
+        name: 'fixture.png',
+        mediaType: 'image/png',
+        kind: 'image',
+        url: sampleImage,
+      }),
+      expect.objectContaining({
+        name: 'scores.csv',
+        mediaType: 'text/csv',
+        kind: 'text',
+        textContent: 'name,score\nAlice,95\n',
+      }),
+    ])
   )
   const messages = [
     createUserMessage('Describe the fixture'),
@@ -255,6 +271,53 @@ it('previews removable local images and sends only validated content after expli
   ])
 })
 
+it('allows submitting an attachment without text and toggles file output format in the composer', async () => {
+  const { image } = installLocalImagePreview()
+  const user = userEvent.setup()
+  const submit = vi.fn()
+  const onFileOutputChange = vi.fn()
+  const view = render(
+    <PlaygroundInput
+      {...defaults}
+      acceptsAttachments
+      onSubmit={submit}
+      fileOutput={{ value: 'off', onChange: onFileOutputChange }}
+    />
+  )
+
+  expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled()
+  await user.upload(screen.getByLabelText('Upload files'), image)
+  expect(screen.getByRole('button', { name: 'Send' })).toBeEnabled()
+  await user.click(screen.getByRole('button', { name: 'Send' }))
+  await waitFor(() =>
+    expect(submit).toHaveBeenCalledWith('', [
+      expect.objectContaining({
+        name: 'fixture.png',
+        kind: 'image',
+        url: sampleImage,
+      }),
+    ])
+  )
+
+  const fileOutputSelect = screen.getByRole('combobox', { name: 'File output' })
+  expect(fileOutputSelect).toHaveTextContent('File output')
+  await user.click(fileOutputSelect)
+  await user.click(screen.getByRole('option', { name: 'CSV (.csv)' }))
+  expect(onFileOutputChange).toHaveBeenCalledWith('csv')
+
+  view.rerender(
+    <PlaygroundInput
+      {...defaults}
+      acceptsAttachments
+      onSubmit={submit}
+      fileOutput={{ value: 'csv', onChange: onFileOutputChange }}
+    />
+  )
+  expect(
+    screen.getByRole('combobox', { name: 'File output' })
+  ).toHaveTextContent('File output · CSV')
+})
+
 it('discards attachments on a route change without losing text or accepting incompatible pasted files', async () => {
   const { image, read } = installLocalImagePreview()
   const user = userEvent.setup()
@@ -262,7 +325,7 @@ it('discards attachments on a route change without losing text or accepting inco
   const view = render(
     <PlaygroundInput
       {...defaults}
-      acceptsChatImages
+      acceptsAttachments
       onSubmit={submit}
       initialPrompt='Keep this draft'
     />
@@ -272,7 +335,7 @@ it('discards attachments on a route change without losing text or accepting inco
     <PlaygroundInput {...defaults} modelValue='text-only' onSubmit={submit} />
   )
   expect(
-    screen.queryByRole('button', { name: 'Upload photo' })
+    screen.queryByRole('button', { name: 'Attach images or files' })
   ).not.toBeInTheDocument()
   expect(screen.queryByLabelText('Upload files')).not.toBeInTheDocument()
   expect(

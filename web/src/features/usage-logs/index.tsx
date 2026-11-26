@@ -16,7 +16,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { getRouteApi, useNavigate } from '@tanstack/react-router'
+import { useIsFetching, useQueryClient } from '@tanstack/react-query'
+import { Link, getRouteApi, useNavigate } from '@tanstack/react-router'
+import { RefreshCw } from 'lucide-react'
 import { useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -25,7 +27,11 @@ import type { NavGroup } from '@/components/layout/types'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { CacheStatsDialog } from '@/features/system-settings/general/channel-affinity/cache-stats-dialog'
 import { useSidebarConfig } from '@/hooks/use-sidebar-config'
+import { getSelf } from '@/lib/api'
+import { cn } from '@/lib/utils'
+import { useAuthStore } from '@/stores/auth-store'
 
+import { ExportLogsDialog } from './components/dialogs/export-logs-dialog'
 import { UserInfoDialog } from './components/dialogs/user-info-dialog'
 import {
   type LogsViewScope,
@@ -34,6 +40,8 @@ import {
   useUsageLogsContext,
 } from './components/usage-logs-provider'
 import { UsageLogsTable } from './components/usage-logs-table'
+
+import './logs-editorial.css'
 import {
   isUsageLogsSectionId,
   USAGE_LOGS_DEFAULT_SECTION,
@@ -58,11 +66,20 @@ const SECTION_META: Record<UsageLogsSectionId, { titleKey: string }> = {
 function UsageLogsContent() {
   const { t } = useTranslation()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const params = route.useParams()
   const activeCategory: UsageLogsSectionId =
     params.section && isUsageLogsSectionId(params.section)
       ? params.section
       : USAGE_LOGS_DEFAULT_SECTION
+  const isTaskSection = activeCategory !== 'common'
+  const isLogsRefreshing =
+    useIsFetching({ queryKey: ['logs', activeCategory] }) > 0
+  const isStatsRefreshing =
+    useIsFetching({ queryKey: ['usage-logs-stats'] }) > 0
+  const isRefreshing = isTaskSection
+    ? isLogsRefreshing
+    : isLogsRefreshing || isStatsRefreshing
   const {
     selectedUserId,
     userInfoDialogOpen,
@@ -71,7 +88,8 @@ function UsageLogsContent() {
     affinityDialogOpen,
     setAffinityDialogOpen,
   } = useUsageLogsContext()
-  const { canManageScope, viewScope, setViewScope } = useLogsViewScope()
+  const { canManageScope, isAdminView, viewScope, setViewScope } =
+    useLogsViewScope()
   const tabNavGroups = useMemo<NavGroup[]>(
     () => [
       {
@@ -117,41 +135,118 @@ function UsageLogsContent() {
     [setViewScope]
   )
 
+  const handleRefreshTaskLogs = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: ['logs', activeCategory] })
+  }, [queryClient, activeCategory])
+
+  const handleRefreshCommonLogs = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: ['logs', 'common'] })
+    void queryClient.invalidateQueries({ queryKey: ['usage-logs-stats'] })
+    if (!isAdminView) {
+      void getSelf()
+        .then((res) => {
+          if (res?.success && res.data) {
+            useAuthStore.getState().auth.setUser(res.data)
+          }
+        })
+        .catch(() => undefined)
+    }
+  }, [isAdminView, queryClient])
+
   const pageMeta =
     activeCategory === 'common' ? SECTION_META.common : SECTION_META.task
+  let subtitleText = t(
+    'Image, video, and audio async tasks · track progress, artifacts, and cost'
+  )
+  if (activeCategory === 'common') {
+    subtitleText = t(
+      'Per-request token usage, latency, billing mode and cost details'
+    )
+  } else if (activeCategory === 'drawing') {
+    subtitleText = t(
+      'Midjourney async drawing tasks · track progress, prompts, and images'
+    )
+  }
   const showTaskSwitcher =
     activeCategory !== 'common' && visibleSections.length > 1
 
   return (
     <>
-      <SectionPageLayout fixedContent>
+      <SectionPageLayout>
         <SectionPageLayout.Title>
           {t(pageMeta.titleKey)}
         </SectionPageLayout.Title>
+        <SectionPageLayout.Subtitle>{subtitleText}</SectionPageLayout.Subtitle>
         <SectionPageLayout.Actions>
           {canManageScope && (
             <Tabs value={viewScope} onValueChange={handleViewScopeChange}>
-              <TabsList>
+              <TabsList className='logs-editorial-subtabs'>
                 <TabsTrigger value='all'>{t('All')}</TabsTrigger>
                 <TabsTrigger value='self'>{t('Only Mine')}</TabsTrigger>
               </TabsList>
             </Tabs>
           )}
+          {isTaskSection ? (
+            <>
+              <button
+                type='button'
+                className='el-btn el-btn-sm el-btn-white'
+                onClick={handleRefreshTaskLogs}
+                disabled={isRefreshing}
+              >
+                <RefreshCw
+                  className={cn('size-3.5', isRefreshing && 'animate-spin')}
+                  aria-hidden='true'
+                />
+                {t('Refresh Progress')}
+              </button>
+              <Link
+                to='/playground'
+                className='el-btn el-btn-sm el-btn-primary'
+              >
+                {t('Go to Playground')} →
+              </Link>
+            </>
+          ) : (
+            <>
+              <button
+                type='button'
+                className='el-btn el-btn-sm el-btn-white'
+                onClick={handleRefreshCommonLogs}
+                disabled={isRefreshing}
+              >
+                <RefreshCw
+                  className={cn('size-3.5', isRefreshing && 'animate-spin')}
+                  aria-hidden='true'
+                />
+                {t('Refresh')}
+              </button>
+              <ExportLogsDialog
+                triggerClassName='el-btn el-btn-sm el-btn-white'
+                triggerLabel={t('Export logs')}
+              />
+            </>
+          )}
         </SectionPageLayout.Actions>
         <SectionPageLayout.Content>
-          <div className='flex h-full min-h-0 flex-col gap-4'>
+          <div className='logs-editorial-page'>
             {showTaskSwitcher && (
-              <Tabs value={activeCategory} onValueChange={handleSectionChange}>
-                <TabsList className='max-w-full flex-wrap justify-start group-data-horizontal/tabs:h-auto'>
-                  {visibleSections.map((section) => (
-                    <TabsTrigger key={section} value={section}>
-                      {t(SECTION_META[section].titleKey)}
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
-              </Tabs>
+              <div className='logs-section-switcher-row'>
+                <Tabs
+                  value={activeCategory}
+                  onValueChange={handleSectionChange}
+                >
+                  <TabsList className='logs-editorial-subtabs max-w-full flex-wrap justify-start'>
+                    {visibleSections.map((section) => (
+                      <TabsTrigger key={section} value={section}>
+                        {t(SECTION_META[section].titleKey)}
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
+                </Tabs>
+              </div>
             )}
-            <div className='min-h-0 flex-1'>
+            <div className='min-w-0'>
               <UsageLogsTable logCategory={activeCategory} />
             </div>
           </div>

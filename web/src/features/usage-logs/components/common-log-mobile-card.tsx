@@ -76,6 +76,13 @@ export function CommonLogMobileCard<TData>(props: {
     other?.user_group_ratio != null && other.user_group_ratio !== -1
       ? other.user_group_ratio
       : other?.group_ratio
+  const firstCell = props.cells.values().next().value
+  const tokenColumnHidden =
+    firstCell?.getContext().table.getState().columnVisibility.token_name ===
+    false
+  const showTokenInfo =
+    props.cells.has('token_name') ||
+    (props.cells.has('created_at') && !tokenColumnHidden)
   const fields: Record<FieldName, LogField> = {
     model: {
       label: t('Model'),
@@ -107,13 +114,13 @@ export function CommonLogMobileCard<TData>(props: {
     token: {
       label: t('Token'),
       value: logTokenName(log, t),
-      visible: displayable && props.cells.has('token_name') && !!log.token_name,
+      visible: displayable && showTokenInfo && !!log.token_name,
       sensitive: true,
     },
     group: {
       label: t('Group'),
       value: group,
-      visible: displayable && props.cells.has('token_name') && !!group,
+      visible: displayable && showTokenInfo && !!group,
       sensitive: true,
     },
   }
@@ -281,7 +288,7 @@ export function CommonLogMobileCard<TData>(props: {
           {groupRatio != null &&
             groupRatio !== 1 &&
             Number.isFinite(groupRatio) &&
-            props.cells.has('token_name') && (
+            showTokenInfo && (
               <div className='text-muted-foreground col-span-2 [overflow-wrap:anywhere]'>
                 {t('Group Ratio')}: {groupRatio}×
               </div>

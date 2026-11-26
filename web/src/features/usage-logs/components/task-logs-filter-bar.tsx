@@ -19,9 +19,14 @@ For commercial licensing, please contact support@quantumnous.com
 import { useQueryClient, useIsFetching } from '@tanstack/react-query'
 import { useNavigate, getRouteApi } from '@tanstack/react-router'
 import type { Table } from '@tanstack/react-table'
+import { Search } from 'lucide-react'
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { Combobox } from '@/components/ui/combobox'
+import { cn } from '@/lib/utils'
+
+import { TASK_STATUS } from '../constants'
 import { buildSearchParams } from '../lib/filter'
 import { getDefaultTimeRange } from '../lib/utils'
 import type { DrawingLogFilters, LogCategory, TaskLogFilters } from '../types'
@@ -41,7 +46,16 @@ type TaskLogsFilters = DrawingLogFilters | TaskLogFilters
 interface TaskLogsFilterBarProps<TData> {
   table: Table<TData>
   logCategory: TaskLikeLogCategory
+  totalCount?: number
 }
+
+const TASK_STATUS_FILTER_OPTIONS = [
+  { value: '', labelKey: 'All' },
+  { value: TASK_STATUS.SUCCESS, labelKey: 'Success' },
+  { value: TASK_STATUS.IN_PROGRESS, labelKey: 'In Progress' },
+  { value: TASK_STATUS.QUEUED, labelKey: 'Queued' },
+  { value: TASK_STATUS.FAILURE, labelKey: 'Failed' },
+] as const
 
 function getFilterValue(
   filters: TaskLogsFilters,
@@ -97,6 +111,7 @@ export function TaskLogsFilterBar<TData>(props: TaskLogsFilterBarProps<TData>) {
         : {
             ...baseFilters,
             ...(searchParams.filter ? { taskId: searchParams.filter } : {}),
+            ...(searchParams.status ? { status: searchParams.status } : {}),
           }
 
     setFilters(next)
@@ -106,6 +121,7 @@ export function TaskLogsFilterBar<TData>(props: TaskLogsFilterBarProps<TData>) {
     searchParams.endTime,
     searchParams.channel,
     searchParams.filter,
+    searchParams.status,
   ])
 
   const handleChange = useCallback(
@@ -159,12 +175,38 @@ export function TaskLogsFilterBar<TData>(props: TaskLogsFilterBarProps<TData>) {
     [props.logCategory]
   )
 
+  const handleStatusQuickSelect = useCallback(
+    (nextStatus: string) => {
+      const nextFilters: TaskLogFilters = {
+        ...(filters as TaskLogFilters),
+        status: nextStatus || undefined,
+      }
+      setFilters(nextFilters)
+      const filterParams = buildSearchParams(nextFilters, props.logCategory)
+      navigate({
+        to: '/usage-logs/$section',
+        params: { section: props.logCategory },
+        search: {
+          ...filterParams,
+          page: 1,
+        },
+      })
+      queryClient.invalidateQueries({ queryKey: ['logs'] })
+    },
+    [filters, navigate, props.logCategory, queryClient]
+  )
+
   const filterValue = getFilterValue(filters, props.logCategory)
+  const activeStatus =
+    props.logCategory === 'task'
+      ? ((filters as TaskLogFilters).status ?? '')
+      : ''
   const placeholder =
     props.logCategory === 'drawing'
       ? t('Filter by MjProxy task ID')
       : t('Filter by task ID')
-  const hasAdditionalFilters = !!filterValue || !!filters.channel
+  const hasAdditionalFilters =
+    !!filterValue || !!filters.channel || !!activeStatus
   const dateRangeFilter = (
     <LogsFilterField wide>
       <CompactDateTimeRangePicker
@@ -188,6 +230,25 @@ export function TaskLogsFilterBar<TData>(props: TaskLogsFilterBarProps<TData>) {
       />
     </LogsFilterField>
   )
+  const statusComboboxFilter =
+    props.logCategory === 'task' ? (
+      <LogsFilterField>
+        <Combobox
+          options={TASK_STATUS_FILTER_OPTIONS.map((option) => ({
+            value: option.value || 'all',
+            label: option.value === '' ? t('All statuses') : t(option.labelKey),
+          }))}
+          value={activeStatus || 'all'}
+          onValueChange={(value) => {
+            if (value !== null) {
+              handleStatusQuickSelect(value === 'all' ? '' : value)
+            }
+          }}
+          aria-label={t('Status')}
+          className='w-full'
+        />
+      </LogsFilterField>
+    ) : null
   const channelFilter = isAdmin ? (
     <LogsFilterField>
       <LogsFilterInput
@@ -199,13 +260,61 @@ export function TaskLogsFilterBar<TData>(props: TaskLogsFilterBarProps<TData>) {
     </LogsFilterField>
   ) : null
 
+  const editorialQuickSearch = (
+    <>
+      <div className='catalog-search-wrap'>
+        <span className='catalog-search-icon' aria-hidden='true'>
+          <Search className='size-3.5' />
+        </span>
+        <input
+          type='search'
+          aria-label={t('Task ID')}
+          className='logs-editorial-search-input'
+          placeholder={placeholder}
+          value={filterValue}
+          onChange={(e) => handleFilterChange(e.target.value)}
+          onKeyDown={handleKeyDown}
+        />
+      </div>
+      {props.logCategory === 'task' && (
+        <div
+          className='keys-status-pills'
+          role='group'
+          aria-label={t('Filter by task status')}
+        >
+          {TASK_STATUS_FILTER_OPTIONS.map((option) => (
+            <button
+              key={option.value || 'all'}
+              type='button'
+              className={cn(
+                'keys-status-pill',
+                activeStatus === option.value && 'is-active'
+              )}
+              onClick={() => handleStatusQuickSelect(option.value)}
+            >
+              {t(option.labelKey)}
+            </button>
+          ))}
+        </div>
+      )}
+    </>
+  )
+
   return (
     <LogsFilterToolbar
       table={props.table}
+      variant='editorial'
+      editorialTopLeft={editorialQuickSearch}
+      editorialTopRight={
+        props.totalCount !== undefined ? (
+          <span className='console-head-meta tabular-nums'>
+            {t('{{count}} records', { count: props.totalCount })}
+          </span>
+        ) : undefined
+      }
       primaryFilters={
         <>
           {dateRangeFilter}
-          {taskIdFilter}
           {channelFilter}
         </>
       }
@@ -213,10 +322,13 @@ export function TaskLogsFilterBar<TData>(props: TaskLogsFilterBarProps<TData>) {
       mobileFilters={
         <>
           {taskIdFilter}
+          {statusComboboxFilter}
           {channelFilter}
         </>
       }
-      mobileFilterCount={[filterValue, filters.channel].filter(Boolean).length}
+      mobileFilterCount={
+        [filterValue, filters.channel, activeStatus].filter(Boolean).length
+      }
       hasActiveFilters={hasAdditionalFilters}
       onSearch={handleApply}
       searchLoading={fetchingLogs > 0}

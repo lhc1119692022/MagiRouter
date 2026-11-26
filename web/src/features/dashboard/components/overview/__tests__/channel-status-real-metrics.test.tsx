@@ -6,12 +6,21 @@ import {
   createRouter,
   RouterProvider,
 } from '@tanstack/react-router'
-import { cleanup, render, screen } from '@testing-library/react'
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { api } from '@/lib/api'
+import { ROLE } from '@/lib/roles'
 import { Route as channelStatusRoute } from '@/routes/_authenticated/channel-status'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { GroupStatusPanel } from '../group-status-panel'
 
@@ -173,15 +182,27 @@ let client: QueryClient
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
+  useAuthStore.setState(useAuthStore.getInitialState(), true)
   client?.clear()
 })
 
-async function renderAt(path: string, withUptime = false) {
+async function renderAt(
+  path: string,
+  withUptime = false,
+  metricsOverride?: Record<string, unknown>
+) {
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   client.setQueryData(['status'], { uptime_kuma_enabled: true })
   vi.spyOn(api, 'get').mockImplementation(async (url) => {
     if (url === '/api/perf-metrics/groups') {
-      return { data: { success: true, data: realMetricsFixture } }
+      return {
+        data: {
+          success: true,
+          data: metricsOverride
+            ? { ...realMetricsFixture, ...metricsOverride }
+            : realMetricsFixture,
+        },
+      }
     }
     return {
       data: {
@@ -251,14 +272,14 @@ describe('channel status real-request metrics', () => {
       screen.getByRole('button', { name: 'View model details for default' })
     )
     expect(await screen.findByText('Model details (1)')).toBeVisible()
-    expect(screen.getAllByText('claude-sonnet-4-5').length).toBeGreaterThanOrEqual(1)
+    expect(
+      screen.getAllByText('claude-sonnet-4-5').length
+    ).toBeGreaterThanOrEqual(1)
     expect(screen.getByText('46.2%')).toBeVisible()
 
     // Close drawer then test status filtering
     await userEvent.keyboard('{Escape}')
-    await userEvent.click(
-      screen.getByRole('button', { name: /^Degraded$/ })
-    )
+    await userEvent.click(screen.getByRole('button', { name: /^Degraded$/ }))
     expect(screen.getByText('vip')).toBeVisible()
     expect(screen.queryByText('default')).not.toBeInTheDocument()
 
@@ -282,5 +303,220 @@ describe('channel status real-request metrics', () => {
     const defaultRow = await screen.findByRole('link', { name: /default/ })
     expect(defaultRow).toHaveTextContent('99.60%')
     expect(defaultRow).toHaveAttribute('href', '/channel-status?group=default')
+  })
+
+  it('hides card reorder controls for non-admin users', async () => {
+    useAuthStore
+      .getState()
+      .auth.setUser({ id: 7, username: 'member', role: ROLE.USER })
+
+    await renderAt('/channel-status')
+    expect(await screen.findByText('default')).toBeVisible()
+    expect(
+      screen.queryByRole('button', { name: 'Reorder cards' })
+    ).not.toBeInTheDocument()
+  })
+
+  it('lets administrators reorder cards, save to server, and render the updated order', async () => {
+    useAuthStore
+      .getState()
+      .auth.setUser({ id: 2, username: 'admin', role: ROLE.ADMIN })
+    const user = userEvent.setup()
+
+    let currentGroups = [...realMetricsFixture.groups]
+    let currentCustomOrder: string[] | undefined
+
+    client = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    })
+    client.setQueryData(['status'], { uptime_kuma_enabled: true })
+    vi.spyOn(api, 'get').mockImplementation(async (url) => {
+      if (url === '/api/perf-metrics/groups') {
+        return {
+          data: {
+            success: true,
+            data: {
+              ...realMetricsFixture,
+              groups: currentGroups,
+              custom_order: currentCustomOrder,
+            },
+          },
+        }
+      }
+      return { data: { success: true, data: [] } }
+    })
+    const putSpy = vi
+      .spyOn(api, 'put')
+      .mockImplementation(async (_url, body) => {
+        const payload = body as { groups: string[] }
+        currentCustomOrder =
+          payload.groups.length > 0 ? payload.groups : undefined
+        const byName = new Map(
+          realMetricsFixture.groups.map((item) => [item.group, item])
+        )
+        currentGroups = payload.groups
+          .map((name) => byName.get(name))
+          .filter(
+            (item): item is NonNullable<typeof item> => item !== undefined
+          )
+        return {
+          data: { success: true, data: { groups: payload.groups } },
+        }
+      })
+
+    const root = createRootRoute()
+    const auth = createRoute({
+      getParentRoute: () => root,
+      id: '_authenticated',
+    })
+    const status = createRoute({
+      getParentRoute: () => auth,
+      path: 'channel-status',
+      component: channelStatusRoute.options.component,
+      validateSearch: channelStatusRoute.options.validateSearch,
+    })
+    const router = createRouter({
+      routeTree: root.addChildren([auth.addChildren([status])]),
+      history: createMemoryHistory({ initialEntries: ['/channel-status'] }),
+    })
+    await router.load()
+    render(
+      <QueryClientProvider client={client}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>
+    )
+
+    expect(await screen.findByText('default')).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Reorder cards' }))
+
+    const orderList = screen.getByRole('list', {
+      name: 'Channel status card order',
+    })
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+
+    await user.click(
+      within(orderList).getByRole('button', { name: 'Move vip to top' })
+    )
+
+    const itemsAfterPin = within(orderList).getAllByRole('listitem')
+    expect(itemsAfterPin[0]).toHaveTextContent('vip')
+    expect(itemsAfterPin[1]).toHaveTextContent('default')
+    expect(itemsAfterPin[2]).toHaveTextContent('media-studio')
+
+    const dataTransfer = {
+      effectAllowed: 'move',
+      dropEffect: 'move',
+      setData: vi.fn(),
+    }
+    fireEvent.dragStart(itemsAfterPin[2], { dataTransfer })
+    fireEvent.dragOver(itemsAfterPin[1], { dataTransfer })
+    fireEvent.drop(itemsAfterPin[1], { dataTransfer })
+    fireEvent.dragEnd(itemsAfterPin[2], { dataTransfer })
+
+    const itemsAfterDrag = within(orderList).getAllByRole('listitem')
+    expect(itemsAfterDrag[0]).toHaveTextContent('vip')
+    expect(itemsAfterDrag[1]).toHaveTextContent('media-studio')
+    expect(itemsAfterDrag[2]).toHaveTextContent('default')
+
+    const defaultHandle = within(orderList).getByRole('button', {
+      name: 'Drag default to reorder',
+    })
+    defaultHandle.focus()
+    await user.keyboard('{ArrowUp}')
+    expect(
+      within(orderList)
+        .getAllByRole('listitem')
+        .map((el) => el.textContent)
+    ).toEqual([
+      expect.stringContaining('vip'),
+      expect.stringContaining('default'),
+      expect.stringContaining('media-studio'),
+    ])
+    await user.keyboard('{ArrowDown}')
+
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => {
+      expect(putSpy).toHaveBeenCalledWith('/api/perf-metrics/groups/order', {
+        groups: ['vip', 'media-studio', 'default'],
+      })
+    })
+
+    await waitFor(() => {
+      expect(
+        screen.queryByRole('list', { name: 'Channel status card order' })
+      ).not.toBeInTheDocument()
+    })
+
+    const cardLabels = screen
+      .getAllByRole('button', { name: /^View model details for / })
+      .map((el) => el.getAttribute('aria-label'))
+    expect(cardLabels).toEqual([
+      'View model details for vip',
+      'View model details for media-studio',
+      'View model details for default',
+    ])
+  })
+
+  it('lets administrators reset a custom order back to default and supports cancel/error recovery', async () => {
+    useAuthStore
+      .getState()
+      .auth.setUser({ id: 1, username: 'root', role: ROLE.SUPER_ADMIN })
+    const user = userEvent.setup()
+
+    const customGroups = [
+      realMetricsFixture.groups[2],
+      realMetricsFixture.groups[1],
+      realMetricsFixture.groups[0],
+    ]
+    await renderAt('/channel-status', false, {
+      groups: customGroups,
+      custom_order: ['vip', 'media-studio', 'default'],
+    })
+
+    expect(await screen.findByText('vip')).toBeVisible()
+    const putSpy = vi
+      .spyOn(api, 'put')
+      .mockRejectedValueOnce(new Error('network error'))
+      .mockResolvedValueOnce({ data: { success: true, data: { groups: [] } } })
+
+    await user.click(screen.getByRole('button', { name: 'Reorder cards' }))
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(
+      screen.queryByRole('list', { name: 'Channel status card order' })
+    ).not.toBeInTheDocument()
+    expect(putSpy).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: 'Reorder cards' }))
+    const orderList = screen.getByRole('list', {
+      name: 'Channel status card order',
+    })
+    await user.click(screen.getByRole('button', { name: 'Reset to default' }))
+
+    const resetItems = within(orderList).getAllByRole('listitem')
+    expect(resetItems[0]).toHaveTextContent('default')
+    expect(resetItems[1]).toHaveTextContent('vip')
+    expect(resetItems[2]).toHaveTextContent('media-studio')
+
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => {
+      expect(putSpy).toHaveBeenCalledTimes(1)
+    })
+    expect(
+      screen.getByRole('list', { name: 'Channel status card order' })
+    ).toBeVisible()
+
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => {
+      expect(putSpy).toHaveBeenLastCalledWith(
+        '/api/perf-metrics/groups/order',
+        {
+          groups: [],
+        }
+      )
+    })
   })
 })

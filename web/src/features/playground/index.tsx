@@ -64,7 +64,7 @@ import {
   usePlaygroundState,
 } from './hooks'
 import { usePlaygroundKeySelection } from './hooks/use-playground-key-selection'
-import { previewChatImageUrls } from './lib/input/input-tool-utils'
+import { previewChatAttachments } from './lib/input/input-tool-utils'
 import { resolveChatControls } from './lib/parameters/playground-parameters'
 import {
   buildChatCompletionPayload,
@@ -77,7 +77,7 @@ import {
   resolveChatApiProtocol,
 } from './lib/streaming/protocol'
 import type { PlaygroundSearch } from './lib/workspace-search'
-import type { ModelOption } from './types'
+import type { MessageAttachment, ModelOption } from './types'
 
 import './studio-document.css'
 
@@ -122,7 +122,9 @@ export function Playground(props: {
   }
   const [detailsModel, setDetailsModel] = useState('')
   const [codeOpen, setCodeOpen] = useState(false)
-  const [imageCount, setImageCount] = useState(0)
+  const [draftAttachments, setDraftAttachments] = useState<MessageAttachment[]>(
+    []
+  )
   const [draft, setDraft] = useState(
     props.preset?.mode === 'chat' ? props.preset.prompt : ''
   )
@@ -218,7 +220,7 @@ export function Playground(props: {
   )
   const chatReady =
     activeTab === 'chat' && canGenerate && config.model === activeModel
-  const acceptsChatImages = chatReady && profile?.image_input === true
+  const acceptsAttachments = chatReady
   const resolvedProtocol = useMemo(
     () =>
       resolveChatApiProtocol(
@@ -231,19 +233,21 @@ export function Playground(props: {
   const { sendChat, stopGeneration, isGenerating } = useChatHandler({
     config: controls.config,
     billingKeyId: chatReady ? scope?.keyId : null,
-    acceptsChatImages,
+    acceptsAttachments,
     protocol: resolvedProtocol,
     onMessageUpdate: updateMessages,
   })
 
   const {
     editingMessageKey,
+    sessionAttachments,
     handleSendMessage,
     handleRegenerateMessage,
     handleEditMessage,
     handleEditOpenChange,
     applyEdit,
     handleDeleteMessage,
+    clearSessionAttachments,
   } = usePlaygroundConversation({
     messages,
     updateMessages,
@@ -253,6 +257,7 @@ export function Playground(props: {
   const handleClearMessages = () => {
     setActiveTab('chat')
     handleEditOpenChange(false)
+    clearSessionAttachments()
     clearMessages()
   }
 
@@ -267,9 +272,10 @@ export function Playground(props: {
       messages,
       controls.config,
       draft,
-      acceptsChatImages && draft.trim()
-        ? previewChatImageUrls(imageCount)
-        : undefined
+      acceptsAttachments && draftAttachments.length
+        ? previewChatAttachments(draftAttachments)
+        : undefined,
+      sessionAttachments
     )
     delete body.group
     return buildProtocolRequestBody(resolvedProtocol, body)
@@ -277,8 +283,9 @@ export function Playground(props: {
     messages,
     controls,
     draft,
-    acceptsChatImages,
-    imageCount,
+    acceptsAttachments,
+    draftAttachments,
+    sessionAttachments,
     resolvedProtocol,
   ])
   const requestPreviewPath = useMemo(
@@ -850,8 +857,8 @@ export function Playground(props: {
                   )}
                   <PlaygroundInput
                     key={String(billingKeyId ?? 'none')}
-                    acceptsChatImages={acceptsChatImages}
-                    onImageCountChange={setImageCount}
+                    acceptsAttachments={acceptsAttachments}
+                    onAttachmentsChange={setDraftAttachments}
                     canSubmit={chatReady}
                     priceQuote={chatPriceQuote}
                     reasoning={{
@@ -867,6 +874,10 @@ export function Playground(props: {
                       onChange: (enabled) =>
                         updateConfig('web_search', enabled),
                     }}
+                    fileOutput={{
+                      value: controls.config.fileOutput,
+                      onChange: (value) => updateConfig('fileOutput', value),
+                    }}
                     disabled={isGenerating}
                     showWelcome={!isLoadingMessages && !messages.length}
                     draft={{ value: draft, onChange: setDraft }}
@@ -879,8 +890,8 @@ export function Playground(props: {
                     onClearMessages={handleClearMessages}
                     onModelChange={selectModel}
                     onStop={stopGeneration}
-                    onSubmit={(text, images) => {
-                      if (chatReady) handleSendMessage(text, images)
+                    onSubmit={(text, attachments) => {
+                      if (chatReady) handleSendMessage(text, attachments)
                     }}
                     hasMessages={messages.length > 0}
                     showModelSelector={executionModels.length > 0}

@@ -22,7 +22,6 @@ import { useTranslation } from 'react-i18next'
 
 import { Dialog } from '@/components/dialog'
 import { StatusBadge } from '@/components/status-badge'
-import { Button } from '@/components/ui/button'
 import { getAccessTokenScopes } from '@/features/security/api'
 import dayjs from '@/lib/dayjs'
 
@@ -76,9 +75,9 @@ export function AuditLogDetailsDialog(props: { entry: AuditLog }) {
       description={t('View the complete details for this log entry')}
       descriptionClassName='sr-only'
       trigger={
-        <Button variant='ghost' size='sm' className='h-7 px-2'>
+        <button type='button' className='el-btn el-btn-xs el-btn-white'>
           {t('Details')}
-        </Button>
+        </button>
       }
       contentClassName='min-w-0 sm:max-w-lg max-sm:max-h-(--dialog-available-height) max-sm:w-[calc(100vw-1.5rem)] max-sm:max-w-[calc(100vw-1.5rem)]'
       titleClassName='text-base'

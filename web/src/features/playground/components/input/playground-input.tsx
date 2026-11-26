@@ -16,8 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { GlobeIcon, SparklesIcon } from 'lucide-react'
-import { useRef, useState, type ReactNode } from 'react'
+import { FileDownIcon, GlobeIcon, SparklesIcon } from 'lucide-react'
+import { useCallback, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -46,25 +46,41 @@ import { REQUEST_PLUGIN_EFFORT_LABELS } from '@/features/task-plugins/lib/reques
 import { cn } from '@/lib/utils'
 
 import {
-  CHAT_IMAGE_LIMIT,
-  CHAT_IMAGE_MAX_BYTES,
-  CHAT_IMAGE_TYPES,
-  getSubmittableInputText,
-  selectedChatImageUrls,
+  canSubmitInputMessage,
+  CHAT_ATTACHMENT_ACCEPT,
+  CHAT_ATTACHMENT_LIMIT,
+  CHAT_ATTACHMENT_MAX_BYTES,
+  CHAT_FILE_OUTPUT_OPTIONS,
+  parseChatAttachments,
 } from '../../lib'
-import type { ModelOption, GroupOption, ChatReasoningEffort } from '../../types'
+import type {
+  ChatAttachment,
+  ChatFileOutputFormat,
+  ChatReasoningEffort,
+  GroupOption,
+  MessageAttachment,
+  ModelOption,
+} from '../../types'
 import { PlaygroundStarterPrompts } from '../chat/playground-starter-prompts'
 import { PlaygroundInputControls } from './playground-input-controls'
 import { PlaygroundInputTools } from './playground-input-tools'
 
 const DEFAULT_REASONING_VALUE = '__default__'
+const ATTACHMENT_ERROR_KEYS = {
+  limit: 'Too many files. Some were not added.',
+  size: 'All files exceed the maximum size.',
+  type: 'No files match the accepted types.',
+  invalid: 'Failed to read attachment.',
+} as const
 
 interface PlaygroundInputProps {
   initialPrompt?: string
   draft?: { value: string; onChange: (text: string) => void }
+  acceptsAttachments?: boolean
   acceptsChatImages?: boolean
+  onAttachmentsChange?: (attachments: MessageAttachment[]) => void
   onImageCountChange?: (count: number) => void
-  onSubmit: (text: string, imageUrls?: string[]) => void
+  onSubmit: (text: string, attachments?: ChatAttachment[]) => void
   onStop?: () => void
   disabled?: boolean
   canSubmit?: boolean
@@ -92,10 +108,16 @@ interface PlaygroundInputProps {
     enabled: boolean
     onChange: (enabled: boolean) => void
   }
+  fileOutput?: {
+    value: ChatFileOutputFormat
+    onChange: (value: ChatFileOutputFormat) => void
+  }
 }
 
 export function PlaygroundInput({
+  acceptsAttachments,
   acceptsChatImages = false,
+  onAttachmentsChange,
   onImageCountChange,
   initialPrompt,
   draft,
@@ -117,31 +139,54 @@ export function PlaygroundInput({
   priceQuote,
   reasoning,
   webSearch,
+  fileOutput,
 }: PlaygroundInputProps) {
   const { t } = useTranslation()
   const [localText, setLocalText] = useState(initialPrompt ?? '')
+  const [attachmentCount, setAttachmentCount] = useState(0)
   const text = draft?.value ?? localText
   const setText = draft?.onChange ?? setLocalText
   const textarea = useRef<HTMLTextAreaElement>(null)
+  const attachmentsEnabled = acceptsAttachments ?? acceptsChatImages
+
+  const handleAttachmentCountChange = useCallback(
+    (count: number) => {
+      setAttachmentCount(count)
+      onImageCountChange?.(count)
+    },
+    [onImageCountChange]
+  )
+
+  const handleAttachmentError = useCallback((error: { message: string }) => {
+    toast.error(error.message)
+  }, [])
 
   const handleSubmit = (message: PromptInputMessage) => {
-    const submittableText = getSubmittableInputText(
-      message,
-      disabled || !canSubmit
-    )
-
-    if (!submittableText) return
+    if (!canSubmitInputMessage(message, disabled || !canSubmit)) return
     const files = message.files ?? []
-    const images =
-      files.length && acceptsChatImages ? selectedChatImageUrls(files) : []
-    if (!images || (files.length && !acceptsChatImages)) {
-      toast.error(t('No files match the accepted types.'))
-      throw new Error('Invalid chat image')
+    if (files.length > 0) {
+      if (!attachmentsEnabled) {
+        toast.error(t('No files match the accepted types.'))
+        throw new Error('Attachments disabled')
+      }
+      const parsed = parseChatAttachments(files)
+      if (parsed.error || !parsed.attachments) {
+        const errorMessage = t(ATTACHMENT_ERROR_KEYS[parsed.error ?? 'invalid'])
+        toast.error(errorMessage)
+        throw new Error('Invalid chat attachment')
+      }
+      onSubmit(message.text ?? '', parsed.attachments)
+    } else {
+      onSubmit(message.text ?? '')
     }
-    if (images.length) onSubmit(submittableText, images)
-    else onSubmit(submittableText)
     setText('')
   }
+
+  const activeFileOutputOption = fileOutput
+    ? (CHAT_FILE_OUTPUT_OPTIONS.find(
+        (option) => option.value === fileOutput.value
+      ) ?? CHAT_FILE_OUTPUT_OPTIONS[0])
+    : undefined
 
   return (
     <div className='pg-chat-composer'>
@@ -151,24 +196,28 @@ export function PlaygroundInput({
         </h2>
       )}
       <PromptInput
-        key={JSON.stringify([groupValue, modelValue, acceptsChatImages])}
-        accept={CHAT_IMAGE_TYPES.join(',')}
+        key={JSON.stringify([groupValue, modelValue, attachmentsEnabled])}
+        accept={CHAT_ATTACHMENT_ACCEPT}
         multiple
-        attachmentsEnabled={acceptsChatImages && !disabled}
-        maxFiles={CHAT_IMAGE_LIMIT}
-        maxFileSize={CHAT_IMAGE_MAX_BYTES}
-        onError={(error) => toast.error(error.message)}
+        attachmentsEnabled={attachmentsEnabled && !disabled}
+        maxFiles={CHAT_ATTACHMENT_LIMIT}
+        maxFileSize={CHAT_ATTACHMENT_MAX_BYTES}
+        onError={handleAttachmentError}
         aria-label={t('Text Chat')}
         groupClassName='pg-chat-input-box'
         onSubmitCapture={(event) => {
-          if (disabled || !canSubmit || !text.trim()) {
+          if (
+            disabled ||
+            !canSubmit ||
+            (!text.trim() && attachmentCount === 0)
+          ) {
             event.preventDefault()
             event.stopPropagation()
           }
         }}
         onSubmit={handleSubmit}
       >
-        {acceptsChatImages && (
+        {attachmentsEnabled && (
           <PromptInputHeader className='empty:hidden'>
             <PromptInputAttachments>
               {(file) => <PromptInputAttachment data={file} />}
@@ -192,6 +241,7 @@ export function PlaygroundInput({
         <PromptInputFooter className='pg-chat-composer-footer'>
           <PlaygroundInputControls
             allowSubmit={canSubmit}
+            attachmentCount={attachmentCount}
             disabled={disabled}
             groups={groups}
             isGenerating={isGenerating}
@@ -310,9 +360,56 @@ export function PlaygroundInput({
                     </TooltipContent>
                   </Tooltip>
                 )}
+                {fileOutput && activeFileOutputOption && (
+                  <Select
+                    value={fileOutput.value}
+                    disabled={disabled}
+                    onValueChange={(value) => {
+                      if (!value) return
+                      const next = CHAT_FILE_OUTPUT_OPTIONS.find(
+                        (option) => option.value === value
+                      )
+                      if (next) {
+                        fileOutput.onChange(next.value)
+                      }
+                    }}
+                  >
+                    <SelectTrigger
+                      aria-label={t('File output')}
+                      className={cn(
+                        'pg-composer-select rounded-full border-0 bg-[var(--bg-elevated)] py-0 data-[size=default]:h-[30px] dark:bg-[#1c1917] dark:hover:bg-[#24201d]',
+                        fileOutput.value !== 'off' && 'is-on'
+                      )}
+                    >
+                      <FileDownIcon size={13} aria-hidden='true' />
+                      <SelectValue>
+                        {fileOutput.value === 'off'
+                          ? t('File output')
+                          : `${t('File output')} · ${
+                              activeFileOutputOption.shortLabelKey
+                                ? t(activeFileOutputOption.shortLabelKey)
+                                : (activeFileOutputOption.shortLabel ?? '')
+                            }`}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent
+                      side='top'
+                      align='start'
+                      alignItemWithTrigger={false}
+                      className='pg-composer-select-content'
+                    >
+                      {CHAT_FILE_OUTPUT_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.labelKey ? t(option.labelKey) : option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
                 <PlaygroundInputTools
-                  acceptsChatImages={acceptsChatImages}
-                  onImageCountChange={onImageCountChange}
+                  acceptsAttachments={attachmentsEnabled}
+                  onAttachmentsChange={onAttachmentsChange}
+                  onImageCountChange={handleAttachmentCountChange}
                   disabled={disabled}
                   hasMessages={hasMessages}
                   onClearMessages={onClearMessages}

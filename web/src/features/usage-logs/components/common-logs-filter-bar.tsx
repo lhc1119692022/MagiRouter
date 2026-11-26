@@ -19,10 +19,18 @@ For commercial licensing, please contact support@quantumnous.com
 import { useQueryClient, useIsFetching, useQuery } from '@tanstack/react-query'
 import { useNavigate, getRouteApi } from '@tanstack/react-router'
 import type { Table } from '@tanstack/react-table'
-import { Eye, EyeOff } from 'lucide-react'
+import {
+  ChevronDown,
+  Eye,
+  EyeOff,
+  Loader2,
+  RotateCcw,
+  Search,
+} from 'lucide-react'
 import { useState, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { DataTableViewOptions } from '@/components/data-table'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Combobox } from '@/components/ui/combobox'
@@ -43,8 +51,13 @@ import { getGroups } from '@/features/users/api'
 import { useMediaQuery } from '@/hooks'
 import { getUserGroups } from '@/lib/api'
 import { requireServerSuccess } from '@/lib/server-error-message'
+import { cn } from '@/lib/utils'
 
-import { LOG_TYPE_ALL_VALUE, LOG_TYPE_FILTERS } from '../constants'
+import {
+  LOG_TYPE_ALL_VALUE,
+  LOG_TYPE_ENUM,
+  LOG_TYPE_FILTERS,
+} from '../constants'
 import { buildSearchParams } from '../lib/filter'
 import { getDefaultTimeRange } from '../lib/utils'
 import type { CommonLogFilters } from '../types'
@@ -114,6 +127,7 @@ function buildSearchSourceKey(values: {
 
 interface CommonLogsFilterBarProps<TData> {
   table: Table<TData>
+  editorial?: boolean
 }
 
 export function CommonLogsFilterBar<TData>(
@@ -212,14 +226,17 @@ export function CommonLogsFilterBar<TData>(
   )
 
   const handleApply = useCallback(
-    (nextFilters: CommonLogFilters = filters) => {
+    (
+      nextFilters: CommonLogFilters = filters,
+      nextLogType: LogTypeValue = logType
+    ) => {
       const filterParams = buildSearchParams(nextFilters, 'common')
       navigate({
         to: '/usage-logs/$section',
         params: { section: 'common' },
         search: {
           ...filterParams,
-          type: [logType],
+          type: [nextLogType],
           page: 1,
         },
       })
@@ -280,6 +297,7 @@ export function CommonLogsFilterBar<TData>(
     filters.requestId,
     isAdmin ? filters.upstreamRequestId : undefined,
   ].filter(Boolean).length
+  const [advancedOpen, setAdvancedOpen] = useState(hasExpandedFilters)
   const sensitiveInputClass = sensitiveVisible
     ? undefined
     : '[-webkit-text-security:disc]'
@@ -486,10 +504,231 @@ export function CommonLogsFilterBar<TData>(
     </>
   )
 
+  const quickLogTypePills = useMemo(
+    () => [
+      { value: LOG_TYPE_ALL_VALUE as LogTypeValue, label: t('All') },
+      { value: String(LOG_TYPE_ENUM.CONSUME) as LogTypeValue, label: t('Consume') },
+      { value: String(LOG_TYPE_ENUM.ERROR) as LogTypeValue, label: t('Error') },
+    ],
+    [t]
+  )
+
+  const handleQuickLogType = useCallback(
+    (nextType: LogTypeValue) => {
+      setDraft((current) => {
+        const base =
+          current.sourceKey === searchState.sourceKey ? current : searchState
+        return {
+          sourceKey: searchState.sourceKey,
+          filters: base.filters,
+          logType: nextType,
+        }
+      })
+      handleApply(filters, nextType)
+    },
+    [filters, handleApply, searchState]
+  )
+
+  if (props.editorial && !isMobile) {
+    return (
+      <div className='logs-editorial-toolbar'>
+        <div className='logs-editorial-toolbar-main'>
+          <div className='logs-editorial-toolbar-left'>
+            <div className='catalog-search-wrap'>
+              <span className='catalog-search-icon' aria-hidden='true'>
+                <Search className='size-3.5' />
+              </span>
+              <input
+                type='search'
+                className='logs-editorial-search-input'
+                placeholder={t('Model Name')}
+                aria-label={t('Model Name')}
+                value={filters.model || ''}
+                onChange={(e) => handleChange('model', e.target.value)}
+                onKeyDown={handleKeyDown}
+              />
+            </div>
+            <div
+              className='keys-status-pills'
+              role='group'
+              aria-label={t('Filter by log type')}
+            >
+              {quickLogTypePills.map((pill) => (
+                <button
+                  key={pill.value}
+                  type='button'
+                  className={cn(
+                    'keys-status-pill',
+                    logType === pill.value && 'is-active'
+                  )}
+                  aria-pressed={logType === pill.value}
+                  onClick={() => handleQuickLogType(pill.value)}
+                >
+                  {pill.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className='logs-editorial-toolbar-right'>
+            <div className='logs-editorial-date-wrap'>
+              <CompactDateTimeRangePicker
+                start={filters.startTime}
+                end={filters.endTime}
+                onChange={({ start, end }) => {
+                  handleChange('startTime', start)
+                  handleChange('endTime', end)
+                }}
+              />
+            </div>
+            <div className={cn('w-[114px] min-w-0', sensitiveInputClass)}>
+              <Combobox
+                options={groupOptions}
+                allowCustomValue
+                aria-label={t('Group')}
+                emptyText={t('No group found.')}
+                placeholder={t('Group')}
+                className='h-[34px] min-w-0 rounded-full text-xs leading-5'
+                popupClassName={sensitiveInputClass}
+                value={filters.group || ''}
+                onValueChange={(value) => handleChange('group', value ?? '')}
+                onKeyDown={handleKeyDown}
+              />
+            </div>
+            <div className='w-[104px] min-w-0'>
+              <Select
+                items={logTypeItems}
+                value={logType}
+                onValueChange={(value) => {
+                  const nextLogType =
+                    value !== null && isLogTypeValue(value)
+                      ? value
+                      : LOG_TYPE_ALL_VALUE
+                  setDraft((current) => {
+                    const base =
+                      current.sourceKey === searchState.sourceKey
+                        ? current
+                        : searchState
+                    return {
+                      sourceKey: searchState.sourceKey,
+                      filters: base.filters,
+                      logType: nextLogType,
+                    }
+                  })
+                }}
+              >
+                <SelectTrigger
+                  aria-label={t('Type')}
+                  aria-description={
+                    selectedLogType?.deprecated
+                      ? deprecatedTypeDescription
+                      : undefined
+                  }
+                  className='w-full'
+                >
+                  <SelectValue className='min-w-0'>
+                    <span className='truncate'>
+                      {selectedLogType?.label ?? t('All Types')}
+                    </span>
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent
+                  alignItemWithTrigger={false}
+                  className='max-w-[calc(100vw-2rem)] min-w-52'
+                >
+                  <SelectGroup>
+                    {LOG_TYPE_FILTERS.map((type) => (
+                      <SelectItem
+                        key={type.value}
+                        value={type.value}
+                        className='[&_[data-slot=select-item-text]]:items-center'
+                        aria-description={
+                          type.deprecated
+                            ? deprecatedTypeDescription
+                            : undefined
+                        }
+                      >
+                        {t(type.label)}
+                        {type.deprecated && (
+                          <Badge
+                            variant='secondary'
+                            className='h-4 px-1.5 text-[10px] font-normal'
+                            title={deprecatedTypeDescription}
+                          >
+                            {t('Deprecated')}
+                          </Badge>
+                        )}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </div>
+            <Button
+              type='button'
+              variant='ghost'
+              size='sm'
+              onClick={() => setAdvancedOpen((open) => !open)}
+              aria-expanded={advancedOpen}
+              className='h-[34px] gap-1 rounded-full px-2.5 text-xs'
+            >
+              <span>{advancedOpen ? t('Collapse') : t('Expand')}</span>
+              {expandedFilterCount > 0 && (
+                <Badge className='size-4 justify-center p-0 text-[10px]'>
+                  {expandedFilterCount}
+                </Badge>
+              )}
+              <ChevronDown
+                className={cn(
+                  'size-3.5 transition-transform duration-200',
+                  advancedOpen && 'rotate-180'
+                )}
+              />
+            </Button>
+            {sensitiveToggle}
+            {hasAdditionalFilters && (
+              <Button
+                type='button'
+                variant='ghost'
+                size='sm'
+                onClick={handleReset}
+                className='h-[34px] gap-1 rounded-full px-2.5 text-xs'
+              >
+                <RotateCcw className='size-3.5' />
+                {t('Reset')}
+              </Button>
+            )}
+            <Button
+              type='button'
+              size='sm'
+              onClick={() => handleApply()}
+              disabled={fetchingLogs > 0}
+              aria-busy={fetchingLogs > 0}
+              className='h-[34px] rounded-full px-3.5 text-xs'
+            >
+              {fetchingLogs > 0 ? (
+                <Loader2 className='size-3.5 animate-spin' />
+              ) : null}
+              {t('Search')}
+            </Button>
+            <div className='logs-editorial-view-wrap'>
+              <DataTableViewOptions table={props.table} />
+            </div>
+          </div>
+        </div>
+        {advancedOpen && (
+          <div className='logs-editorial-toolbar-advanced'>
+            {advancedFilters}
+          </div>
+        )}
+      </div>
+    )
+  }
+
   return (
     <LogsFilterToolbar
       table={props.table}
       compactMobile
+      className={props.editorial ? 'logs-editorial-mobile-toolbar' : undefined}
       stats={statsBar}
       actionStart={sensitiveToggle}
       actionEnd={<ExportLogsDialog />}

@@ -256,6 +256,13 @@ function buildOpenAIResponsesBody(
             image_url: part.image_url.url,
           }
         }
+        if (part.type === 'file' && part.file?.file_data) {
+          return {
+            type: 'input_file',
+            ...(part.file.filename ? { filename: part.file.filename } : {}),
+            file_data: part.file.file_data,
+          }
+        }
         return null
       })
       .filter((item): item is NonNullable<typeof item> => item !== null)
@@ -321,6 +328,19 @@ function buildAnthropicMessagesBody(
             },
           }
         }
+        if (part.type === 'file' && part.file?.file_data) {
+          const parsed = parseDataUrl(part.file.file_data)
+          if (parsed) {
+            return {
+              type: 'document',
+              source: {
+                type: 'base64',
+                media_type: parsed.mimeType,
+                data: parsed.data,
+              },
+            }
+          }
+        }
         return null
       })
       .filter((item): item is NonNullable<typeof item> => item !== null)
@@ -379,6 +399,17 @@ function buildGeminiV1BetaBody(
             fileData: {
               fileUri: part.image_url.url,
             },
+          }
+        }
+        if (part.type === 'file' && part.file?.file_data) {
+          const parsed = parseDataUrl(part.file.file_data)
+          if (parsed) {
+            return {
+              inlineData: {
+                mimeType: parsed.mimeType,
+                data: parsed.data,
+              },
+            }
           }
         }
         return null

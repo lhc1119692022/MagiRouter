@@ -59,6 +59,11 @@ import {
 } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 
+import {
+  downloadTextFile,
+  getCodeBlockDownloadFilename,
+} from './code-block-file'
+
 type CodeBlockProps = HTMLAttributes<HTMLDivElement> & {
   code: string
   collapsedLines?: number
@@ -249,15 +254,6 @@ function getCodeLineCount(code: string) {
   }
 
   return code.split('\n').length
-}
-
-function getDownloadFilename(language: string, filename?: string) {
-  if (filename) {
-    return filename
-  }
-
-  const extension = language === 'plaintext' ? 'txt' : language
-  return `code.${extension}`
 }
 
 function getCodeBlockHeight(lines: number) {
@@ -497,17 +493,10 @@ export const CodeBlock = ({
   )
 
   const downloadCode = () => {
-    if (typeof window === 'undefined') {
-      return
-    }
-
-    const blob = new Blob([code], { type: 'text/plain;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const anchor = document.createElement('a')
-    anchor.href = url
-    anchor.download = getDownloadFilename(displayLanguage, filename)
-    anchor.click()
-    URL.revokeObjectURL(url)
+    downloadTextFile(
+      code,
+      getCodeBlockDownloadFilename(displayLanguage, filename)
+    )
   }
 
   return (

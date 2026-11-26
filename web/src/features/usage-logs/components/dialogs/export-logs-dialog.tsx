@@ -48,7 +48,12 @@ const DEFAULT_MAX_RANGE_DAYS = 365
  * downloads the logs of the current view with the page's other filters as a
  * CSV file. Administrators in the all-users view export every user's logs.
  */
-export function ExportLogsDialog() {
+interface ExportLogsDialogProps {
+  triggerClassName?: string
+  triggerLabel?: string
+}
+
+export function ExportLogsDialog(props: ExportLogsDialogProps = {}) {
   const { t } = useTranslation()
   const searchParams = route.useSearch()
   const { canManageScope, isAdminView } = useLogsViewScope()
@@ -142,9 +147,15 @@ export function ExportLogsDialog() {
       open={open}
       onOpenChange={handleOpenChange}
       trigger={
-        <Button type='button' variant='outline'>
-          {t('Export')}
-        </Button>
+        props.triggerClassName ? (
+          <button type='button' className={props.triggerClassName}>
+            {props.triggerLabel ?? t('Export')}
+          </button>
+        ) : (
+          <Button type='button' variant='outline'>
+            {props.triggerLabel ?? t('Export')}
+          </Button>
+        )
       }
       title={t('Export logs')}
       description={t(

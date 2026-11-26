@@ -69,6 +69,7 @@ export const DEFAULT_CONFIG: PlaygroundConfig = {
   protocol: 'auto',
   reasoning_effort: '',
   web_search: false,
+  fileOutput: 'off',
   historyTurns: 0,
   group: DEFAULT_GROUP,
   stream: true,
@@ -102,6 +103,7 @@ export const MESSAGE_ACTION_BUTTON_STYLES = {
 export const MESSAGE_ACTION_LABELS = {
   COPY: 'Copy',
   COPIED: 'Copied!',
+  DOWNLOAD: 'Download',
   REGENERATE: 'Regenerate',
   SHOW_PREVIEW: 'Show preview',
   SHOW_SOURCE: 'Show source',

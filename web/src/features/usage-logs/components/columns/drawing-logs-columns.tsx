@@ -42,6 +42,7 @@ import { StatusBadge } from '@/components/status-badge'
 import { formatTimestampToDate } from '@/lib/format'
 
 import { MJ_TASK_TYPES } from '../../constants'
+import { mapTaskStatusToTone } from '../../lib/editorial'
 import {
   mjTaskTypeMapper,
   mjStatusMapper,
@@ -50,6 +51,7 @@ import {
 import type { MidjourneyLog } from '../../types'
 import { ImageDialog } from '../dialogs/image-dialog'
 import { PromptDialog } from '../dialogs/prompt-dialog'
+import { LogsStatusPill } from '../logs-editorial-primitives'
 import {
   createDurationColumn,
   createChannelColumn,
@@ -95,15 +97,13 @@ export function useDrawingLogsColumns(
           const submitTime = row.getValue('submit_time') as number
 
           return (
-            <div className='flex min-w-0 flex-col gap-0.5'>
-              <span className='truncate font-mono text-xs tabular-nums'>
+            <div className='flex min-w-0 flex-col items-start gap-1'>
+              <span className='logs-mono truncate tabular-nums'>
                 {formatTimestampToDate(submitTime, 'milliseconds')}
               </span>
-              <StatusBadge
+              <LogsStatusPill
                 label={t(mjStatusMapper.getLabel(log.status))}
-                variant={mjStatusMapper.getVariant(log.status)}
-                size='sm'
-                copyable={false}
+                tone={mapTaskStatusToTone(log.status)}
               />
             </div>
           )

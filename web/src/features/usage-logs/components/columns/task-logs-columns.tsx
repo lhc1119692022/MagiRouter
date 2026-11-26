@@ -26,13 +26,15 @@ import { useTranslation } from 'react-i18next'
 import { StatusBadge } from '@/components/status-badge'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { getUserAvatarFallback, getUserAvatarStyle } from '@/lib/avatar'
-import { formatTimestampToDate } from '@/lib/format'
+import { formatQuota, formatTimestampToDate } from '@/lib/format'
 import { translateServerText } from '@/lib/server-error-message'
 import { cn } from '@/lib/utils'
 
+import { mapTaskStatusToTone } from '../../lib/editorial'
 import { taskActionMapper, taskStatusMapper } from '../../lib/mappers'
 import type { TaskLog } from '../../types'
 import { TaskDetailsDialog } from '../dialogs/task-details-dialog'
+import { LogsStatusPill } from '../logs-editorial-primitives'
 import { PluginAuthorLink } from '../plugin-author-link'
 import { TaskArtifactsCell } from '../task-artifacts'
 import { useUsageLogsContext } from '../usage-logs-provider'
@@ -55,7 +57,7 @@ function TaskDetailsCell(props: {
       <div className='flex max-w-[220px] flex-col items-start gap-1'>
         <button
           type='button'
-          className='text-foreground inline-flex items-center gap-1 text-xs font-medium hover:underline'
+          className='el-btn el-btn-xs el-btn-white'
           onClick={() => setDialogOpen(true)}
         >
           <HugeiconsIcon
@@ -99,11 +101,11 @@ export function useTaskLogsColumns(
 
           return (
             <div className='flex min-w-0 flex-col gap-0.5'>
-              <span className='truncate font-mono text-xs tabular-nums'>
+              <span className='logs-mono truncate tabular-nums'>
                 {formatTimestampToDate(submitTime, 'seconds')}
               </span>
               {log.finish_time ? (
-                <span className='text-muted-foreground/60 truncate font-mono text-[11px] tabular-nums'>
+                <span className='logs-balance-sub truncate'>
                   {formatTimestampToDate(log.finish_time, 'seconds')}
                 </span>
               ) : (
@@ -205,11 +207,19 @@ export function useTaskLogsColumns(
         cell: ({ row }) => {
           const log = row.original
           const taskId = row.getValue('task_id') as string
+          const modelName =
+            log.properties?.origin_model_name ||
+            log.properties?.upstream_model_name
           if (!taskId) {
             return <span className='text-muted-foreground/60 text-xs'>-</span>
           }
           return (
-            <div className='flex max-w-[170px] flex-col gap-0.5'>
+            <div className='logs-model-cell max-w-[200px]'>
+              {modelName ? (
+                <span className='logs-model-top truncate' title={modelName}>
+                  {modelName}
+                </span>
+              ) : null}
               <StatusBadge
                 label={taskId}
                 copyText={taskId}
@@ -217,7 +227,7 @@ export function useTaskLogsColumns(
                 size='sm'
                 className='border-border/60 bg-muted/30 !text-foreground max-w-full truncate rounded-md border px-1.5 py-0.5 font-mono'
               />
-              <span className='text-muted-foreground/60 truncate text-[11px]'>
+              <span className='logs-sub-meta truncate'>
                 {t(log.platform)} · {t(taskActionMapper.getLabel(log.action))}
               </span>
             </div>
@@ -238,19 +248,28 @@ export function useTaskLogsColumns(
         cell: ({ row }) => {
           const status = row.getValue('status') as string
           return (
-            <StatusBadge
+            <LogsStatusPill
               label={t(
                 taskStatusMapper.getLabel(status, status || 'Submitting')
               )}
-              variant={taskStatusMapper.getVariant(status)}
-              size='sm'
-              copyable={false}
-              className='-ml-1.5'
+              tone={mapTaskStatusToTone(status)}
             />
           )
         },
       },
       createProgressColumn<TaskLog>({ headerLabel: t('Progress') }),
+      {
+        accessorKey: 'quota',
+        header: t('Cost'),
+        cell: ({ row }) => {
+          const quota = row.getValue('quota') as number | undefined
+          if (!quota || quota <= 0) {
+            return <span className='text-muted-foreground/60 text-xs'>-</span>
+          }
+          return <span className='logs-cost-cell'>{formatQuota(quota)}</span>
+        },
+        meta: { label: t('Cost') },
+      },
       {
         id: 'artifacts',
         header: t('Artifacts'),

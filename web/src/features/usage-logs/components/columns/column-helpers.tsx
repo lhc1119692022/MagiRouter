@@ -36,6 +36,7 @@ import { cn } from '@/lib/utils'
 
 import { formatDuration } from '../../lib/format'
 import { FailReasonDialog } from '../dialogs/fail-reason-dialog'
+import { LogsProgressBar } from '../logs-editorial-primitives'
 
 /**
  * Cache tooltip component for token display
@@ -263,13 +264,14 @@ export function createProgressColumn<T>(config: {
     ),
     cell: ({ row }) => {
       const progress = row.getValue(accessorKey) as string
+      const status = String(
+        (row.original as Record<string, unknown>).status ?? ''
+      ).toUpperCase()
       if (!progress) {
         return <span className='text-muted-foreground/60 text-xs'>-</span>
       }
       return (
-        <span className='border-border/60 bg-muted/30 inline-flex items-center rounded-md border px-1.5 py-0.5 font-mono text-xs'>
-          {progress}
-        </span>
+        <LogsProgressBar progress={progress} failed={status === 'FAILURE'} />
       )
     },
     meta: { label: headerLabel },

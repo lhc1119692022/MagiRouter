@@ -5,6 +5,7 @@ import (
 	"math"
 	"strconv"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/config"
 )
 
@@ -30,19 +31,32 @@ func GetQuotaSetting() *QuotaSetting {
 	return &quotaSetting
 }
 
-// ValidateQuotaOption validates reservation settings before they are persisted.
+// ValidateQuotaOption validates quota settings before they are persisted.
 func ValidateQuotaOption(key, value string) error {
-	if key != "quota_setting.trust_quota_usd" && key != "quota_setting.pre_consume_multiplier" {
+	switch key {
+	case "QuotaForNewUser", "QuotaForInviter", "QuotaForInvitee":
+		quota, err := strconv.Atoi(value)
+		if err != nil || quota < 0 {
+			return common.NewMessage("Quota value must be a non-negative integer")
+		}
+		if quota > common.MaxWalletQuota {
+			return common.NewMessage("Quota value exceeds valid range, maximum is {{max}}", map[string]any{
+				"max": common.MaxWalletQuota,
+			})
+		}
+		return nil
+	case "quota_setting.trust_quota_usd", "quota_setting.pre_consume_multiplier":
+		number, err := strconv.ParseFloat(value, 64)
+		if err != nil || math.IsNaN(number) || math.IsInf(number, 0) || number < 0 {
+			return fmt.Errorf("%s must be a finite non-negative number", key)
+		}
+		if key == "quota_setting.pre_consume_multiplier" && number == 0 {
+			return fmt.Errorf("%s must be greater than zero", key)
+		}
+		return nil
+	default:
 		return nil
 	}
-	number, err := strconv.ParseFloat(value, 64)
-	if err != nil || math.IsNaN(number) || math.IsInf(number, 0) || number < 0 {
-		return fmt.Errorf("%s must be a finite non-negative number", key)
-	}
-	if key == "quota_setting.pre_consume_multiplier" && number == 0 {
-		return fmt.Errorf("%s must be greater than zero", key)
-	}
-	return nil
 }
 
 // InputPreConsumeMultiplier rejects invalid runtime settings as well as invalid saves.

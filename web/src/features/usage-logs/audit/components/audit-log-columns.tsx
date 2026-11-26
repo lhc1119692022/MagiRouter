@@ -21,12 +21,27 @@ import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { TruncatedCell } from '@/components/data-table'
-import { StatusBadge } from '@/components/status-badge'
 import dayjs from '@/lib/dayjs'
 
+import { LogsStatusPill } from '../../components/logs-editorial-primitives'
 import type { AuditLog } from '../api'
 import { buildAuditDetails } from '../lib/audit-details'
 import { AuditLogDetailsDialog } from './audit-log-details-dialog'
+
+function getAuditCategoryLabel(category: string): string {
+  switch (category) {
+    case 'login':
+      return 'Login'
+    case 'security':
+      return 'Account security'
+    case 'operation':
+      return 'Operation audit'
+    case 'access_token':
+      return 'Access Token'
+    default:
+      return category
+  }
+}
 
 export function useAuditLogColumns(
   accessOnly?: boolean
@@ -39,7 +54,7 @@ export function useAuditLogColumns(
         header: t('Time'),
         size: 180,
         cell: ({ row }) => (
-          <span className='font-mono tabular-nums'>
+          <span className='logs-mono tabular-nums'>
             {dayjs.unix(row.original.created_at).format('YYYY-MM-DD HH:mm:ss')}
           </span>
         ),
@@ -48,6 +63,23 @@ export function useAuditLogColumns(
     ]
     if (!accessOnly) {
       columns.push(
+        {
+          accessorKey: 'category',
+          header: t('Category'),
+          size: 120,
+          cell: ({ row }) => {
+            const category = row.original.category
+            if (!category) {
+              return <span className='text-muted-foreground/60'>—</span>
+            }
+            return (
+              <span className='logs-cat-pill'>
+                {t(getAuditCategoryLabel(category))}
+              </span>
+            )
+          },
+          meta: { label: t('Category') },
+        },
         {
           accessorKey: 'username',
           header: t('Username'),
@@ -77,7 +109,7 @@ export function useAuditLogColumns(
               <div className='min-w-0 space-y-1'>
                 <div className='flex min-w-0 items-baseline gap-1'>
                   <TruncatedCell
-                    className='min-w-0 font-medium'
+                    className='min-w-0 font-medium text-[var(--ink-strong)]'
                     tooltipContent={operation.summary}
                   >
                     {operation.headline}
@@ -110,7 +142,7 @@ export function useAuditLogColumns(
         header: 'IP',
         size: 120,
         cell: ({ row }) => (
-          <span className='font-mono'>{row.original.ip || '—'}</span>
+          <span className='logs-mono'>{row.original.ip || '—'}</span>
         ),
         meta: { label: 'IP' },
       },
@@ -130,7 +162,7 @@ export function useAuditLogColumns(
         header: t('Method'),
         size: 76,
         cell: ({ row }) => (
-          <span className='text-muted-foreground font-mono'>
+          <span className='logs-mono text-muted-foreground'>
             {row.original.method || '—'}
           </span>
         ),
@@ -152,7 +184,7 @@ export function useAuditLogColumns(
         header: 'HTTP',
         size: 60,
         cell: ({ row }) => (
-          <span className='font-mono tabular-nums'>
+          <span className='logs-mono tabular-nums'>
             {row.original.status || '—'}
           </span>
         ),
@@ -161,12 +193,11 @@ export function useAuditLogColumns(
       {
         accessorKey: 'success',
         header: t('Result'),
-        size: 82,
+        size: 96,
         cell: ({ row }) => (
-          <StatusBadge
+          <LogsStatusPill
             label={row.original.success ? t('Success') : t('Failed')}
-            variant={row.original.success ? 'success' : 'danger'}
-            copyable={false}
+            tone={row.original.success ? 'success' : 'err'}
           />
         ),
         meta: { label: t('Result'), mobileBadge: true },

@@ -70,11 +70,11 @@ export function buildConsoleNavigation(
       items: [
         ...(signedIn
           ? [
+              entry('llm-logs', t('LLM Logs'), '/usage-logs/common'),
               entry('task-logs', t('Task Logs'), '/usage-logs/task', {
                 activeUrls: ['/usage-logs/drawing'],
                 configUrls: ['/usage-logs/task', '/usage-logs/drawing'],
               }),
-              entry('llm-logs', t('LLM Logs'), '/usage-logs/common'),
               entry('audit', t('Audit Logs'), '/usage-logs/audit'),
             ]
           : []),

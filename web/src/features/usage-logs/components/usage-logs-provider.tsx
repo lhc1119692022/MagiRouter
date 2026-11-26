@@ -93,6 +93,11 @@ export function useUsageLogsContext() {
   return context
 }
 
+export function useSensitiveVisible() {
+  const context = useContext(UsageLogsContext)
+  return context ? context.sensitiveVisible : true
+}
+
 /**
  * Resolves the effective admin scope for usage logs: whether the current
  * user is allowed to view all users' logs (`canManageScope`), and whether

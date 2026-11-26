@@ -1,6 +1,6 @@
-import { type ReactNode, useEffect, useId, useMemo, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import {
+  ArrowUpDown,
   AudioLines,
   Boxes,
   Film,
@@ -9,7 +9,9 @@ import {
   Mic,
   Type,
 } from 'lucide-react'
+import { type ReactNode, useEffect, useId, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -22,7 +24,14 @@ import {
 import {
   useGroupChannelStatus,
   usePublicMonitoring,
+  useUpdateGroupChannelStatusOrder,
 } from '@/features/dashboard/hooks/use-public-monitoring'
+import {
+  areStringListsEqual,
+  getGroupStatusBadgeMeta,
+  moveOrderItem,
+  sortGroupChannelStatusDefault,
+} from '@/features/dashboard/lib/channel-status-order'
 import {
   measuredAvailability,
   monitorHealth,
@@ -36,11 +45,16 @@ import type {
 } from '@/features/dashboard/types'
 import { toIntlLocale } from '@/i18n/languages'
 import { formatNumber } from '@/lib/format'
+import { handleServerError } from '@/lib/handle-server-error'
 import {
   CATEGORY_LABEL_KEYS,
   MODEL_CAPABILITY_CATEGORIES,
   type ModelCapabilityCategory,
 } from '@/lib/model-task-capabilities'
+import { ROLE } from '@/lib/roles'
+import { useAuthStore } from '@/stores/auth-store'
+
+import { ChannelStatusOrderEditor } from './channel-status-order-editor'
 
 import '@/styles/overview-publication.css'
 
@@ -58,23 +72,6 @@ const CAPABILITY_ICONS = {
   transcription: Mic,
   other: Boxes,
 } as const
-
-function statusBadgeMeta(status: GroupChannelHealthStatus): {
-  label: string
-  tone: string
-  color: string
-} {
-  switch (status) {
-    case 'operational':
-      return { label: 'Operational', tone: 'healthy', color: '#10b981' }
-    case 'degraded':
-      return { label: 'Degraded', tone: 'warning', color: '#f59e0b' }
-    case 'outage':
-      return { label: 'Outage', tone: 'error', color: '#ef4444' }
-    default:
-      return { label: 'Awaiting data', tone: 'unknown', color: '#9ca3af' }
-  }
-}
 
 function formatSeconds(ms: number): string {
   if (!Number.isFinite(ms) || ms <= 0) return '—'
@@ -186,19 +183,14 @@ function buildScopedSummary(
   }
 }
 
-function Sparkline({
-  values,
-  color,
-}: {
-  values: number[]
-  color: string
-}) {
+function Sparkline({ values, color }: { values: number[]; color: string }) {
   const gradId = useId()
   const width = 68
   const height = 24
   const padX = 2
   const padY = 3
-  const pointsSource = values.length >= 2 ? values : [values[0] ?? 1, values[0] ?? 1]
+  const pointsSource =
+    values.length >= 2 ? values : [values[0] ?? 1, values[0] ?? 1]
   const minVal = Math.min(...pointsSource)
   const maxVal = Math.max(...pointsSource)
   const span = maxVal - minVal || 1
@@ -395,7 +387,7 @@ function GroupMonitorCard({
   onSelect: (item: GroupChannelStatusItem) => void
 }) {
   const { t } = useTranslation()
-  const meta = statusBadgeMeta(item.status)
+  const meta = getGroupStatusBadgeMeta(item.status)
   const ratioLabel = item.is_auto
     ? t('Auto')
     : `${Number(item.ratio.toFixed(2))}x`
@@ -527,7 +519,9 @@ function GroupMonitorCard({
               color={meta.color}
             />
             <span className='gm-curve-val tabular-nums'>
-              {item.request_count > 0 ? `${item.success_rate.toFixed(2)}%` : '—'}
+              {item.request_count > 0
+                ? `${item.success_rate.toFixed(2)}%`
+                : '—'}
             </span>
           </div>
         </div>
@@ -610,7 +604,7 @@ function GroupDetailSheet({
   }, [item, modelSearch])
 
   if (!item) return null
-  const meta = statusBadgeMeta(item.status)
+  const meta = getGroupStatusBadgeMeta(item.status)
   const ratioLabel = item.is_auto
     ? t('Auto')
     : `${Number(item.ratio.toFixed(2))}x`
@@ -651,7 +645,10 @@ function GroupDetailSheet({
               {resolveGroupCapabilities(item).map((cap) => {
                 const CapIcon = CAPABILITY_ICONS[cap]
                 return (
-                  <span className='dash-gs-ratio inline-flex items-center gap-1' key={cap}>
+                  <span
+                    className='dash-gs-ratio inline-flex items-center gap-1'
+                    key={cap}
+                  >
                     <CapIcon className='size-3' aria-hidden='true' />
                     <span>{t(CATEGORY_LABEL_KEYS[cap])}</span>
                   </span>
@@ -719,9 +716,7 @@ function GroupDetailSheet({
             ) : (
               <>
                 <div className='gm-drawer-metric-box'>
-                  <span className='gm-submetric-label'>
-                    {t('First token')}
-                  </span>
+                  <span className='gm-submetric-label'>{t('First token')}</span>
                   <span className='gm-submetric-val tabular-nums'>
                     {formatSeconds(item.avg_ttft_ms)}
                   </span>
@@ -739,7 +734,9 @@ function GroupDetailSheet({
                 <div className='gm-drawer-metric-box'>
                   <span className='gm-submetric-label'>{t('Throughput')}</span>
                   <span className='gm-submetric-val tabular-nums'>
-                    {item.avg_tps > 0 ? `${item.avg_tps.toFixed(1)} tok/s` : '—'}
+                    {item.avg_tps > 0
+                      ? `${item.avg_tps.toFixed(1)} tok/s`
+                      : '—'}
                   </span>
                 </div>
               </>
@@ -816,7 +813,7 @@ function GroupDetailSheet({
                           </span>
                         </div>
                         <span
-                          className='gm-model-rate tabular-nums text-xs font-medium'
+                          className='gm-model-rate text-xs font-medium tabular-nums'
                           data-tone={modelTone}
                         >
                           {modelItem.success_rate.toFixed(2)}%
@@ -978,6 +975,8 @@ function UptimeKumaSectionCard({
 export function UptimePanel(props: { group?: string }) {
   const { t, i18n } = useTranslation()
   const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
+  const userRole = useAuthStore((state) => state.auth.user?.role)
+  const isAdmin = Boolean(userRole && userRole >= ROLE.ADMIN)
   const [windowHours, setWindowHours] = useState<WindowHours>(24)
   const [selectedCapabilities, setSelectedCapabilities] = useState<
     ModelCapabilityCategory[]
@@ -988,9 +987,13 @@ export function UptimePanel(props: { group?: string }) {
   const [selectedGroupName, setSelectedGroupName] = useState<string | null>(
     null
   )
+  const [isReordering, setIsReordering] = useState(false)
+  const [draftOrder, setDraftOrder] = useState<string[]>([])
+  const [draftIsManual, setDraftIsManual] = useState(false)
 
   const { enabled, query, publication } = usePublicMonitoring()
   const realStatus = useGroupChannelStatus(windowHours)
+  const saveOrderMutation = useUpdateGroupChannelStatusOrder()
   const refetchUptime = query.refetch
   const refetchRealStatus = realStatus.query.refetch
 
@@ -1003,7 +1006,7 @@ export function UptimePanel(props: { group?: string }) {
   }
 
   useEffect(() => {
-    if (!enabled) return
+    if (!enabled || isReordering) return
     const timer = window.setInterval(() => {
       setCountdown((prev) => {
         if (prev <= 1) {
@@ -1015,7 +1018,7 @@ export function UptimePanel(props: { group?: string }) {
       })
     }, 1000)
     return () => window.clearInterval(timer)
-  }, [enabled, refetchUptime, refetchRealStatus])
+  }, [enabled, isReordering, refetchUptime, refetchRealStatus])
 
   if (!enabled) {
     let message = t('Monitoring is not published.')
@@ -1025,6 +1028,69 @@ export function UptimePanel(props: { group?: string }) {
   }
 
   const allRealGroups = realStatus.query.data?.groups ?? []
+  const savedCustomOrder = realStatus.query.data?.custom_order ?? []
+  const hasSavedCustomOrder = savedCustomOrder.length > 0
+  const canManageOrder =
+    isAdmin && !props.group && (allRealGroups.length > 1 || hasSavedCustomOrder)
+  const currentGroupOrder = allRealGroups.map((item) => item.group)
+
+  let isOrderDirty = false
+  if (draftIsManual !== hasSavedCustomOrder) {
+    if (!draftIsManual) {
+      isOrderDirty = true
+    } else {
+      isOrderDirty = !areStringListsEqual(draftOrder, currentGroupOrder)
+    }
+  } else if (draftIsManual) {
+    isOrderDirty = !areStringListsEqual(draftOrder, currentGroupOrder)
+  }
+
+  const handleStartReordering = () => {
+    setSelectedGroupName(null)
+    setDraftOrder(currentGroupOrder)
+    setDraftIsManual(hasSavedCustomOrder)
+    setIsReordering(true)
+  }
+
+  const handleMoveOrderItem = (fromIndex: number, toIndex: number) => {
+    setDraftOrder((prev) => {
+      const base = prev.length > 0 ? prev : currentGroupOrder
+      return moveOrderItem(base, fromIndex, toIndex)
+    })
+    setDraftIsManual(true)
+  }
+
+  const handleResetOrderDefault = () => {
+    const defaultOrdered = sortGroupChannelStatusDefault(allRealGroups).map(
+      (item) => item.group
+    )
+    setDraftOrder(defaultOrdered)
+    setDraftIsManual(false)
+  }
+
+  const handleCancelReordering = () => {
+    setIsReordering(false)
+    setDraftOrder([])
+    setDraftIsManual(hasSavedCustomOrder)
+  }
+
+  const handleSaveOrder = () => {
+    const payload = draftIsManual ? draftOrder : []
+    saveOrderMutation.mutate(payload, {
+      onSuccess: () => {
+        setIsReordering(false)
+        setCountdown(AUTO_REFRESH_SECONDS)
+        toast.success(
+          payload.length > 0
+            ? t('Channel status card order saved')
+            : t('Channel status card order reset to default')
+        )
+      },
+      onError: (error) => {
+        handleServerError(error, t('Failed to save configuration'))
+      },
+    })
+  }
   const filteredRealGroupsByRoute = allRealGroups.filter(
     (item) => !props.group || item.group === props.group
   )
@@ -1111,11 +1177,7 @@ export function UptimePanel(props: { group?: string }) {
   }
 
   const windowPills = (
-    <div
-      className='ch-window-pills'
-      role='group'
-      aria-label={t('Time window')}
-    >
+    <div className='ch-window-pills' role='group' aria-label={t('Time window')}>
       {WINDOW_OPTIONS.map((hours) => (
         <button
           key={hours}
@@ -1132,7 +1194,20 @@ export function UptimePanel(props: { group?: string }) {
 
   return (
     <div className='channel-status-board'>
-      {hasRealGroups && (
+      {hasRealGroups && isReordering && (
+        <ChannelStatusOrderEditor
+          groups={allRealGroups}
+          draftOrder={draftOrder}
+          isManual={draftIsManual}
+          isDirty={isOrderDirty}
+          saving={saveOrderMutation.isPending}
+          onMove={handleMoveOrderItem}
+          onResetDefault={handleResetOrderDefault}
+          onCancel={handleCancelReordering}
+          onSave={handleSaveOrder}
+        />
+      )}
+      {hasRealGroups && !isReordering && (
         <>
           <div className='ch-top-bar'>
             {!props.group && availableCapabilities.length > 0 ? (
@@ -1200,6 +1275,17 @@ export function UptimePanel(props: { group?: string }) {
                   {t('Show all groups')}
                 </Link>
               )}
+              {canManageOrder && (
+                <Button
+                  type='button'
+                  size='sm'
+                  variant='outline'
+                  onClick={handleStartReordering}
+                >
+                  <ArrowUpDown className='mr-1.5 size-3.5' aria-hidden='true' />
+                  {t('Reorder cards')}
+                </Button>
+              )}
               <span className='ch-countdown-chip tabular-nums'>
                 <span aria-hidden='true' className='ch-autorefresh-dot' />
                 <span>
@@ -1242,32 +1328,42 @@ export function UptimePanel(props: { group?: string }) {
                 type='button'
                 className='ch-stat-cell-btn'
                 aria-pressed={statusFilter === 'operational'}
-                data-active-filter={statusFilter === 'operational' ? 'true' : 'false'}
+                data-active-filter={
+                  statusFilter === 'operational' ? 'true' : 'false'
+                }
                 onClick={() => setStatusFilter('operational')}
               >
                 <span className='ch-stat-label'>{t('Operational')}</span>
                 <div className='ch-stat-val-row'>
                   <span
                     className='ch-stat-val tabular-nums'
-                    data-tone={summary.operational_groups > 0 ? 'healthy' : undefined}
+                    data-tone={
+                      summary.operational_groups > 0 ? 'healthy' : undefined
+                    }
                   >
                     {summary.operational_groups}
                   </span>
-                  <span className='ch-stat-sub'>{t('Stable availability')}</span>
+                  <span className='ch-stat-sub'>
+                    {t('Stable availability')}
+                  </span>
                 </div>
               </button>
               <button
                 type='button'
                 className='ch-stat-cell-btn'
                 aria-pressed={statusFilter === 'degraded'}
-                data-active-filter={statusFilter === 'degraded' ? 'true' : 'false'}
+                data-active-filter={
+                  statusFilter === 'degraded' ? 'true' : 'false'
+                }
                 onClick={() => setStatusFilter('degraded')}
               >
                 <span className='ch-stat-label'>{t('Degraded')}</span>
                 <div className='ch-stat-val-row'>
                   <span
                     className='ch-stat-val tabular-nums'
-                    data-tone={summary.degraded_groups > 0 ? 'warning' : undefined}
+                    data-tone={
+                      summary.degraded_groups > 0 ? 'warning' : undefined
+                    }
                   >
                     {summary.degraded_groups}
                   </span>
@@ -1280,7 +1376,9 @@ export function UptimePanel(props: { group?: string }) {
                 type='button'
                 className='ch-stat-cell-btn'
                 aria-pressed={statusFilter === 'outage'}
-                data-active-filter={statusFilter === 'outage' ? 'true' : 'false'}
+                data-active-filter={
+                  statusFilter === 'outage' ? 'true' : 'false'
+                }
                 onClick={() => setStatusFilter('outage')}
               >
                 <span className='ch-stat-label'>{t('Outage')}</span>

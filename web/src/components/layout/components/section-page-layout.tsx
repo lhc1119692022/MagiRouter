@@ -1,21 +1,3 @@
-/*
-Copyright (C) 2023-2026 QuantumNous
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU Affero General Public License as
-published by the Free Software Foundation, either version 3 of the
-License, or (at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU Affero General Public License for more details.
-
-You should have received a copy of the GNU Affero General Public License
-along with this program. If not, see <https://www.gnu.org/licenses/>.
-
-For commercial licensing, please contact support@quantumnous.com
-*/
 import {
   Children,
   isValidElement,
@@ -33,6 +15,11 @@ function SectionPageLayoutTitle(_props: SlotProps) {
   return null
 }
 SectionPageLayoutTitle.displayName = 'SectionPageLayout.Title'
+
+function SectionPageLayoutSubtitle(_props: SlotProps) {
+  return null
+}
+SectionPageLayoutSubtitle.displayName = 'SectionPageLayout.Subtitle'
 
 function SectionPageLayoutActions(_props: SlotProps) {
   return null
@@ -62,6 +49,7 @@ export function SectionPageLayout(props: SectionPageLayoutProps) {
   )
 
   let title: ReactNode = null
+  let subtitle: ReactNode = null
   let actions: ReactNode = null
   let content: ReactNode = null
   let breadcrumb: ReactNode = null
@@ -80,7 +68,9 @@ export function SectionPageLayout(props: SectionPageLayoutProps) {
     if (!isValidElement(node)) return
     const child = node as ReactElement<SlotProps>
     if (child.type === SectionPageLayoutTitle) title = child.props.children
-    else if (child.type === SectionPageLayoutActions) {
+    else if (child.type === SectionPageLayoutSubtitle) {
+      subtitle = child.props.children
+    } else if (child.type === SectionPageLayoutActions) {
       actions = child.props.children
     } else if (child.type === SectionPageLayoutContent) {
       content = child.props.children
@@ -110,6 +100,9 @@ export function SectionPageLayout(props: SectionPageLayoutProps) {
             <div className='console-head-bar'>
               <div className='console-head-left'>
                 <h1 className='console-h1'>{title}</h1>
+                {subtitle != null && (
+                  <span className='console-head-meta'>{subtitle}</span>
+                )}
               </div>
               {actions != null && (
                 <div
@@ -138,6 +131,7 @@ export function SectionPageLayout(props: SectionPageLayoutProps) {
 }
 
 SectionPageLayout.Title = SectionPageLayoutTitle
+SectionPageLayout.Subtitle = SectionPageLayoutSubtitle
 SectionPageLayout.Actions = SectionPageLayoutActions
 SectionPageLayout.Content = SectionPageLayoutContent
 SectionPageLayout.Breadcrumb = SectionPageLayoutBreadcrumb

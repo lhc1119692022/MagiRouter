@@ -969,4 +969,7 @@ export const STATIC_I18N_KEYS = [
   'Audio generation',
   'Use the task capability controls instead of adding reserved tags.',
   'Tags and task capabilities exceed 255 characters. Shorten the tags before saving.',
+  'Auto (model chooses format)',
+  'Plain text (.txt)',
+  'Source code',
 ] as const

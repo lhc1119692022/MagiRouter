@@ -23,15 +23,20 @@ import {
   applyMessageEdit,
   createRegeneratedMessages,
   removeMessageByKey,
+  toMessageAttachment,
 } from '../lib'
-import type { Message } from '../types'
+import type { ChatAttachment, Message } from '../types'
 
 type UsePlaygroundConversationOptions = {
   messages: Message[]
   updateMessages: (
     updater: Message[] | ((prev: Message[]) => Message[])
   ) => void
-  sendChat: (messages: Message[], imageUrls?: string[]) => void
+  sendChat: (
+    messages: Message[],
+    attachments?: ChatAttachment[],
+    sessionAttachmentsByKey?: ReadonlyMap<string, ChatAttachment[]>
+  ) => void
 }
 
 export function usePlaygroundConversation({
@@ -42,15 +47,32 @@ export function usePlaygroundConversation({
   const [editingMessageKey, setEditingMessageKey] = useState<string | null>(
     null
   )
+  const [sessionAttachments, setSessionAttachments] = useState<
+    ReadonlyMap<string, ChatAttachment[]>
+  >(() => new Map())
 
   const handleSendMessage = useCallback(
-    (text: string, imageUrls?: string[]) => {
-      const nextMessages = appendUserMessagePair(messages, text)
+    (text: string, attachments?: ChatAttachment[]) => {
+      const metadata = attachments?.length
+        ? attachments.map(toMessageAttachment)
+        : undefined
+      const nextMessages = appendUserMessagePair(messages, text, metadata)
+      const userMessage = nextMessages.at(-2)
+      let nextSessionAttachments = sessionAttachments
+      if (userMessage && attachments?.length) {
+        const updated = new Map(sessionAttachments)
+        updated.set(userMessage.key, attachments)
+        nextSessionAttachments = updated
+        setSessionAttachments(updated)
+      }
       updateMessages(nextMessages)
-      if (imageUrls?.length) sendChat(nextMessages, imageUrls)
-      else sendChat(nextMessages)
+      if (attachments?.length) {
+        sendChat(nextMessages, attachments, nextSessionAttachments)
+      } else {
+        sendChat(nextMessages, undefined, nextSessionAttachments)
+      }
     },
-    [messages, updateMessages, sendChat]
+    [messages, sessionAttachments, updateMessages, sendChat]
   )
 
   const handleRegenerateMessage = useCallback(
@@ -59,9 +81,9 @@ export function usePlaygroundConversation({
       if (!nextMessages) return
 
       updateMessages(nextMessages)
-      sendChat(nextMessages)
+      sendChat(nextMessages, undefined, sessionAttachments)
     },
-    [messages, updateMessages, sendChat]
+    [messages, sessionAttachments, updateMessages, sendChat]
   )
 
   const handleEditMessage = useCallback((message: Message) => {
@@ -90,14 +112,20 @@ export function usePlaygroundConversation({
       updateMessages(editResult.messages)
 
       if (editResult.shouldSend) {
-        sendChat(editResult.messages)
+        sendChat(editResult.messages, undefined, sessionAttachments)
       }
     },
-    [editingMessageKey, messages, updateMessages, sendChat]
+    [editingMessageKey, messages, sessionAttachments, updateMessages, sendChat]
   )
 
   const handleDeleteMessage = useCallback(
     (message: Message) => {
+      setSessionAttachments((previous) => {
+        if (!previous.has(message.key)) return previous
+        const updated = new Map(previous)
+        updated.delete(message.key)
+        return updated
+      })
       updateMessages((previousMessages) =>
         removeMessageByKey(previousMessages, message.key)
       )
@@ -105,13 +133,19 @@ export function usePlaygroundConversation({
     [updateMessages]
   )
 
+  const clearSessionAttachments = useCallback(() => {
+    setSessionAttachments(new Map())
+  }, [])
+
   return {
     editingMessageKey,
+    sessionAttachments,
     handleSendMessage,
     handleRegenerateMessage,
     handleEditMessage,
     handleEditOpenChange,
     applyEdit,
     handleDeleteMessage,
+    clearSessionAttachments,
   }
 }

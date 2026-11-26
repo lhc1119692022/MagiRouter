@@ -101,3 +101,14 @@ export async function getGroupChannelStatus(hours = 24) {
   }>('/api/perf-metrics/groups', { params: { hours } })
   return res.data
 }
+
+export async function updateGroupChannelStatusOrder(groups: string[]) {
+  const res = await api.put<{
+    success: boolean
+    message?: string
+    data?: {
+      groups: string[]
+    }
+  }>('/api/perf-metrics/groups/order', { groups })
+  return res.data
+}

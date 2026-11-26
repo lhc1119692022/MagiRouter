@@ -33,6 +33,7 @@ import {
 } from '@/components/ai-elements/code-block'
 import { cn } from '@/lib/utils'
 
+import { parseCodeBlockInfo } from './code-block-file'
 import { getNodeKey } from './response-content'
 import type { BlockRendererOptions } from './response-types'
 
@@ -141,7 +142,7 @@ export function renderList(
 }
 
 export function renderCodeBlock(node: CodeBlockNode, key: string): ReactNode {
-  const language = node.language || 'plaintext'
+  const { filename, language } = parseCodeBlockInfo(node.language)
   const lineCount = node.code.split('\n').length
 
   return (
@@ -149,12 +150,13 @@ export function renderCodeBlock(node: CodeBlockNode, key: string): ReactNode {
       collapsedLines={14}
       code={node.code}
       defaultCollapsed={lineCount > 14}
+      filename={filename}
       key={key}
       language={language}
       maxExpandedLines={44}
       showLineNumbers
       showToolbar
-      title={language}
+      title={filename ?? language}
     >
       <CodeBlockCopyButton />
     </CodeBlock>

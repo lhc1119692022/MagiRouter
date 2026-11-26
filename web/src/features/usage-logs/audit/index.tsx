@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useQueryClient } from '@tanstack/react-query'
+import { Download } from 'lucide-react'
 import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -31,7 +32,11 @@ import {
 import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
-import { AuditLogViewer } from './components/audit-log-viewer'
+import '../logs-editorial.css'
+import {
+  AuditLogViewer,
+  type AuditExportState,
+} from './components/audit-log-viewer'
 
 export function AuditLogs() {
   const { t } = useTranslation()
@@ -39,6 +44,10 @@ export function AuditLogs() {
   const queryClient = useQueryClient()
   const [scope, setScope] = useState<'all' | 'self'>('all')
   const [accessRevoked, setAccessRevoked] = useState(false)
+  const [exportState, setExportState] = useState<AuditExportState>({
+    count: 0,
+    exportCsv: null,
+  })
   const canReadAll =
     !!user &&
     user.role >= ROLE.ADMIN &&
@@ -88,8 +97,17 @@ export function AuditLogs() {
     }
   }, [queryClient, userId])
   return (
-    <SectionPageLayout fixedContent>
+    <SectionPageLayout>
       <SectionPageLayout.Title>{t('Audit Logs')}</SectionPageLayout.Title>
+      <SectionPageLayout.Subtitle>
+        {effectiveScope === 'all'
+          ? t(
+              'Track API key changes, access token calls, security verification, and operation records across accounts'
+            )
+          : t(
+              'Track API key changes, access token calls, security verification, and account settings (personal scope)'
+            )}
+      </SectionPageLayout.Subtitle>
       <SectionPageLayout.Actions>
         {canReadAll && !accessRevoked && (
           <Tabs
@@ -98,25 +116,38 @@ export function AuditLogs() {
               setScope(value === 'all' ? 'all' : 'self')
             }
           >
-            <TabsList aria-label={t('View scope')}>
+            <TabsList
+              aria-label={t('View scope')}
+              className='logs-editorial-subtabs'
+            >
               <TabsTrigger value='all'>{t('All')}</TabsTrigger>
               <TabsTrigger value='self'>{t('Only Mine')}</TabsTrigger>
             </TabsList>
           </Tabs>
         )}
+        <button
+          type='button'
+          className='el-btn el-btn-sm el-btn-white'
+          onClick={() => exportState.exportCsv?.()}
+          disabled={!exportState.exportCsv || exportState.count === 0}
+        >
+          <Download className='size-3.5' aria-hidden='true' />
+          {t('Export Audit Logs')}
+        </button>
       </SectionPageLayout.Actions>
       <SectionPageLayout.Content>
-        <div className='flex h-full min-h-0 flex-col gap-3'>
+        <div className='logs-editorial-page'>
           {accessRevoked && (
             <p role='status' className='text-muted-foreground shrink-0 text-xs'>
               {t('Audit access changed. Showing only your records.')}
             </p>
           )}
-          <div className='min-h-0 flex-1'>
+          <div className='min-w-0'>
             <AuditLogViewer
               key={`${userId}:${effectiveScope}`}
               scope={effectiveScope}
               onAccessDenied={handleAccessDenied}
+              onExportStateChange={setExportState}
             />
           </div>
         </div>

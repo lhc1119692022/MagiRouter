@@ -260,7 +260,7 @@ describe('audit log sidebar entry', () => {
     expect(titles).toContain('LLM Logs')
   })
 
-  it('legacy configurations show a separate Audit Logs link immediately after Usage Logs', () => {
+  it('places LLM Logs before Task Logs and keeps Audit Logs separate in the Account area', () => {
     const { result } = sidebarFor(
       { console: { enabled: true, log: true } },
       { console: { enabled: true, log: true } }
@@ -268,8 +268,12 @@ describe('audit log sidebar entry', () => {
     const items =
       result.current.find((group) => group.id === 'general')?.items ?? []
     const usageIndex = items.findIndex((item) => item.sidebarKey === 'llm-logs')
+    const taskIndex = items.findIndex((item) => item.sidebarKey === 'task-logs')
+    const auditIndex = items.findIndex((item) => item.sidebarKey === 'audit')
     expect(usageIndex).toBeGreaterThanOrEqual(0)
-    expect(items[usageIndex + 1]).toMatchObject({
+    expect(taskIndex).toBe(usageIndex + 1)
+    expect(auditIndex).toBe(taskIndex + 1)
+    expect(items[auditIndex]).toMatchObject({
       title: 'Audit Logs',
       url: '/usage-logs/audit',
     })

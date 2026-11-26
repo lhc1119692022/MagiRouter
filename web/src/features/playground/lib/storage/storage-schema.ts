@@ -66,6 +66,13 @@ const sourceSchema = z.object({
   title: z.string(),
 })
 
+const messageAttachmentSchema = z.object({
+  name: z.string(),
+  mediaType: z.string(),
+  kind: z.enum(['image', 'pdf', 'text']),
+  size: z.number().optional(),
+})
+
 const reasoningSchema = z.object({
   content: z.string(),
   duration: z.number(),
@@ -78,6 +85,7 @@ const messageSchema = z.object({
   key: z.string(),
   from: messageRoleSchema,
   versions: z.array(messageVersionSchema).min(1),
+  attachments: z.array(messageAttachmentSchema).optional(),
   createdAt: z.number().optional(),
   startedAt: z.number().optional(),
   completedAt: z.number().optional(),

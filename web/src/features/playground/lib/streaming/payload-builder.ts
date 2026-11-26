@@ -17,11 +17,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import type {
+  ChatAttachment,
   ChatCompletionRequest,
   ChatCompletionMessage,
   Message,
   PlaygroundConfig,
 } from '../../types'
+import { buildFileOutputSystemInstruction } from '../message/message-file-utils'
 import {
   buildMessageContent,
   formatMessageForAPI,
@@ -39,20 +41,31 @@ export function buildChatCompletionPayload(
   messages: Message[],
   config: PlaygroundConfig,
   draft?: string,
-  imageUrls?: string[]
+  attachments?: (string | ChatAttachment)[],
+  sessionAttachmentsByKey?: ReadonlyMap<string, ChatAttachment[]>
 ): ChatCompletionRequest {
   // Filter and format valid messages
   let processedMessages: ChatCompletionMessage[] = messages
     .filter(isValidMessage)
-    .map(formatMessageForAPI)
-  if (draft?.trim()) processedMessages.push({ role: 'user', content: draft })
+    .map((message) =>
+      formatMessageForAPI(message, sessionAttachmentsByKey?.get(message.key))
+    )
+  if (draft?.trim() || (draft !== undefined && attachments?.length)) {
+    processedMessages.push({
+      role: 'user',
+      content: attachments?.length
+        ? buildMessageContent(draft ?? '', attachments)
+        : (draft ?? ''),
+    })
+  }
   const current = processedMessages.at(-1)
   if (
-    imageUrls?.length &&
+    draft === undefined &&
+    attachments?.length &&
     current?.role === 'user' &&
     typeof current.content === 'string'
   ) {
-    current.content = buildMessageContent(current.content, imageUrls)
+    current.content = buildMessageContent(current.content, attachments)
   }
   let remaining = config.historyTurns
   if (remaining > 0) {
@@ -64,6 +77,37 @@ export function buildChatCompletionPayload(
         (message, position) => position >= index || message.role === 'system'
       )
       break
+    }
+  }
+
+  const fileOutputInstruction = buildFileOutputSystemInstruction(
+    config.fileOutput ?? 'off'
+  )
+  if (fileOutputInstruction) {
+    const systemIndex = processedMessages.findIndex(
+      (message) => message.role === 'system'
+    )
+    if (systemIndex >= 0) {
+      const existing = processedMessages[systemIndex]
+      if (typeof existing.content === 'string') {
+        processedMessages[systemIndex] = {
+          ...existing,
+          content: `${existing.content}\n\n${fileOutputInstruction}`,
+        }
+      } else {
+        processedMessages[systemIndex] = {
+          ...existing,
+          content: [
+            ...existing.content,
+            { type: 'text', text: fileOutputInstruction },
+          ],
+        }
+      }
+    } else {
+      processedMessages = [
+        { role: 'system', content: fileOutputInstruction },
+        ...processedMessages,
+      ]
     }
   }
 
