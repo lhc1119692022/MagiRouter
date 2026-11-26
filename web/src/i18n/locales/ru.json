@@ -98,6 +98,7 @@
     "Speech to text": "Распознавание речи",
     "Image to image": "Изображение из изображения",
     "Text generation": "Генерация текста",
+    "Reasoning generation": "Генерация рассуждений",
     "Text to speech": "Синтез речи",
     "Audio generation": "Генерация аудио",
     "Set task capabilities manually": "Указать задачи вручную",

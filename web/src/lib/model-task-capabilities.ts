@@ -24,7 +24,7 @@ export type ModelCapabilityCategory =
   (typeof MODEL_CAPABILITY_CATEGORIES)[number]
 
 export const CATEGORY_LABEL_KEYS: Record<ModelCapabilityCategory, string> = {
-  text: 'Text generation',
+  text: 'Reasoning generation',
   image: 'Image Generation',
   video: 'Video Generation',
   audio: 'Audio generation',
@@ -49,7 +49,7 @@ export const TASK_LABEL_KEYS: Record<ModelTaskCapability, string> = {
   'image-to-image': 'Image to image',
   'text-to-video': 'Text to Video',
   'image-to-video': 'Image to Video',
-  'text-generation': 'Text generation',
+  'text-generation': 'Reasoning generation',
   'text-to-speech': 'Text to speech',
   'audio-generation': 'Audio generation',
 }

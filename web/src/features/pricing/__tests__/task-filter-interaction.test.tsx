@@ -30,7 +30,9 @@ it('offers six named categories when present and lets a keyboard user add or rem
     group.queryByRole('button', { name: 'All creative models' })
   ).toBeNull()
   await user.tab()
-  expect(group.getByRole('button', { name: 'Text generation' })).toHaveFocus()
+  expect(
+    group.getByRole('button', { name: 'Reasoning generation' })
+  ).toHaveFocus()
   await user.keyboard(' ')
   await user.tab()
   await user.keyboard('{Enter}')

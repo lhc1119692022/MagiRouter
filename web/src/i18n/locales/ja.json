@@ -98,6 +98,7 @@
     "Speech to text": "音声の文字起こし",
     "Image to image": "画像から画像",
     "Text generation": "テキスト生成",
+    "Reasoning generation": "推論生成",
     "Text to speech": "音声読み上げ",
     "Audio generation": "音声生成",
     "Set task capabilities manually": "対応タスクを手動で設定する",

@@ -958,6 +958,7 @@ export const STATIC_I18N_KEYS = [
   'Text to Video',
   'Image to Video',
   'Text generation',
+  'Reasoning generation',
   'Image Generation',
   'Video Generation',
   'Speech transcription',

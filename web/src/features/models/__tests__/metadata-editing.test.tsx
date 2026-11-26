@@ -174,7 +174,9 @@ it('splits remark tags entered with English or Chinese commas and persists them 
   await user.click(screen.getByRole('button', { name: 'Edit' }))
   const tagInput = await screen.findByPlaceholderText('Add tags...')
   await user.type(tagInput, '推荐，200K 上下文,低延迟{Enter}')
-  await user.click(screen.getByRole('checkbox', { name: 'Text generation' }))
+  await user.click(
+    screen.getByRole('checkbox', { name: 'Reasoning generation' })
+  )
   await user.click(screen.getByRole('button', { name: 'Save metadata' }))
   await waitFor(() => expect(put).toHaveBeenCalledTimes(1))
   expect(saved.tags).toBe('推荐,200K 上下文,低延迟,@mr:catalog:v1=text')

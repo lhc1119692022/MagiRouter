@@ -160,7 +160,7 @@ it('expands filters by default, excludes remark tags from filters, and renders c
         model_name: 'Model A',
         created_time: 2000,
         supported_endpoint_types: ['openai'],
-        tags: 'Text generation,推荐，200K 上下文,低延迟,@mr:catalog:v1=text',
+        tags: 'Reasoning generation,推荐，200K 上下文,低延迟,@mr:catalog:v1=text',
         enable_groups: ['shared'],
         quota_type: 0,
         model_ratio: 1,
@@ -230,7 +230,7 @@ it('expands filters by default, excludes remark tags from filters, and renders c
   )
   const remarkTags = modelACard.querySelectorAll('.zm-cap-tag.is-configurable')
   expect([...capabilityTags].map((node) => node.textContent)).toEqual([
-    'Text generation',
+    'Reasoning generation',
   ])
   expect([...remarkTags].map((node) => node.textContent)).toEqual([
     '推荐',
@@ -301,7 +301,7 @@ it('expands filters by default, excludes remark tags from filters, and renders c
     [...modelARow.querySelectorAll('.zm-cap-tag:not(.is-configurable)')].map(
       (node) => node.textContent
     )
-  ).toEqual(['Text generation'])
+  ).toEqual(['Reasoning generation'])
   expect(
     [...modelARow.querySelectorAll('.zm-cap-tag.is-configurable')].map(
       (node) => node.textContent

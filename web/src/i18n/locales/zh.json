@@ -98,6 +98,7 @@
     "Speech to text": "语音转文字",
     "Image to image": "图生图",
     "Text generation": "文本生成",
+    "Reasoning generation": "推理生成",
     "Text to speech": "语音合成",
     "Audio generation": "音频生成",
     "Set task capabilities manually": "手动配置任务能力",
