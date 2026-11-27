@@ -1294,7 +1294,6 @@ export function useCommonLogsColumns(
           if (value.includes(LOG_TYPE_ALL_VALUE)) return true
           return value.includes(String(row.original.type))
         },
-        enableHiding: false,
         meta: { label: t('Time') },
       },
       {

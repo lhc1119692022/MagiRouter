@@ -153,6 +153,8 @@ html[data-theme='dark']
   display: flex;
   flex-direction: column;
   gap: 16px;
+  container-type: inline-size;
+  container-name: channel-status-board;
 }
 
 .ch-top-bar {
@@ -508,11 +510,63 @@ html[data-theme='dark'] .ch-stat-val[data-tone='error'] {
 
 .channel-groups-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
 }
 
-@media (max-width: 1024px) {
+@media (max-width: 1260px) {
+  .channel-groups-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .channel-groups-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@container channel-status-board (min-width: 980px) {
+  .channel-groups-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@container channel-status-board (min-width: 980px) and (max-width: 1440px) {
+  .group-monitor-card {
+    padding: 15px 16px 14px;
+    gap: 12px;
+  }
+
+  .gm-probe-track {
+    gap: 2px;
+  }
+
+  .gm-probe-bar {
+    min-width: 1.5px;
+  }
+
+  .gm-curves-grid {
+    gap: 8px;
+    padding: 10px 11px;
+  }
+
+  .gm-spark-svg {
+    width: 32px;
+  }
+
+  .gm-curve-val {
+    font-size: 11.5px;
+  }
+}
+
+@container channel-status-board (min-width: 680px) and (max-width: 979px) {
+  .channel-groups-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container channel-status-board (max-width: 679px) {
   .channel-groups-grid {
     grid-template-columns: 1fr;
   }

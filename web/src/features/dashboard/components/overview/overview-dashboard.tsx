@@ -18,7 +18,6 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { Check } from 'lucide-react'
 import { useId, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -34,7 +33,6 @@ import { usePricingData } from '@/features/pricing/hooks/use-pricing-data'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { useStatus } from '@/hooks/use-status'
 import { getUserModels } from '@/lib/api'
-import { formatQuota } from '@/lib/format'
 import { handleServerError } from '@/lib/handle-server-error'
 import { requireServerSuccess } from '@/lib/server-error-message'
 import { cn } from '@/lib/utils'
@@ -48,6 +46,7 @@ import {
 } from '../../hooks/use-status-data'
 import { DashboardSectionNavigation } from '../dashboard-section-navigation'
 import { AnnouncementsPanel } from './announcements-panel'
+import { ConsoleOnboardingGuide } from './console-onboarding-guide'
 import { FAQPanel } from './faq-panel'
 import { GroupStatusPanel } from './group-status-panel'
 import { SummaryCards } from './summary-cards'
@@ -69,17 +68,10 @@ const REQUEST_PROTOCOLS = [
 
 type RequestProtocol = (typeof REQUEST_PROTOCOLS)[number]
 
-interface StartStep {
-  title: string
-  description: string
-  action: string
-  to: '/keys' | '/wallet' | '/playground'
-  completed: boolean
-}
-
 interface RequestExample {
   protocol: RequestProtocol
   endpoint: string
+  apiBaseUrl: string
   model: string
   modelStatus: string
   keyName: string
@@ -147,45 +139,6 @@ function buildCurlCommand(args: {
     ...(anthropic ? ['  -H "anthropic-version: 2023-06-01" \\'] : []),
     `  -d ${quote(JSON.stringify(body))}`,
   ].join('\n')
-}
-
-function StartStepItem(props: { step: StartStep; index: number }) {
-  return (
-    <li className='setup-step-row'>
-      <span className='setup-step-left'>
-        <span
-          className={
-            props.step.completed ? 'setup-step-mark is-done' : 'setup-step-mark'
-          }
-        >
-          {props.step.completed ? (
-            <Check size={12} aria-hidden='true' />
-          ) : (
-            props.index + 1
-          )}
-        </span>
-        <span className='min-w-0'>
-          <span className='setup-step-name block truncate'>
-            {props.step.title}
-          </span>
-          <span className='setup-step-desc block truncate'>
-            {props.step.description}
-          </span>
-        </span>
-      </span>
-      <Link
-        to={props.step.to}
-        search={
-          props.step.to === '/keys' && !props.step.completed
-            ? { action: 'create' }
-            : undefined
-        }
-        className='el-btn el-btn-xs el-btn-white'
-      >
-        {props.step.action}
-      </Link>
-    </li>
-  )
 }
 
 function RequestCopyAction(props: {
@@ -407,34 +360,15 @@ export function OverviewDashboard() {
     modelStatus = t('Failed to load models')
   }
 
-  const startSteps = useMemo<StartStep[]>(
-    () => [
-      {
-        title: t('Create API Key'),
-        description: preferredKey
-          ? preferredKey.name
-          : t('Create a key for your app or service'),
-        action: preferredKey ? t('Manage Keys') : t('Create key'),
-        to: '/keys',
-        completed: Boolean(preferredKey),
-      },
-      {
-        title: t('Check account balance'),
-        description: `${t('Available Balance')}: ${user?.quota == null ? '—' : formatQuota(user.quota)}`,
-        action: t('Recharge'),
-        to: '/wallet',
-        completed: remainQuota > 0 || usedQuota > 0,
-      },
-      {
-        title: t('Send your first request'),
-        description: t('Verify routing with Playground or your client'),
-        action: t('Open studio'),
-        to: '/playground',
-        completed: requestCount > 0,
-      },
-    ],
-    [preferredKey, remainQuota, requestCount, t, usedQuota, user?.quota]
-  )
+  const balanceReady = remainQuota > 0 || usedQuota > 0
+  const hasActiveKey = Boolean(preferredKey)
+  const hasFirstRequest = requestCount > 0
+  const completedStepCount = [
+    balanceReady,
+    hasActiveKey,
+    hasFirstRequest,
+  ].filter(Boolean).length
+  const totalStepCount = 3
 
   const requestExample = useMemo<RequestExample>(() => {
     const serverAddress = status?.server_address
@@ -446,6 +380,7 @@ export function OverviewDashboard() {
     const root = (published || fallback)
       .replace(/\/+$/, '')
       .replace(/\/v1(?:\/(?:chat\/completions|responses|messages))?$/, '')
+    const apiBaseUrl = `${root}/v1`
     const endpoint = `${root}${protocol.path}`
     const model = selectedModel
     const keyName = preferredKey?.name ?? t('No API key yet')
@@ -454,6 +389,7 @@ export function OverviewDashboard() {
     return {
       protocol,
       endpoint,
+      apiBaseUrl,
       model,
       modelStatus,
       keyName,
@@ -473,10 +409,9 @@ export function OverviewDashboard() {
     t,
   ])
 
-  const completedStepCount = startSteps.filter((step) => step.completed).length
-  const setupComplete = completedStepCount === startSteps.length
+  const setupComplete = completedStepCount === totalStepCount
   const setupStatusReady = apiKeysQuery.isSuccess && Boolean(user)
-  const setupGuideExpanded = manualSetupGuideExpanded ?? false
+  const setupGuideExpanded = manualSetupGuideExpanded ?? true
 
   const handleSetupGuideToggle = () => {
     const nextExpanded = !setupGuideExpanded
@@ -515,8 +450,15 @@ export function OverviewDashboard() {
                     >
                       {t('Setup progress: {{completed}}/{{total}}', {
                         completed: completedStepCount,
-                        total: startSteps.length,
+                        total: totalStepCount,
                       })}
+                    </span>
+                  )}
+                  {setupGuideExpanded && (
+                    <span className='console-head-meta'>
+                      {t(
+                        'Follow these 3 steps to get started in minutes—no coding required.'
+                      )}
                     </span>
                   )}
                   {!setupGuideExpanded && requestExample.ready && (
@@ -548,26 +490,32 @@ export function OverviewDashboard() {
               </div>
               <div
                 id={setupGuideId}
-                className='overview-setup-body'
+                className='overview-setup-body is-onboarding'
                 hidden={!setupGuideExpanded}
               >
                 {setupGuideExpanded && (
-                  <>
-                    <ol className='setup-steps-list'>
-                      {startSteps.map((step, index) => (
-                        <StartStepItem
-                          key={step.to}
-                          step={step}
-                          index={index}
-                        />
-                      ))}
-                    </ol>
-                    <RequestPreview
-                      example={requestExample}
-                      supported={new Set(supportedModels.keys())}
-                      onProtocolChange={setRequestedProtocol}
-                    />
-                  </>
+                  <ConsoleOnboardingGuide
+                    remainQuota={remainQuota}
+                    balanceReady={balanceReady}
+                    hasActiveKey={hasActiveKey}
+                    hasFirstRequest={hasFirstRequest}
+                    keyId={requestExample.keyId}
+                    keyName={requestExample.keyName}
+                    displayKey={requestExample.displayKey}
+                    apiBaseUrl={requestExample.apiBaseUrl}
+                    modelStatus={
+                      !requestExample.model && requestExample.keyId
+                        ? requestExample.modelStatus
+                        : undefined
+                    }
+                    developerCurlPreview={
+                      <RequestPreview
+                        example={requestExample}
+                        supported={new Set(supportedModels.keys())}
+                        onProtocolChange={setRequestedProtocol}
+                      />
+                    }
+                  />
                 )}
               </div>
             </section>

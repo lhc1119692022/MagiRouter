@@ -507,7 +507,10 @@ export function CommonLogsFilterBar<TData>(
   const quickLogTypePills = useMemo(
     () => [
       { value: LOG_TYPE_ALL_VALUE as LogTypeValue, label: t('All') },
-      { value: String(LOG_TYPE_ENUM.CONSUME) as LogTypeValue, label: t('Consume') },
+      {
+        value: String(LOG_TYPE_ENUM.CONSUME) as LogTypeValue,
+        label: t('Consume'),
+      },
       { value: String(LOG_TYPE_ENUM.ERROR) as LogTypeValue, label: t('Error') },
     ],
     [t]
@@ -711,7 +714,13 @@ export function CommonLogsFilterBar<TData>(
               {t('Search')}
             </Button>
             <div className='logs-editorial-view-wrap'>
-              <DataTableViewOptions table={props.table} />
+              <DataTableViewOptions
+                table={props.table}
+                label={t('Columns')}
+                showIcon
+                showCountBadge
+                triggerClassName='h-[34px] gap-1.5 rounded-full px-3 text-xs'
+              />
             </div>
           </div>
         </div>

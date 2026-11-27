@@ -6,7 +6,14 @@ import {
   createRouter,
   RouterProvider,
 } from '@tanstack/react-router'
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, expect, test, vi } from 'vitest'
 
 import { api } from '@/lib/api'
@@ -123,14 +130,24 @@ test('renders editorial LLM logs stat strip and split 12-column table layout wit
     }
     if (url.startsWith('/api/log/self?')) {
       return {
-        data: { success: true, data: { items: records, total: records.length } },
+        data: {
+          success: true,
+          data: { items: records, total: records.length },
+        },
       }
     }
     if (url === '/api/user/self/groups') {
-      return { data: { success: true, data: { 'GPT Fast': { desc: '', ratio: 0.5 } } } }
+      return {
+        data: { success: true, data: { 'GPT Fast': { desc: '', ratio: 0.5 } } },
+      }
     }
     if (url === '/api/subscription/self') {
-      return { data: { success: true, data: { subscriptions: [], all_subscriptions: [] } } }
+      return {
+        data: {
+          success: true,
+          data: { subscriptions: [], all_subscriptions: [] },
+        },
+      }
     }
     return { data: { success: true, data: {} } }
   })
@@ -206,4 +223,31 @@ test('renders editorial LLM logs stat strip and split 12-column table layout wit
   expect(within(rows[0]).getByText('$128.3784')).toBeVisible()
   expect(within(rows[1]).getByText('Per-call')).toBeVisible()
   expect(within(rows[2]).getByText('Free on failure')).toBeVisible()
+
+  const user = userEvent.setup()
+  await user.click(screen.getByRole('button', { name: 'Columns' }))
+  const protocolOption = await screen.findByRole('menuitemcheckbox', {
+    name: 'Protocol',
+  })
+  const timeOption = screen.getByRole('menuitemcheckbox', { name: 'Time' })
+  const balanceOption = screen.getByRole('menuitemcheckbox', {
+    name: 'Balance',
+  })
+  expect(protocolOption).toHaveAttribute('aria-checked', 'true')
+  expect(timeOption).toHaveAttribute('aria-checked', 'true')
+  expect(balanceOption).toHaveAttribute('aria-checked', 'true')
+
+  await user.click(protocolOption)
+  await waitFor(() => {
+    expect(
+      screen.queryByRole('columnheader', { name: 'Protocol' })
+    ).not.toBeInTheDocument()
+  })
+  expect(screen.getByText('11/12')).toBeVisible()
+
+  await user.click(await screen.findByRole('menuitem', { name: 'Show all' }))
+  await waitFor(() => {
+    expect(screen.getByRole('columnheader', { name: 'Protocol' })).toBeVisible()
+  })
+  expect(screen.queryByText('11/12')).not.toBeInTheDocument()
 })

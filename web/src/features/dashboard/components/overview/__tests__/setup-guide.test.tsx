@@ -197,9 +197,9 @@ describe('overview setup guide', () => {
       screen.getByRole('link', { name: 'Model Call Analytics' })
     ).toHaveAttribute('href', '/dashboard/models')
     const toggle = await screen.findByRole('button', {
-      name: 'Show setup guide',
+      name: 'Hide setup guide',
     })
-    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
     expect(toggle).toAppearBefore(
       screen.getByRole('heading', { name: 'Usage at a glance' })
     )
@@ -275,7 +275,9 @@ describe('overview setup guide', () => {
       expect(
         screen.queryByRole('button', { name: 'Copy first request' })
       ).not.toBeInTheDocument()
-      await user.click(screen.getByRole('button', { name: 'Show setup guide' }))
+      await user.click(
+        screen.getByRole('button', { name: 'Developer cURL example' })
+      )
       expect(screen.getAllByText('No available models').length).toBeGreaterThan(
         0
       )
@@ -323,6 +325,9 @@ describe('overview setup guide', () => {
         ],
       })
       await renderOverview()
+      await user.click(
+        await screen.findByRole('button', { name: 'Hide setup guide' })
+      )
       const copy = await screen.findByRole('button', {
         name: 'Copy first request',
       })
@@ -386,9 +391,9 @@ describe('overview setup guide', () => {
     await renderOverview()
 
     const toggle = await screen.findByRole('button', {
-      name: 'Show setup guide',
+      name: 'Hide setup guide',
     })
-    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
     expect(
       await screen.findByRole('heading', { name: 'Model spending share' })
     ).toAppearBefore(
@@ -403,14 +408,23 @@ describe('overview setup guide', () => {
       `#${toggle.getAttribute('aria-controls') ?? ''}`
     )
     expect(panel).toBeInTheDocument()
-    expect(panel).not.toBeVisible()
+    expect(panel).toBeVisible()
+    expect(
+      screen.getByRole('heading', { name: 'Prepare account balance' })
+    ).toBeVisible()
+    expect(
+      screen.getByRole('heading', { name: 'Choose models & create key' })
+    ).toBeVisible()
+    expect(
+      screen.getByRole('heading', { name: 'Paste into an app & start' })
+    ).toBeVisible()
   })
 
   it('toggles the completed guide with the keyboard and restores focus after hiding it', async () => {
     const user = userEvent.setup()
     await renderOverview()
     const toggle = await screen.findByRole('button', {
-      name: 'Show setup guide',
+      name: 'Hide setup guide',
     })
 
     for (
@@ -422,22 +436,17 @@ describe('overview setup guide', () => {
     }
     expect(toggle).toHaveFocus()
     await user.keyboard('{Enter}')
-    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
     expect(
       document.querySelector(`#${toggle.getAttribute('aria-controls') ?? ''}`)
-    ).toBeVisible()
-    expect(
-      screen.getByRole('group', { name: 'First API request' })
-    ).toBeVisible()
-    expect(screen.getByRole('link', { name: 'Open studio' })).toHaveAttribute(
-      'href',
-      '/playground'
-    )
+    ).not.toBeVisible()
 
     await user.keyboard(' ')
-    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
     expect(toggle).toHaveFocus()
-    await user.click(toggle)
+    expect(
+      screen.getByRole('link', { name: 'Try in Playground' })
+    ).toHaveAttribute('href', '/playground')
     await user.click(screen.getByRole('button', { name: 'Hide setup guide' }))
     expect(toggle).toHaveAttribute('aria-expanded', 'false')
     expect(toggle).toHaveFocus()
@@ -447,21 +456,21 @@ describe('overview setup guide', () => {
     const user = userEvent.setup()
     const first = await renderOverview()
     await user.click(
-      await screen.findByRole('button', { name: 'Show setup guide' })
+      await screen.findByRole('button', { name: 'Hide setup guide' })
     )
     first.unmount()
 
     const second = await renderOverview()
     expect(
-      await screen.findByRole('button', { name: 'Hide setup guide' })
-    ).toHaveAttribute('aria-expanded', 'true')
-    await user.click(screen.getByRole('button', { name: 'Hide setup guide' }))
+      await screen.findByRole('button', { name: 'Show setup guide' })
+    ).toHaveAttribute('aria-expanded', 'false')
+    await user.click(screen.getByRole('button', { name: 'Show setup guide' }))
     second.unmount()
 
     await renderOverview()
     expect(
-      await screen.findByRole('button', { name: 'Show setup guide' })
-    ).toHaveAttribute('aria-expanded', 'false')
+      await screen.findByRole('button', { name: 'Hide setup guide' })
+    ).toHaveAttribute('aria-expanded', 'true')
     expect(screen.queryByText('Setup guide complete')).not.toBeInTheDocument()
   })
 
@@ -500,7 +509,7 @@ describe('overview setup guide', () => {
     try {
       await renderOverview()
       await user.click(
-        await screen.findByRole('button', { name: 'Show setup guide' })
+        await screen.findByRole('button', { name: 'Developer cURL example' })
       )
       const protocols = within(
         screen.getByRole('group', { name: 'First API request' })
@@ -601,8 +610,34 @@ describe('overview setup guide', () => {
     await renderOverview()
 
     expect(
-      await screen.findByRole('button', { name: 'Show setup guide' })
+      await screen.findByRole('button', { name: 'Hide setup guide' })
     ).toBeVisible()
     expect(screen.queryByText(/Setup progress:/)).not.toBeInTheDocument()
+  })
+
+  it('lets beginners switch client setup tips and copy Base URL and API key in step 3', async () => {
+    const user = userEvent.setup()
+    const fixture = 'beginner-copy-key-fixture'
+    const reveal = vi.spyOn(api, 'post').mockResolvedValue({
+      data: { success: true, data: { key: fixture } },
+    })
+    try {
+      await renderOverview()
+      const baseUrlInput = await screen.findByLabelText('API Base URL')
+      expect((baseUrlInput as HTMLInputElement).value).toMatch(/\/v1$/)
+
+      await user.click(screen.getByRole('button', { name: 'Magpie' }))
+      expect(screen.getByRole('button', { name: 'Magpie' })).toHaveAttribute(
+        'aria-pressed',
+        'true'
+      )
+      expect(screen.getByText(/Model Providers/)).toBeVisible()
+
+      await user.click(screen.getByRole('button', { name: 'Copy API key' }))
+      expect(reveal).toHaveBeenCalledExactlyOnceWith('/api/token/1/key')
+      expect(await navigator.clipboard.readText()).toBe(`sk-${fixture}`)
+    } finally {
+      reveal.mockRestore()
+    }
   })
 })

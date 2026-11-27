@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { useQuery } from '@tanstack/react-query'
 import { getRouteApi } from '@tanstack/react-router'
 import type { ColumnDef } from '@tanstack/react-table'
-import { useCallback, useMemo } from 'react'
+import { useCallback, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import {
@@ -47,6 +47,7 @@ import type { UsageLog } from '../data/schema'
 import { shouldShowBillingSource } from '../lib/billing-source'
 import { useColumnsByCategory } from '../lib/columns'
 import { parseLogOther } from '../lib/format'
+import { useHorizontalScrollPeek } from '../lib/horizontal-peek'
 import { fetchLogsByCategory } from '../lib/utils'
 
 import '../logs-editorial.css'
@@ -233,6 +234,16 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
 
   const isCommon = logCategory === 'common'
   const totalCount = data?.total || 0
+  const commonLogsCardRef = useRef<HTMLDivElement | null>(null)
+  const visibleColumnIdsKey = table
+    .getVisibleLeafColumns()
+    .map((column) => column.id)
+    .join(',')
+  useHorizontalScrollPeek(
+    commonLogsCardRef,
+    `${visibleColumnIdsKey}|${logs.length}|${isLoadingData ? 'loading' : 'ready'}`,
+    isCommon && !isMobile
+  )
 
   const taskStatItems = useMemo<LogsStatItem[]>(() => {
     if (isCommon) return []
@@ -411,7 +422,7 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
           logs={logs as UsageLog[]}
         />
       )}
-      <div className='logs-editorial-card'>
+      <div ref={commonLogsCardRef} className='logs-editorial-card'>
         <DataTablePage
           table={table}
           compactPagination={isMobile}

@@ -47,6 +47,209 @@
   gap: 18px;
   padding: 16px 18px 18px;
 }
+.dashboard-overview .overview-setup-body.is-onboarding:not([hidden]) {
+  display: block;
+  padding: 14px 18px 18px;
+}
+.console-onboarding-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.console-onboarding-grid {
+  gap: 14px;
+}
+.console-onboarding-card {
+  padding: 16px;
+  gap: 12px;
+  border-radius: 16px;
+}
+.console-onboarding-card .onboarding-step-num.is-done {
+  background: var(--el-green-600);
+  color: #ffffff;
+}
+.console-onboarding-status {
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ink-muted);
+  background: var(--bg-subtle);
+  white-space: nowrap;
+}
+.console-onboarding-status.is-done {
+  background: rgba(0, 166, 62, 0.12);
+  color: var(--el-green-600);
+}
+html[data-theme='dark'] .console-onboarding-status.is-done,
+.dark .console-onboarding-status.is-done {
+  background: rgba(74, 222, 128, 0.14);
+  color: #86efac;
+}
+.console-onboarding-stage {
+  min-height: 216px;
+  padding: 16px 14px;
+}
+.console-onboarding-balance-box {
+  width: 100%;
+  max-width: 224px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--bg-elevated);
+  box-shadow: inset 0 0 0 var(--hairline) var(--ring-color);
+}
+.console-onboarding-balance-label {
+  font-size: 11.5px;
+  color: var(--ink-muted);
+}
+.console-onboarding-balance-val {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--ink-strong);
+}
+.console-onboarding-step-actions {
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.console-onboarding-connect-stage {
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px;
+}
+.console-onboarding-config-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border-radius: 12px;
+  background: var(--bg-elevated);
+  box-shadow: inset 0 0 0 var(--hairline) var(--ring-color);
+}
+.console-onboarding-config-row {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+}
+.console-onboarding-config-label {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--ink-muted);
+  white-space: nowrap;
+}
+.console-onboarding-config-input {
+  width: 100%;
+  min-width: 0;
+  height: 26px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 7px;
+  background: var(--bg-subtle);
+  color: var(--ink-strong);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  outline: none;
+}
+.console-onboarding-copy-mini {
+  height: 26px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 7px;
+  background: var(--bg-cream);
+  color: var(--ink-strong);
+  font-size: 11.5px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background-color 140ms var(--ease-default);
+}
+.console-onboarding-copy-mini:hover {
+  background: color-mix(in srgb, var(--ink-strong) 10%, var(--bg-cream));
+}
+.console-onboarding-apps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+}
+.console-onboarding-app-btn {
+  width: 100%;
+  height: 36px;
+  border: 0;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.console-onboarding-app-btn.is-selected {
+  box-shadow:
+    inset 0 0 0 1.5px var(--ink-strong),
+    var(--shadow-sm);
+}
+.console-onboarding-app-tip {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--bg-elevated);
+  box-shadow: inset 0 0 0 var(--hairline) var(--ring-color);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-body);
+}
+.console-onboarding-app-tip-name {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 6px;
+  padding: 1px 7px;
+  border-radius: 6px;
+  background: var(--bg-subtle);
+  color: var(--ink-strong);
+  font-size: 11px;
+  font-weight: 600;
+  vertical-align: 1px;
+}
+.console-onboarding-dev-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 2px;
+}
+.console-onboarding-dev-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 0;
+  border-radius: 9999px;
+  background: var(--bg-subtle);
+  color: var(--ink-muted);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    color 140ms var(--ease-default),
+    background-color 140ms var(--ease-default);
+}
+.console-onboarding-dev-toggle:hover {
+  color: var(--ink-strong);
+  background: var(--bg-cream);
+}
+.console-onboarding-dev-body {
+  margin-top: 2px;
+}
 .dashboard-overview .setup-snippet-tabs {
   flex-wrap: wrap;
 }

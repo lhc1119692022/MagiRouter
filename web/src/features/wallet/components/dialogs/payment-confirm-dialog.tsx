@@ -65,6 +65,10 @@ export function PaymentConfirmDialog({
   const hasDiscount = discountRate > 0 && discountRate < 1 && paymentAmount > 0
   const originalAmount = hasDiscount ? paymentAmount / discountRate : 0
   const discountAmount = hasDiscount ? originalAmount - paymentAmount : 0
+  const formatCnyAmount = (amount: number) => {
+    const formatted = formatCurrency(amount)
+    return formatted === '-' ? '-' : `¥${formatted}`
+  }
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
@@ -101,11 +105,11 @@ export function PaymentConfirmDialog({
             ) : (
               <div className='flex items-baseline gap-2'>
                 <span className='text-2xl font-semibold'>
-                  {formatCurrency(paymentAmount)}
+                  {formatCnyAmount(paymentAmount)}
                 </span>
                 {hasDiscount && (
                   <span className='text-muted-foreground text-sm line-through'>
-                    {formatCurrency(originalAmount)}
+                    {formatCnyAmount(originalAmount)}
                   </span>
                 )}
               </div>
@@ -117,7 +121,7 @@ export function PaymentConfirmDialog({
               <div className='flex items-center justify-between text-sm'>
                 <span className='text-muted-foreground'>{t('You save')}</span>
                 <span className='font-semibold text-green-600'>
-                  {formatCurrency(discountAmount)}
+                  {formatCnyAmount(discountAmount)}
                 </span>
               </div>
             </div>
