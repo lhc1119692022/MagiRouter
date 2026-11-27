@@ -50,10 +50,10 @@ describe('console page scrolling', () => {
   it('keeps the fixed table viewport separate from its pagination', () => {
     const content = renderPage({ fixedContent: true })
     const viewport = content.closest('.console-page-inner')
+    const pagination = screen.getByRole('navigation', { name: 'Pagination' })
     expect(viewport).toHaveClass('overflow-hidden')
-    expect(viewport).not.toContainElement(
-      screen.getByRole('navigation', { name: 'Pagination' })
-    )
+    expect(viewport).not.toContainElement(pagination)
+    expect(pagination.parentElement).toHaveClass('console-page-footer')
   })
 
   it('retains the separately scrollable editor body when requested', () => {

@@ -594,6 +594,18 @@ body[data-current-page='console'] .site-header {
     height: auto;
     min-width: 0;
   }
+
+  [data-slot='sidebar-wrapper']
+    [data-slot='sidebar']:not([data-state='collapsed'])
+    [data-slot='sidebar-content'] {
+    padding-bottom: 14px;
+  }
+
+  [data-slot='sidebar-wrapper']
+    [data-slot='sidebar']:not([data-state='collapsed'])
+    .console-sidebar-groups {
+    padding-bottom: 48px;
+  }
 }
 
 @media (max-width: 1023px) {

@@ -15,14 +15,15 @@
   padding-block: 28px 72px;
 }
 
-.console-document-page .console-page-inner {
-  padding-inline: clamp(36px, 4.2vw, 72px);
-}
-
+.console-document-page .console-page-inner,
 .console-page-wide .console-page-inner,
 .console-document-page.console-page-wide .console-page-inner {
   max-width: none;
-  padding-inline: clamp(28px, 2.5vw, 44px);
+  padding-inline: var(--console-page-inline-padding);
+}
+
+.console-page-footer {
+  padding-inline: var(--console-page-inline-padding);
 }
 
 @media (min-width: 1024px) {
@@ -54,19 +55,5 @@
 @media (max-width: 1023px) {
   .console-document-page {
     padding-block: 20px 48px;
-  }
-  .console-document-page .console-page-inner {
-    padding-inline: 24px;
-  }
-  .console-page-wide .console-page-inner,
-  .console-document-page.console-page-wide .console-page-inner {
-    padding-inline: 24px;
-  }
-}
-
-@media (max-width: 640px) {
-  .console-page-wide .console-page-inner,
-  .console-document-page.console-page-wide .console-page-inner {
-    padding-inline: 16px;
   }
 }

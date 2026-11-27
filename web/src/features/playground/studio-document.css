@@ -1132,8 +1132,12 @@ html[data-theme='dark'] .pg-compare-table tr[aria-current] .pg-compare-dot,
   max-width: 100%;
   flex-wrap: wrap;
 }
-.pg-document-page > .el-footer .el-container {
+body:not([data-current-page='home'])
+  .pg-document-page
+  > .el-footer
+  .el-container {
   width: 100%;
+  padding-inline: var(--console-page-inline-padding);
 }
 .pg-message-attachments {
   display: flex;

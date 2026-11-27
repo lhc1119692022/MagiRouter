@@ -125,7 +125,7 @@ export function SectionPageLayout(props: SectionPageLayoutProps) {
 
         <div
           ref={setFooterContainer}
-          className='bg-background shrink-0 border-t px-4 pt-2.5 pb-4 empty:hidden sm:px-6 sm:pt-3 sm:pb-6'
+          className='console-page-footer bg-background shrink-0 border-t pt-2.5 pb-4 empty:hidden sm:pt-3 sm:pb-6'
         />
       </Main>
     </PageFooterProvider>

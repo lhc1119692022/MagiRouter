@@ -54,6 +54,7 @@
 
   --container-max: 81.625rem; /* 1306px */
   --outer-gutter: 20px;
+  --console-page-inline-padding: 16px;
   --rounded-card: 16px;
   --rounded-card-sm: 12px;
 
@@ -70,6 +71,18 @@
   :root {
     --outer-gutter: 32px;
     --rounded-card: 20px;
+  }
+}
+
+@media (min-width: 641px) {
+  :root {
+    --console-page-inline-padding: 24px;
+  }
+}
+
+@media (min-width: 1024px) {
+  :root {
+    --console-page-inline-padding: clamp(84px, 7.5vw, 132px);
   }
 }
 
@@ -2551,6 +2564,16 @@ body:not([data-current-page='models']):not([data-current-page='console'])
   flex-direction: column;
   gap: 13px;
 }
+@media (min-width: 1024px) {
+  .models-workspace:not(.is-sidebar-collapsed) .console-sidebar-scroll {
+    padding-bottom: 14px;
+  }
+  .models-workspace:not(.is-sidebar-collapsed) .console-sidebar-scroll::after {
+    content: '';
+    display: block;
+    flex: 0 0 35px;
+  }
+}
 .sidebar-section {
   display: flex;
   flex-direction: column;
@@ -2767,9 +2790,9 @@ html[data-theme='dark'] .sidebar-nav-item.is-active {
 .models-main-inner {
   flex: 1;
   width: 100%;
-  max-width: 1480px;
+  max-width: none;
   margin-inline: auto;
-  padding: 28px clamp(36px, 4.2vw, 72px) 72px;
+  padding: 28px var(--console-page-inline-padding) 72px;
 }
 .models-footer-slot {
   width: 100%;
@@ -2782,9 +2805,9 @@ body:not([data-current-page='home'])
   .models-footer-slot
   .el-footer
   .el-container {
-  max-width: 1480px;
+  max-width: none;
   margin-inline: auto;
-  padding-inline: clamp(36px, 4.2vw, 72px);
+  padding-inline: var(--console-page-inline-padding);
 }
 .models-footer-slot .footer-cols {
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -2815,14 +2838,14 @@ body:not([data-current-page='home'])
     height: auto;
   }
   .models-main-inner {
-    padding: 20px 24px 48px;
+    padding: 20px var(--console-page-inline-padding) 48px;
     max-width: none;
   }
   body:not([data-current-page='home'])
     .models-footer-slot
     .el-footer
     .el-container {
-    padding-inline: 24px;
+    padding-inline: var(--console-page-inline-padding);
     max-width: none;
   }
   .console-sidebar-scroll {
@@ -8791,12 +8814,11 @@ html[data-theme='dark'] .dash-surface {
   background: #161413;
 }
 
-/* Console page container: same 1480px measure and gutter as .models-main-inner. */
 .console-page-inner {
   width: 100%;
-  max-width: 1480px;
+  max-width: none;
   margin-inline: auto;
-  padding-inline: clamp(16px, 4.2vw, 72px);
+  padding-inline: var(--console-page-inline-padding);
 }
 /* Endpoint lines (overview hero right column, admin only). No latency
        badge: there is no entry-address probe endpoint, so showing a number
