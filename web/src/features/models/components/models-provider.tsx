@@ -63,6 +63,8 @@ type ModelsContextType = {
   setSyncWizardOptions: React.Dispatch<
     React.SetStateAction<{ locale: SyncLocale; source: SyncSource }>
   >
+  batchOrderModels: string[]
+  setBatchOrderModels: (models: string[]) => void
   tabCategory: ModelTabCategory
   setTabCategory: (category: ModelTabCategory) => void
 }
@@ -93,6 +95,7 @@ export function ModelsProvider({ children }: { children: React.ReactNode }) {
     locale: 'zh',
     source: 'official',
   })
+  const [batchOrderModels, setBatchOrderModels] = useState<string[]>([])
   const [tabCategory, setTabCategory] = useState<ModelTabCategory>('metadata')
 
   return (
@@ -110,6 +113,8 @@ export function ModelsProvider({ children }: { children: React.ReactNode }) {
         setDescriptionData,
         syncWizardOptions,
         setSyncWizardOptions,
+        batchOrderModels,
+        setBatchOrderModels,
         tabCategory,
         setTabCategory,
       }}

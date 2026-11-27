@@ -117,6 +117,7 @@ type TierPriceFieldsProps = {
   billingUnit?: 'token' | 'request'
   fixedPrice?: string
   onBillingUnitChange?: (unit: 'token' | 'request') => void
+  onBillingModeChange?: (mode: 'token' | 'request' | 'image') => void
   onFixedPriceChange?: (value: string) => void
   currency: PricingCurrency
   prices: Partial<Record<VisualPrice['variable'], number | string>>
@@ -178,17 +179,38 @@ export function TierPriceFields(props: TierPriceFieldsProps) {
       />
     )
   }
-  const billingControl = props.onBillingUnitChange && (
-    <Select
-      items={[
+  let currentBillingMode: 'token' | 'request' | 'image' = 'token'
+  if (props.billingUnit === 'request') {
+    currentBillingMode = props.imageCount ? 'image' : 'request'
+  }
+  const supportsImageMode = Boolean(props.onBillingModeChange)
+  const billingItems = supportsImageMode
+    ? [
+        { value: 'token', label: t('Per token') },
+        { value: 'request', label: t('Per-call') },
+        { value: 'image', label: t('Price per image') },
+      ]
+    : [
         { value: 'token', label: t('Per token') },
         {
           value: 'request',
           label: props.imageCount ? t('Price per image') : t('Per-call'),
         },
-      ]}
-      value={props.billingUnit ?? 'token'}
+      ]
+  const billingControl = (props.onBillingModeChange ||
+    props.onBillingUnitChange) && (
+    <Select
+      items={billingItems}
+      value={
+        supportsImageMode ? currentBillingMode : (props.billingUnit ?? 'token')
+      }
       onValueChange={(value) => {
+        if (supportsImageMode) {
+          if (value === 'token' || value === 'request' || value === 'image') {
+            props.onBillingModeChange?.(value)
+          }
+          return
+        }
         if (value === 'token' || value === 'request') {
           props.onBillingUnitChange?.(value)
         }
@@ -203,10 +225,11 @@ export function TierPriceFields(props: TierPriceFieldsProps) {
       </SelectTrigger>
       <SelectContent alignItemWithTrigger={false}>
         <SelectGroup>
-          <SelectItem value='token'>{t('Per token')}</SelectItem>
-          <SelectItem value='request'>
-            {props.imageCount ? t('Price per image') : t('Per-call')}
-          </SelectItem>
+          {billingItems.map((item) => (
+            <SelectItem key={item.value} value={item.value}>
+              {item.label}
+            </SelectItem>
+          ))}
         </SelectGroup>
       </SelectContent>
     </Select>
@@ -222,7 +245,11 @@ export function TierPriceFields(props: TierPriceFieldsProps) {
           }
           value={props.fixedPrice ?? ''}
           onChange={(value) => props.onFixedPriceChange?.(value)}
-          hint={`${props.currency.symbol}/${props.imageCount ? t('image') : t('request')}`}
+          hint={
+            props.imageCount
+              ? `${props.currency.symbol}/${t('image')} · ${t('Multiplied by billable image count (image_count).')}`
+              : `${props.currency.symbol}/${t('request')} · ${t('Fixed charge per request or per video.')}`
+          }
           invalid={props.invalidVariables?.includes('fixed')}
         />
       </>

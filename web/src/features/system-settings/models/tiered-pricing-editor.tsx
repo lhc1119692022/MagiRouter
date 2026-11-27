@@ -126,6 +126,16 @@ const PRESET_GROUPS: PresetGroup[] = [
   {
     group: 'Fixed price',
     presets: [
+      {
+        key: 'per-image',
+        label: 'Image (Per Image)',
+        expr: 'tier("image", fixed(0.04)) * image_count',
+      },
+      {
+        key: 'per-video',
+        label: 'Video (Per Video)',
+        expr: 'tier("video", fixed(0.4))',
+      },
       { key: 'flat', label: 'Flat', expr: 'tier("base", p * 2 + c * 4)' },
       {
         key: 'claude-opus',

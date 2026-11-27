@@ -103,6 +103,9 @@ func FilterUserTokenAutoGroups(userGroup string, groups []string) []string {
 // The absence of the context value means that the token inherits the complete
 // global Auto list; a present (even empty) value is an explicit token snapshot.
 func GetRequestAutoGroups(c *gin.Context, userGroup string) []string {
+	if policy := GetRequestRoutePolicy(c); policy != "" {
+		return GetSmartRoutingEligibleGroups(userGroup)
+	}
 	value, ok := common.GetContextKey(c, constant.ContextKeyTokenAutoGroups)
 	if !ok {
 		return GetUserAutoGroup(userGroup)
@@ -112,6 +115,27 @@ func GetRequestAutoGroups(c *gin.Context, userGroup string) []string {
 		return []string{}
 	}
 	return FilterUserTokenAutoGroups(userGroup, groups)
+}
+
+func GetRequestRoutePolicy(c *gin.Context) string {
+	if c == nil {
+		return ""
+	}
+	policy := common.GetContextKeyString(c, constant.ContextKeyTokenRoutePolicy)
+	if !model.IsBuiltinTokenRoutePolicy(policy) {
+		return ""
+	}
+	return policy
+}
+
+// GetRequestAutoGroupsForModel resolves the ordered candidate groups for one model.
+// Built-in smart routing policies dynamically rank eligible groups by live metrics;
+// custom or legacy auto tokens keep their explicit group order.
+func GetRequestAutoGroupsForModel(c *gin.Context, userGroup string, modelName string) []string {
+	if policy := GetRequestRoutePolicy(c); policy != "" {
+		return ResolveSmartRoutingGroups(userGroup, modelName, policy)
+	}
+	return GetRequestAutoGroups(c, userGroup)
 }
 
 // GetGroupsEnabledModels 按 groups 顺序获取各分组启用的模型并去重

@@ -164,26 +164,93 @@ func sortGroupChannelStatusItems(items []groupChannelStatusItem, customOrder []s
 	})
 }
 
-func classifyGroupChannelStatus(hasActiveChannels bool, requestCount int64, successRate float64, probe *perfmetrics.GroupProbeSummary) string {
+const (
+	groupStatusOperationalMinRate = 95.0
+	groupStatusOutageMaxRate      = 30.0
+	groupStatusMinOutageSamples   = int64(3)
+)
+
+func classifyGroupChannelStatus(
+	hasActiveChannels bool,
+	requestCount int64,
+	successRate float64,
+	series []perfmetrics.GroupBucketPoint,
+	bucketSeconds int64,
+	probe *perfmetrics.GroupProbeSummary,
+) string {
+	if !hasActiveChannels {
+		return "outage"
+	}
 	if requestCount > 0 {
-		if successRate < 80 {
-			return "outage"
+		safeBucket := bucketSeconds
+		if safeBucket <= 0 {
+			safeBucket = 3600
 		}
-		if successRate < 98 {
+		nonEmpty := make([]perfmetrics.GroupBucketPoint, 0, len(series))
+		for _, point := range series {
+			if point.RequestCount > 0 {
+				nonEmpty = append(nonEmpty, point)
+			}
+		}
+
+		effectiveReq := requestCount
+		effectiveRate := successRate
+		if len(nonEmpty) > 0 {
+			latest := nonEmpty[len(nonEmpty)-1]
+			latestRate := float64(latest.SuccessCount) / float64(latest.RequestCount) * 100
+
+			recentReq := latest.RequestCount
+			recentSuccess := latest.SuccessCount
+			recentBuckets := 1
+			maxSpan := max(safeBucket*3, 3*3600)
+			for idx := len(nonEmpty) - 2; idx >= 0 && recentBuckets < 3 && recentReq < groupStatusMinOutageSamples; idx-- {
+				point := nonEmpty[idx]
+				if latest.Ts-point.Ts > maxSpan {
+					break
+				}
+				recentReq += point.RequestCount
+				recentSuccess += point.SuccessCount
+				recentBuckets++
+			}
+			recentRate := float64(recentSuccess) / float64(recentReq) * 100
+
+			if latestRate >= groupStatusOperationalMinRate {
+				if latest.RequestCount >= groupStatusMinOutageSamples ||
+					(recentRate >= groupStatusOperationalMinRate && (recentReq >= groupStatusMinOutageSamples || successRate >= groupStatusOperationalMinRate || recentBuckets >= 2)) {
+					return "operational"
+				}
+				return "degraded"
+			}
+
+			if probe != nil && probe.RecentSamples > 0 && probe.Success && probe.LastTestedAt >= latest.Ts+safeBucket {
+				if probe.RecentSuccessRate >= 90 {
+					return "operational"
+				}
+				return "degraded"
+			}
+
+			effectiveReq = recentReq
+			effectiveRate = recentRate
+		}
+
+		if effectiveRate >= groupStatusOperationalMinRate {
+			return "operational"
+		}
+		if effectiveRate >= groupStatusOutageMaxRate {
 			return "degraded"
 		}
-		return "operational"
+		if effectiveReq >= groupStatusMinOutageSamples || (probe != nil && probe.RecentSamples > 0 && !probe.Success) {
+			return "outage"
+		}
+		return "degraded"
 	}
 	if probe != nil && probe.RecentSamples > 0 {
 		if probe.Success && probe.RecentSuccessRate >= 90 {
 			return "operational"
 		}
-		if probe.RecentSuccessRate > 0 {
+		if probe.Success || probe.RecentSuccessRate >= groupStatusOutageMaxRate {
 			return "degraded"
 		}
-		return "outage"
-	}
-	if !hasActiveChannels {
 		return "outage"
 	}
 	return "idle"
@@ -220,22 +287,22 @@ func GetPerfMetricsGroups(c *gin.Context) {
 		}
 	}
 
-	metricsResult, err := perfmetrics.QueryGroupStatus(hours, visibleGroups)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"message": err.Error(),
-		})
-		return
-	}
-
 	enabledCounts, err := model.GetEnabledModelCountsByGroup(visibleGroups)
 	if err != nil {
 		enabledCounts = map[string]int{}
 	}
-	enabledModelsByGroup, err := model.GetEnabledModelsByGroup(visibleGroups)
-	if err != nil {
+	enabledModelsByGroup, enabledModelsErr := model.GetEnabledModelsByGroup(visibleGroups)
+	if enabledModelsErr != nil {
 		enabledModelsByGroup = map[string][]string{}
+	} else {
+		var changed bool
+		enabledModelsByGroup, changed = filterHiddenModelsByGroup(enabledModelsByGroup)
+		if changed {
+			enabledCounts = make(map[string]int, len(enabledModelsByGroup))
+			for groupName, models := range enabledModelsByGroup {
+				enabledCounts[groupName] = len(models)
+			}
+		}
 	}
 
 	totalEnabledModels := 0
@@ -252,6 +319,32 @@ func GetPerfMetricsGroups(c *gin.Context) {
 			}
 		}
 	}
+
+	var allowedModelsByGroup map[string][]string
+	if enabledModelsErr == nil {
+		allowedModelsByGroup = make(map[string][]string, len(visibleGroups))
+		allEnabledModels := make([]string, 0, len(allModelNameSet))
+		for modelName := range allModelNameSet {
+			allEnabledModels = append(allEnabledModels, modelName)
+		}
+		for _, groupName := range visibleGroups {
+			if groupName == "auto" && len(enabledModelsByGroup[groupName]) == 0 {
+				allowedModelsByGroup[groupName] = allEnabledModels
+				continue
+			}
+			allowedModelsByGroup[groupName] = enabledModelsByGroup[groupName]
+		}
+	}
+
+	metricsResult, err := perfmetrics.QueryGroupStatusForModels(hours, visibleGroups, allowedModelsByGroup)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"message": err.Error(),
+		})
+		return
+	}
+
 	for _, snap := range metricsResult.Groups {
 		for _, topModel := range snap.TopModels {
 			if topModel.ModelName != "" {
@@ -287,7 +380,12 @@ func GetPerfMetricsGroups(c *gin.Context) {
 			}
 		}
 		hasActiveChannels := enabledModels > 0
-		probe := perfmetrics.GetGroupProbeSummary(groupName)
+		var probe *perfmetrics.GroupProbeSummary
+		if allowedModelsByGroup != nil {
+			probe = perfmetrics.GetGroupProbeSummaryForModels(groupName, allowedModelsByGroup[groupName])
+		} else {
+			probe = perfmetrics.GetGroupProbeSummary(groupName)
+		}
 		if !hasActiveChannels && snap.RequestCount == 0 && probe == nil {
 			continue
 		}
@@ -300,7 +398,7 @@ func GetPerfMetricsGroups(c *gin.Context) {
 		if !isAuto {
 			ratio = service.GetUserGroupRatio(userGroup, groupName)
 		}
-		status := classifyGroupChannelStatus(hasActiveChannels, snap.RequestCount, snap.SuccessRate, probe)
+		status := classifyGroupChannelStatus(hasActiveChannels, snap.RequestCount, snap.SuccessRate, snap.Series, metricsResult.BucketSeconds, probe)
 
 		series := snap.Series
 		if series == nil {
@@ -442,6 +540,45 @@ func UpdatePerfMetricsGroupOrder(c *gin.Context) {
 	common.ApiSuccess(c, gin.H{
 		"groups": normalized,
 	})
+}
+
+func filterHiddenModelsByGroup(modelsByGroup map[string][]string) (map[string][]string, bool) {
+	if len(modelsByGroup) == 0 {
+		return modelsByGroup, false
+	}
+	seen := make(map[string]struct{})
+	candidateNames := make([]string, 0)
+	for _, models := range modelsByGroup {
+		for _, modelName := range models {
+			if modelName == "" {
+				continue
+			}
+			if _, exists := seen[modelName]; exists {
+				continue
+			}
+			seen[modelName] = struct{}{}
+			candidateNames = append(candidateNames, modelName)
+		}
+	}
+	if len(candidateNames) == 0 {
+		return modelsByGroup, false
+	}
+	hiddenModels, err := model.GetHiddenModelNames(candidateNames)
+	if err != nil || len(hiddenModels) == 0 {
+		return modelsByGroup, false
+	}
+	filtered := make(map[string][]string, len(modelsByGroup))
+	for groupName, models := range modelsByGroup {
+		kept := make([]string, 0, len(models))
+		for _, modelName := range models {
+			if _, hidden := hiddenModels[modelName]; hidden {
+				continue
+			}
+			kept = append(kept, modelName)
+		}
+		filtered[groupName] = kept
+	}
+	return filtered, true
 }
 
 func collectGroupCapabilities(enabledModels []string, topModels []perfmetrics.GroupModelMetric, hints map[string]model.ModelCapabilityHint) []string {

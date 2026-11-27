@@ -259,7 +259,7 @@ it('requests channel models and distinguishes catalog policy from availability u
   ).toBeVisible()
 })
 
-it('keeps channel rows individually selectable, disables metadata-only mutations, and allows deletion', async () => {
+it('keeps channel rows individually selectable and enables batch management actions alongside deletion', async () => {
   await renderList()
   const user = userEvent.setup()
   await user.click(
@@ -279,12 +279,13 @@ it('keeps channel rows individually selectable, disables metadata-only mutations
   ).toBeChecked()
   const toolbar = screen.getByRole('toolbar', { name: /Bulk actions/ })
   for (const name of [
+    'Batch manage',
     'Change vendor',
     'Clear vendor',
     'Show selected models in model square',
     'Hide selected models from model square',
   ]) {
-    expect(within(toolbar).getByRole('button', { name })).toBeDisabled()
+    expect(within(toolbar).getByRole('button', { name })).toBeEnabled()
   }
   expect(
     within(toolbar).getByRole('button', { name: 'Copy model names' })

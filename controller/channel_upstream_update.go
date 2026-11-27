@@ -798,6 +798,7 @@ func runChannelUpstreamModelUpdateTaskOnce(ctx context.Context, force bool, allo
 	addModelSamples := make([]string, 0)
 	removeModelSamples := make([]string, 0)
 	refreshNeeded := false
+	beforeModels := captureModelAvailabilitySnapshot()
 
 	// Count the enabled channels up front so progress can be reported as a
 	// percentage; a count error is non-fatal (progress just won't show a %).
@@ -903,6 +904,7 @@ scanLoop:
 
 	if refreshNeeded {
 		refreshChannelRuntimeCache()
+		syncModelAvailabilityNotices(nil, beforeModels)
 	}
 
 	summary := upstreamModelUpdateSummary{
@@ -975,6 +977,7 @@ func ApplyChannelUpstreamModelUpdates(c *gin.Context) {
 	}
 	beforeSettings := channel.GetOtherSettings()
 	ignoredModels := intersectModelNames(req.IgnoreModels, beforeSettings.UpstreamModelUpdateLastDetectedModels)
+	beforeModels := captureModelAvailabilitySnapshot()
 
 	addedModels, removedModels, remainingModels, remainingRemoveModels, modelsChanged, err := applyChannelUpstreamModelUpdates(
 		channel,
@@ -989,6 +992,7 @@ func ApplyChannelUpstreamModelUpdates(c *gin.Context) {
 
 	if modelsChanged {
 		refreshChannelRuntimeCache()
+		syncModelAvailabilityNotices(c, beforeModels)
 	}
 
 	recordManageAudit(c, "channel.upstream_apply", map[string]any{
@@ -1129,6 +1133,7 @@ func ApplyAllChannelUpstreamModelUpdates(c *gin.Context) {
 	refreshNeeded := false
 	addedModelCount := 0
 	removedModelCount := 0
+	beforeModels := captureModelAvailabilitySnapshot()
 
 	lastID := 0
 	for {
@@ -1189,6 +1194,7 @@ func ApplyAllChannelUpstreamModelUpdates(c *gin.Context) {
 
 	if refreshNeeded {
 		refreshChannelRuntimeCache()
+		syncModelAvailabilityNotices(c, beforeModels)
 	}
 
 	recordManageAudit(c, "channel.upstream_apply_all", map[string]any{

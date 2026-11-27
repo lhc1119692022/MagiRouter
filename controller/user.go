@@ -641,8 +641,13 @@ func generateDefaultSidebarConfig(userRole int) string {
 
 func playgroundBillingKeyGroups(token *model.Token, userGroup, requestedGroup string) (string, []string, bool) {
 	group := token.Group
+	routePolicy := token.GetRoutePolicy()
 	if group == "" {
 		group = userGroup
+	} else if group == "auto" && routePolicy != "" {
+		if !setting.GetSmartRoutingConfig().Enabled {
+			return "", nil, false
+		}
 	} else if !service.GroupInUserUsableGroups(userGroup, group) || (group != "auto" && !ratio_setting.ContainsGroupRatio(group)) {
 		return "", nil, false
 	}
@@ -654,6 +659,9 @@ func playgroundBillingKeyGroups(token *model.Token, userGroup, requestedGroup st
 	}
 	if group != "auto" {
 		return group, []string{group}, true
+	}
+	if routePolicy != "" {
+		return group, service.GetSmartRoutingEligibleGroups(userGroup), true
 	}
 	groups, err := token.GetAutoGroups()
 	if err != nil {
@@ -738,6 +746,11 @@ func GetUserModels(c *gin.Context) {
 		}
 	}
 	modelNames := service.GetGroupsEnabledModels(groupsToQuery)
+	if token != nil && token.GetRoutePolicy() != "" {
+		modelNames = slices.DeleteFunc(modelNames, func(name string) bool {
+			return !service.IsReasoningModelForSmartPolicy(name, "")
+		})
+	}
 	if token != nil && token.ModelLimitsEnabled {
 		limits := token.GetModelLimitsMap()
 		modelNames = slices.DeleteFunc(modelNames, func(name string) bool {

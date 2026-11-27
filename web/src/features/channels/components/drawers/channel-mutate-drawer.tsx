@@ -123,6 +123,7 @@ import {
 import { handleServerError } from '@/lib/handle-server-error'
 import { resolveLocalizedText } from '@/lib/localized-text'
 import { ROLE } from '@/lib/roles'
+import { invalidatePublishedStatusQueries } from '@/lib/status-query'
 import {
   requireServerSuccess,
   createServerError,
@@ -1657,6 +1658,7 @@ export function ChannelMutateDrawer({
         queryKey: channelsQueryKeys.detail(channelId),
       })
     }
+    invalidatePublishedStatusQueries(queryClient)
     onOpenChange(false)
     setOpen(null)
   }, [channelId, queryClient, onOpenChange, setOpen])

@@ -111,6 +111,24 @@ func RecordChannelProbe(groups []string, sample ProbeSample) {
 }
 
 func GetGroupProbeSummary(group string) *GroupProbeSummary {
+	return summarizeGroupProbe(group, nil)
+}
+
+func GetGroupProbeSummaryForModels(group string, allowedModels []string) *GroupProbeSummary {
+	allowedSet := make(map[string]struct{}, len(allowedModels))
+	for _, modelName := range allowedModels {
+		trimmed := strings.TrimSpace(modelName)
+		if trimmed != "" {
+			allowedSet[trimmed] = struct{}{}
+		}
+	}
+	if len(allowedSet) == 0 {
+		return nil
+	}
+	return summarizeGroupProbe(group, allowedSet)
+}
+
+func summarizeGroupProbe(group string, allowedModels map[string]struct{}) *GroupProbeSummary {
 	channelProbeMu.RLock()
 	history := channelProbeHistory[strings.TrimSpace(group)]
 	if len(history) == 0 {
@@ -119,6 +137,19 @@ func GetGroupProbeSummary(group string) *GroupProbeSummary {
 	}
 	snapshot := append([]ProbeSample(nil), history...)
 	channelProbeMu.RUnlock()
+
+	if allowedModels != nil {
+		filtered := make([]ProbeSample, 0, len(snapshot))
+		for _, entry := range snapshot {
+			if _, ok := allowedModels[entry.Model]; ok {
+				filtered = append(filtered, entry)
+			}
+		}
+		if len(filtered) == 0 {
+			return nil
+		}
+		snapshot = filtered
+	}
 
 	latest := snapshot[len(snapshot)-1]
 	successCount := 0

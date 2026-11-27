@@ -179,6 +179,7 @@ var groupSettingsAllowedKeys = map[string]bool{
 	"AutoGroups":                                     true,
 	"MaxTokenAutoGroups":                             true,
 	"DefaultUseAutoGroup":                            true,
+	setting.SmartRoutingConfigOptionKey:              true,
 	"group_ratio_setting.group_special_usable_group": true,
 	model.UserManagementGroupsOptionKey:              true,
 }
@@ -258,6 +259,8 @@ func UpdateGroupSettings(c *gin.Context) {
 			}
 		case "MaxTokenAutoGroups":
 			validationErr = setting.ValidateMaxTokenAutoGroups(value)
+		case setting.SmartRoutingConfigOptionKey:
+			validationErr = setting.ValidateSmartRoutingConfigJSON(value)
 		case "DefaultUseAutoGroup":
 			if value != "true" && value != "false" {
 				validationErr = common.NewMessage("Invalid parameters")

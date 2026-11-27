@@ -179,6 +179,24 @@ func GetPerfMetricsGroupBuckets(startTs int64, endTs int64, groups []string) ([]
 	return rows, err
 }
 
+func GetPerfMetricsGroupModelBuckets(startTs int64, endTs int64, groups []string) ([]PerfMetric, error) {
+	var rows []PerfMetric
+	if DB == nil {
+		return rows, nil
+	}
+	groupCol := perfMetricGroupCol()
+	query := DB.Model(&PerfMetric{}).
+		Where("bucket_ts >= ? AND bucket_ts <= ? AND request_count > 0", startTs, endTs)
+	if groups != nil {
+		if len(groups) == 0 {
+			return rows, nil
+		}
+		query = query.Where(groupCol+" IN ?", groups)
+	}
+	err := query.Order("bucket_ts ASC").Find(&rows).Error
+	return rows, err
+}
+
 type PerfMetricGroupModelSummary struct {
 	Group          string `gorm:"column:group_name" json:"group"`
 	ModelName      string `gorm:"column:model_name" json:"model_name"`

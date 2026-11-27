@@ -18,12 +18,17 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
 import { getRouteApi } from '@tanstack/react-router'
-import { useMemo } from 'react'
+import { AlertTriangle } from 'lucide-react'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { DataTablePage, useDataTable } from '@/components/data-table'
 import { ErrorState } from '@/components/error-state'
-import { useModelPricing } from '@/features/model-pricing/api'
+import { Button } from '@/components/ui/button'
+import {
+  useCanEditModelPricing,
+  useModelPricing,
+} from '@/features/model-pricing/api'
 import { useMediaQuery } from '@/hooks'
 import { useTableUrlState } from '@/hooks/use-table-url-state'
 import {
@@ -34,17 +39,24 @@ import {
 import { getModels, searchModels, getVendors } from '../api'
 import { DEFAULT_PAGE_SIZE } from '../constants'
 import { modelsQueryKeys, vendorsQueryKeys } from '../lib'
-import type { ModelSquareState } from '../types'
+import { evaluateModelHealth } from '../lib/model-health'
+import type { ModelSortBy, ModelSortOrder, ModelSquareState } from '../types'
 import { DataTableBulkActions } from './data-table-bulk-actions'
 import { useModelsColumns } from './models-columns'
 import { useModels } from './models-provider'
+import { ModelsSortControl } from './models-sort-control'
 
 const route = getRouteApi('/_authenticated/models/$section')
+
+const EMPTY_MODELS: Model[] = []
 
 export function ModelsTable() {
   const { t } = useTranslation()
   const { selectedVendor } = useModels()
+  const canPrice = useCanEditModelPricing()
   const isMobile = useMediaQuery('(max-width: 640px)')
+  const [sortBy, setSortBy] = useState<ModelSortBy>('default')
+  const [sortDesc, setSortDesc] = useState(true)
 
   // URL state management
   const {
@@ -128,6 +140,13 @@ export function ModelsTable() {
     squareState ||
     syncFilterValue
   )
+  const sortParams =
+    sortBy === 'default'
+      ? {}
+      : {
+          sort_by: sortBy,
+          sort_order: (sortDesc ? 'desc' : 'asc') as ModelSortOrder,
+        }
 
   // Fetch models data
   // eslint-disable-next-line @tanstack/query/exhaustive-deps
@@ -139,6 +158,7 @@ export function ModelsTable() {
       status: statusFilterValue,
       square_state: squareState,
       sync_official: syncFilterValue,
+      ...sortParams,
       p: pagination.pageIndex + 1,
       page_size: pagination.pageSize,
     }),
@@ -152,6 +172,7 @@ export function ModelsTable() {
             status: statusFilterValue,
             square_state: squareState,
             sync_official: syncFilterValue,
+            ...sortParams,
             p: pagination.pageIndex + 1,
             page_size: pagination.pageSize,
           })
@@ -160,6 +181,7 @@ export function ModelsTable() {
       return requireServerSuccess(
         await getModels({
           include_channel_models: true,
+          ...sortParams,
           p: pagination.pageIndex + 1,
           page_size: pagination.pageSize,
         })
@@ -167,7 +189,7 @@ export function ModelsTable() {
     },
   })
 
-  const models = data?.data?.items || []
+  const models = data?.data?.items ?? EMPTY_MODELS
   const totalCount = data?.data?.total || 0
   const vendorCounts = data?.data?.vendor_counts
 
@@ -182,6 +204,56 @@ export function ModelsTable() {
   if (pricingQuery.isError) pricingState = 'error'
   else if (pricingQuery.isLoading) pricingState = 'loading'
   const columns = useModelsColumns(vendors, pricingQuery.data, pricingState)
+
+  const reviewSummary = useMemo(() => {
+    const priceMap = new Map(
+      (pricingQuery.data?.entries ?? []).map((entry) => [
+        entry.model_name,
+        entry,
+      ])
+    )
+    const pricingLoaded = !pricingState && Boolean(pricingQuery.data)
+    const warningRowIds: string[] = []
+    let missingMetadataCount = 0
+    let pricingReviewCount = 0
+    let missingVendorCount = 0
+    for (const item of models) {
+      const report = evaluateModelHealth(
+        item,
+        priceMap.get(item.model_name),
+        { canPrice, pricingLoaded }
+      )
+      if (report.warningCount > 0) {
+        warningRowIds.push(
+          item.id > 0 ? `metadata:${item.id}` : `channel:${item.model_name}`
+        )
+      }
+      for (const issue of report.issues) {
+        if (issue.code === 'missing_metadata') missingMetadataCount += 1
+        else if (
+          issue.code === 'missing_pricing' ||
+          issue.code === 'default_pricing_unconfirmed' ||
+          issue.code === 'legacy_pricing_conflict'
+        ) {
+          pricingReviewCount += 1
+        } else if (issue.code === 'missing_vendor') missingVendorCount += 1
+      }
+    }
+    return {
+      warningRowIds,
+      missingMetadataCount,
+      pricingReviewCount,
+      missingVendorCount,
+    }
+  }, [models, pricingQuery.data, pricingState, canPrice])
+
+  const handleSortChange = (nextField: ModelSortBy, nextDesc: boolean) => {
+    setSortBy(nextField)
+    setSortDesc(nextDesc)
+    if (pagination.pageIndex > 0) {
+      onPaginationChange({ ...pagination, pageIndex: 0 })
+    }
+  }
 
   // React Table instance
   const { table } = useDataTable({
@@ -241,6 +313,80 @@ export function ModelsTable() {
       columns={columns}
       isLoading={isLoading}
       isFetching={isFetching}
+      beforeTable={
+        reviewSummary.warningRowIds.length > 0 ? (
+          <div
+            role='status'
+            className='border-warning/30 bg-warning/5 flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2 text-xs'
+          >
+            <div className='flex min-w-0 items-center gap-2'>
+              <AlertTriangle
+                className='text-warning size-4 shrink-0'
+                aria-hidden='true'
+              />
+              <span className='text-foreground'>
+                {t(
+                  '{{count}} models on this page have incomplete or unconfirmed settings.',
+                  { count: reviewSummary.warningRowIds.length }
+                )}
+                {(reviewSummary.missingMetadataCount > 0 ||
+                  reviewSummary.pricingReviewCount > 0 ||
+                  reviewSummary.missingVendorCount > 0) && (
+                  <span className='text-muted-foreground ml-1.5'>
+                    {[
+                      reviewSummary.missingMetadataCount > 0
+                        ? t('Missing metadata: {{count}}', {
+                            count: reviewSummary.missingMetadataCount,
+                          })
+                        : null,
+                      reviewSummary.pricingReviewCount > 0
+                        ? t('Pricing to confirm: {{count}}', {
+                            count: reviewSummary.pricingReviewCount,
+                          })
+                        : null,
+                      reviewSummary.missingVendorCount > 0
+                        ? t('No vendor: {{count}}', {
+                            count: reviewSummary.missingVendorCount,
+                          })
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </span>
+                )}
+              </span>
+            </div>
+            <div className='flex shrink-0 flex-wrap items-center gap-1.5'>
+              {sortBy !== 'issues' && (
+                <Button
+                  type='button'
+                  size='sm'
+                  variant='outline'
+                  className='h-7 text-xs'
+                  onClick={() => handleSortChange('issues', true)}
+                >
+                  {t('Needs review first')}
+                </Button>
+              )}
+              <Button
+                type='button'
+                size='sm'
+                variant='secondary'
+                className='h-7 text-xs'
+                onClick={() => {
+                  const selection: Record<string, boolean> = {}
+                  for (const rowId of reviewSummary.warningRowIds) {
+                    selection[rowId] = true
+                  }
+                  table.setRowSelection(selection)
+                }}
+              >
+                {t('Select models to confirm')}
+              </Button>
+            </div>
+          </div>
+        ) : null
+      }
       emptyTitle={t('No Models Found')}
       emptyDescription={
         shouldSearch
@@ -256,6 +402,13 @@ export function ModelsTable() {
       toolbarProps={{
         searchPlaceholder: t('Filter by model name...'),
         searchDebounceMs: 500,
+        preActions: (
+          <ModelsSortControl
+            field={sortBy}
+            desc={sortDesc}
+            onChange={handleSortChange}
+          />
+        ),
         filters: [
           {
             columnId: 'status',

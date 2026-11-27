@@ -22,7 +22,7 @@
 .console-page-wide .console-page-inner,
 .console-document-page.console-page-wide .console-page-inner {
   max-width: none;
-  padding-inline: clamp(16px, 1.5vw, 24px);
+  padding-inline: clamp(28px, 2.5vw, 44px);
 }
 
 @media (min-width: 1024px) {
@@ -60,13 +60,13 @@
   }
   .console-page-wide .console-page-inner,
   .console-document-page.console-page-wide .console-page-inner {
-    padding-inline: 16px;
+    padding-inline: 24px;
   }
 }
 
 @media (max-width: 640px) {
   .console-page-wide .console-page-inner,
   .console-document-page.console-page-wide .console-page-inner {
-    padding-inline: 12px;
+    padding-inline: 16px;
   }
 }

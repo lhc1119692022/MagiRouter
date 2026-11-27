@@ -125,9 +125,16 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 	affinityRetryOffset := param.Ctx.GetInt(ginKeyChannelAffinityRetryOffset)
 
 	if param.TokenGroup == "auto" {
-		autoGroups := GetRequestAutoGroups(param.Ctx, userGroup)
+		routePolicy := GetRequestRoutePolicy(param.Ctx)
+		if routePolicy != "" && !IsReasoningModelForSmartPolicy(param.ModelName, param.RequestPath) {
+			return nil, selectGroup, errors.New("smart routing policy only supports reasoning models")
+		}
+		autoGroups := GetRequestAutoGroupsForModel(param.Ctx, userGroup, param.ModelName)
 		if len(autoGroups) == 0 {
 			return nil, selectGroup, errors.New("auto groups is not enabled")
+		}
+		if routePolicy != "" && common.GetContextKeyString(param.Ctx, constant.ContextKeyRoutePrimaryGroup) == "" {
+			common.SetContextKey(param.Ctx, constant.ContextKeyRoutePrimaryGroup, autoGroups[0])
 		}
 
 		// startGroupIndex: the group index to start searching from
@@ -175,6 +182,11 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 			}
 			common.SetContextKey(param.Ctx, constant.ContextKeyAutoGroup, autoGroup)
 			selectGroup = autoGroup
+			if primaryGroup := common.GetContextKeyString(param.Ctx, constant.ContextKeyRoutePrimaryGroup); primaryGroup == "" {
+				common.SetContextKey(param.Ctx, constant.ContextKeyRoutePrimaryGroup, autoGroup)
+			} else if primaryGroup != autoGroup {
+				common.SetContextKey(param.Ctx, constant.ContextKeyRouteFallbackFrom, primaryGroup)
+			}
 			logger.LogDebug(param.Ctx, "Auto selected group: %s", autoGroup)
 
 			// Prepare state for next retry
@@ -327,6 +339,16 @@ func SelectChannelForRequest(c *gin.Context, modelName string, retry *RetryParam
 	}
 
 	usingGroup := retry.TokenGroup
+	if usingGroup == "auto" {
+		if routePolicy := GetRequestRoutePolicy(c); routePolicy != "" && !IsReasoningModelForSmartPolicy(modelName, retry.RequestPath) {
+			return nil, usingGroup, &ChannelSelectError{
+				StatusCode: http.StatusForbidden,
+				Code:       types.ErrorCodeInvalidRequest,
+				MessageID:  i18n.MsgDistributorSmartRouteReasoningOnly,
+				Params:     map[string]any{"Model": modelName},
+			}
+		}
+	}
 	var channel *model.Channel
 	var selectGroup string
 	if retry.GetRetry() == 0 {
@@ -340,15 +362,27 @@ func SelectChannelForRequest(c *gin.Context, modelName string, retry *RetryParam
 			if affinitySatisfied {
 				if usingGroup == "auto" {
 					userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
-					for _, g := range GetRequestAutoGroups(c, userGroup) {
-						if model.IsChannelEnabledForGroupModel(g, modelName, preferred.Id) {
-							selectGroup = g
-							common.SetContextKey(c, constant.ContextKeyAutoGroup, g)
-							channel = preferred
-							affinityUsable = true
-							MarkChannelAffinityUsed(c, g, preferred.Id)
-							break
+					autoGroups := GetRequestAutoGroupsForModel(c, userGroup, modelName)
+					primaryGroup := ""
+					if GetRequestRoutePolicy(c) != "" {
+						if len(autoGroups) > 0 {
+							primaryGroup = autoGroups[0]
 						}
+					} else {
+						for _, g := range autoGroups {
+							if cand, _ := model.GetRandomSatisfiedChannel(g, modelName, 0, constraints.Filters); cand != nil {
+								primaryGroup = g
+								break
+							}
+						}
+					}
+					if primaryGroup != "" && model.IsChannelEnabledForGroupModel(primaryGroup, modelName, preferred.Id) {
+						selectGroup = primaryGroup
+						common.SetContextKey(c, constant.ContextKeyAutoGroup, primaryGroup)
+						common.SetContextKey(c, constant.ContextKeyRoutePrimaryGroup, primaryGroup)
+						channel = preferred
+						affinityUsable = true
+						MarkChannelAffinityUsed(c, primaryGroup, preferred.Id)
 					}
 				} else if model.IsChannelEnabledForGroupModel(usingGroup, modelName, preferred.Id) {
 					channel = preferred

@@ -273,6 +273,8 @@ export interface LogOtherData {
   text_input?: number
   text_output?: number
   cache_tokens?: number
+  input_tokens_total?: number
+  cache_write_tokens?: number
   image_cache_tokens?: number
   billing_tokens?: Record<string, number>
   cache_creation_tokens?: number
@@ -336,6 +338,9 @@ export interface LogOtherData {
   request_plugins?: RequestPluginRecordItem[]
   billing_source?: string
   group?: string
+  route_policy?: string
+  route_primary_group?: string
+  route_fallback_from?: string
   stream_status?: {
     status?: string
     end_reason?: string
@@ -366,6 +371,7 @@ export interface LogOtherData {
   subscription_consumed?: number
   subscription_remain?: number
   subscription_total?: number
+  wallet_remain?: number
 }
 
 /**

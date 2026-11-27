@@ -22,6 +22,7 @@ import { toast } from 'sonner'
 
 import { handleServerError } from '@/lib/handle-server-error'
 import { getServerMessage } from '@/lib/server-error-message'
+import { invalidatePublishedStatusQueries } from '@/lib/status-query'
 
 import {
   copyChannel,
@@ -133,6 +134,7 @@ export async function handleEnableChannel(
     if (response.success) {
       toast.success(i18next.t(SUCCESS_MESSAGES.ENABLED))
       queryClient?.invalidateQueries({ queryKey: channelsQueryKeys.lists() })
+      invalidatePublishedStatusQueries(queryClient)
       onSuccess?.()
     } else {
       handleServerError(response, i18next.t(ERROR_MESSAGES.UPDATE_FAILED))
@@ -158,6 +160,7 @@ export async function handleDisableChannel(
     if (response.success) {
       toast.success(i18next.t(SUCCESS_MESSAGES.DISABLED))
       queryClient?.invalidateQueries({ queryKey: channelsQueryKeys.lists() })
+      invalidatePublishedStatusQueries(queryClient)
       onSuccess?.()
     } else {
       handleServerError(response, i18next.t(ERROR_MESSAGES.UPDATE_FAILED))
@@ -196,6 +199,7 @@ export async function handleDeleteChannel(
     if (response.success) {
       toast.success(i18next.t(SUCCESS_MESSAGES.DELETED))
       queryClient?.invalidateQueries({ queryKey: channelsQueryKeys.lists() })
+      invalidatePublishedStatusQueries(queryClient)
       onSuccess?.()
     } else {
       handleServerError(response, i18next.t(ERROR_MESSAGES.DELETE_FAILED))
@@ -398,6 +402,7 @@ export async function handleBatchDelete(
         })
       )
       queryClient?.invalidateQueries({ queryKey: channelsQueryKeys.lists() })
+      invalidatePublishedStatusQueries(queryClient)
       onSuccess?.(response.data || ids.length)
     } else {
       handleServerError(response, i18next.t(ERROR_MESSAGES.DELETE_FAILED))
@@ -430,6 +435,7 @@ export async function handleBatchEnable(
         i18next.t('{{count}} channel(s) enabled', { count: successCount })
       )
       queryClient?.invalidateQueries({ queryKey: channelsQueryKeys.lists() })
+      invalidatePublishedStatusQueries(queryClient)
       onSuccess?.()
     }
 
@@ -471,6 +477,7 @@ export async function handleBatchDisable(
         i18next.t('{{count}} channel(s) disabled', { count: successCount })
       )
       queryClient?.invalidateQueries({ queryKey: channelsQueryKeys.lists() })
+      invalidatePublishedStatusQueries(queryClient)
       onSuccess?.()
     }
 
@@ -535,6 +542,7 @@ export async function handleEnableTagChannels(
         i18next.t('Enabled all channels with tag: {{tag}}', { tag })
       )
       queryClient?.invalidateQueries({ queryKey: channelsQueryKeys.lists() })
+      invalidatePublishedStatusQueries(queryClient)
       onSuccess?.()
     } else {
       handleServerError(response, i18next.t('Failed to enable tag channels'))
@@ -559,6 +567,7 @@ export async function handleDisableTagChannels(
         i18next.t('Disabled all channels with tag: {{tag}}', { tag })
       )
       queryClient?.invalidateQueries({ queryKey: channelsQueryKeys.lists() })
+      invalidatePublishedStatusQueries(queryClient)
       onSuccess?.()
     } else {
       handleServerError(response, i18next.t('Failed to disable tag channels'))
@@ -620,6 +629,7 @@ export async function handleFixAbilities(
         )
       )
       queryClient?.invalidateQueries({ queryKey: channelsQueryKeys.lists() })
+      invalidatePublishedStatusQueries(queryClient)
       onSuccess?.(response.data)
     } else {
       handleServerError(

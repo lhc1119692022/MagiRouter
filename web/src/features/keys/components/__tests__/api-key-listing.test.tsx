@@ -349,17 +349,17 @@ async function renderKeysPage(status = 1, overrides: Partial<ApiKey> = {}) {
   return { post, put }
 }
 
-it('combines creation and last use while keeping expiry, models and IP restrictions separate', async () => {
+it('splits creation and last use into separate columns and hides models and IP restriction columns', async () => {
   await renderKeysPage()
-  for (const name of ['Name', 'API Key', 'Group', 'Models', 'IP Restriction']) {
+  for (const name of ['Name', 'API Key', 'Group', 'Created', 'Last Used', 'Expires']) {
     expect(screen.getByRole('columnheader', { name })).toBeInTheDocument()
   }
-  expect(screen.getByRole('columnheader', { name: 'Time' })).toBeInTheDocument()
   expect(
-    screen.getByRole('columnheader', { name: 'Expires' })
-  ).toBeInTheDocument()
-  const timeCell = screen.getByRole('cell', { name: /Created.*Last Used/ })
-  expect(within(timeCell).getByText('Last Used')).toBeInTheDocument()
+    screen.queryByRole('columnheader', { name: 'Models' })
+  ).not.toBeInTheDocument()
+  expect(
+    screen.queryByRole('columnheader', { name: 'IP Restriction' })
+  ).not.toBeInTheDocument()
   const quotaHeader = screen.getByRole('columnheader', { name: 'Quota ($)' })
   const quotaTrigger = screen.getByRole('button', {
     name: /Remaining 80; Remaining percentage 40%; Used amount 120/,
@@ -375,16 +375,21 @@ it('restores dates hidden by the old default and preserves unrelated column pref
       created_time: false,
       accessed_time: false,
       expired_time: false,
-      model_limits: false,
+      group: false,
     })
   )
   await renderKeysPage()
-  expect(screen.getByRole('columnheader', { name: 'Time' })).toBeInTheDocument()
+  expect(
+    screen.getByRole('columnheader', { name: 'Created' })
+  ).toBeInTheDocument()
+  expect(
+    screen.getByRole('columnheader', { name: 'Last Used' })
+  ).toBeInTheDocument()
   expect(
     screen.getByRole('columnheader', { name: 'Expires' })
   ).toBeInTheDocument()
   expect(
-    screen.queryByRole('columnheader', { name: 'Models' })
+    screen.queryByRole('columnheader', { name: 'Group' })
   ).not.toBeInTheDocument()
 })
 

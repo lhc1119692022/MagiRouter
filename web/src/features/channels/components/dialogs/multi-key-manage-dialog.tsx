@@ -43,6 +43,7 @@ import {
   hasPermission,
 } from '@/lib/admin-permissions'
 import { handleServerError } from '@/lib/handle-server-error'
+import { invalidatePublishedStatusQueries } from '@/lib/status-query'
 import {
   getServerMessage,
   translateServerText,
@@ -232,6 +233,7 @@ export function MultiKeyManageDialog({
         queryClient.invalidateQueries({
           queryKey: channelsQueryKeys.pluginCredentials(currentRow.id),
         })
+        invalidatePublishedStatusQueries(queryClient)
 
         // Reload data - reset to page 1 for bulk actions
         const isBulkAction = type.includes('all') || type === 'delete-disabled'

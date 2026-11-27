@@ -20,6 +20,8 @@ import { api } from '@/lib/api'
 import { createServerError } from '@/lib/server-error-message'
 
 import type {
+  BatchUpdateModelsRequest,
+  BatchUpdateModelsResult,
   GetModelsParams,
   GetModelsResponse,
   GetModelResponse,
@@ -725,5 +727,16 @@ export async function deleteModels(
     payload.channel_models = channelModels
   }
   const res = await api.post('/api/models/delete', payload)
+  return res.data
+}
+
+export async function batchUpdateModels(
+  data: BatchUpdateModelsRequest
+): Promise<{
+  success: boolean
+  message?: string
+  data?: BatchUpdateModelsResult
+}> {
+  const res = await api.post('/api/models/batch_update', data)
   return res.data
 }

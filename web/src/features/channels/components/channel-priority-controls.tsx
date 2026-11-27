@@ -92,6 +92,7 @@ const DEFAULT_CHANNEL_SORT_DESC: Record<ChannelSortBy, boolean> = {
   balance: true,
   response_time: false,
   test_time: true,
+  created_time: true,
 }
 
 export function ChannelSortControl(props: {
@@ -104,6 +105,7 @@ export function ChannelSortControl(props: {
   const options = [
     { value: 'priority', label: t('Priority') },
     { value: 'group', label: t('Group') },
+    { value: 'created_time', label: t('Created') },
     { value: 'id', label: t('ID') },
     { value: 'name', label: t('Name') },
     { value: 'balance', label: t('Balance') },

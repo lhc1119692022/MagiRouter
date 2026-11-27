@@ -184,3 +184,24 @@ export async function ensureStatus(
     revalidateIfStale: true,
   })
 }
+
+/**
+ * Invalidate status, system-options, and channel monitoring caches after admin
+ * channel/model mutations so auto-synced model notices and live group health
+ * appear immediately across the header bell, settings page, and status view.
+ */
+export function invalidatePublishedStatusQueries(
+  queryClient?: QueryClient
+): void {
+  try {
+    if (typeof window !== 'undefined') {
+      window.localStorage.removeItem(STATUS_STORAGE_KEY)
+    }
+  } catch {
+    /* Storage can be unavailable in private mode. */
+  }
+  if (!queryClient) return
+  void queryClient.invalidateQueries({ queryKey: STATUS_QUERY_KEY })
+  void queryClient.invalidateQueries({ queryKey: ['system-options'] })
+  void queryClient.invalidateQueries({ queryKey: ['group-channel-status'] })
+}

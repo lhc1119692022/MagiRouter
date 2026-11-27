@@ -394,11 +394,13 @@ func FetchUpstreamModels(c *gin.Context) {
 }
 
 func FixChannelsAbilities(c *gin.Context) {
+	beforeModels := captureModelAvailabilitySnapshot()
 	success, fails, err := model.FixAbility()
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
+	syncModelAvailabilityNotices(c, beforeModels)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
@@ -971,11 +973,13 @@ func AddChannel(c *gin.Context) {
 		channels = append(channels, *addChannelRequest.Channel)
 		channelInputIndices = append(channelInputIndices, nil)
 	}
+	beforeModels := captureModelAvailabilitySnapshot()
 	err = model.BatchInsertChannels(channels)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
+	syncModelAvailabilityNotices(c, beforeModels)
 	createAudit := map[string]any{
 		"name":  addChannelRequest.Channel.Name,
 		"type":  addChannelRequest.Channel.Type,
@@ -1017,6 +1021,7 @@ func DeleteChannel(c *gin.Context) {
 	} else {
 		channelLookupFailed = true
 	}
+	beforeModels := captureModelAvailabilitySnapshot()
 	channel := model.Channel{Id: id}
 	err = channel.Delete()
 	if err != nil {
@@ -1027,6 +1032,7 @@ func DeleteChannel(c *gin.Context) {
 		service.RevokeDeletedChannelCredentials([]*model.Channel{existing})
 	}
 	model.InitChannelCache()
+	syncModelAvailabilityNotices(c, beforeModels)
 	if channelLookupFailed {
 		service.ResetProxyClientCache()
 	} else {
@@ -1105,12 +1111,14 @@ func DisableTagChannels(c *gin.Context) {
 		return
 	}
 	ids := channelIDsFromChannels(channels)
+	beforeModels := captureModelAvailabilitySnapshot()
 	err = model.DisableChannelByTag(channelTag.Tag)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
 	model.InitChannelCache()
+	syncModelAvailabilityNotices(c, beforeModels)
 	recordManageAudit(c, "channel.tag_disable", map[string]any{
 		"tag": channelTag.Tag,
 	})
@@ -1129,12 +1137,14 @@ func EnableTagChannels(c *gin.Context) {
 		common.ApiErrorT(c, "Invalid parameters")
 		return
 	}
+	beforeModels := captureModelAvailabilitySnapshot()
 	err = model.EnableChannelByTag(channelTag.Tag)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
 	model.InitChannelCache()
+	syncModelAvailabilityNotices(c, beforeModels)
 	recordManageAudit(c, "channel.tag_enable", map[string]any{
 		"tag": channelTag.Tag,
 	})
@@ -1183,12 +1193,14 @@ func EditTagChannels(c *gin.Context) {
 			return
 		}
 	}
+	beforeModels := captureModelAvailabilitySnapshot()
 	err = model.EditChannelByTag(channelTag.Tag, channelTag.NewTag, channelTag.ModelMapping, channelTag.Models, channelTag.Groups, channelTag.Priority, channelTag.Weight, channelTag.ParamOverride, channelTag.HeaderOverride)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
 	model.InitChannelCache()
+	syncModelAvailabilityNotices(c, beforeModels)
 	recordManageAudit(c, "channel.tag_edit", map[string]any{
 		"tag": channelTag.Tag,
 	})
@@ -1216,6 +1228,7 @@ func DeleteChannelBatch(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	beforeModels := captureModelAvailabilitySnapshot()
 	deletedCount, err := model.BatchDeleteChannels(channelBatch.Ids)
 	if err != nil {
 		common.ApiError(c, err)
@@ -1223,6 +1236,7 @@ func DeleteChannelBatch(c *gin.Context) {
 	}
 	service.RevokeDeletedChannelCredentials(revoked)
 	model.InitChannelCache()
+	syncModelAvailabilityNotices(c, beforeModels)
 	if deletedCount > 0 {
 		service.ResetProxyClientCache()
 	}
@@ -1484,12 +1498,14 @@ func UpdateChannel(c *gin.Context) {
 		}
 		keyAfter = stored.Key
 	}
+	beforeModels := captureModelAvailabilitySnapshot()
 	err = channel.Update()
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
 	model.InitChannelCache()
+	syncModelAvailabilityNotices(c, beforeModels)
 	if proxyChanged {
 		service.InvalidateProxyClient(originProxy)
 	}
@@ -1551,10 +1567,12 @@ func UpdateChannelStatus(c *gin.Context) {
 		common.ApiErrorT(c, "Invalid parameters")
 		return
 	}
+	beforeModels := captureModelAvailabilitySnapshot()
 	changed := model.UpdateChannelStatus(id, "", req.Status, "manual operation")
 	if changed {
 		service.ResetChannelFailureCount(id, "")
 		model.InitChannelCache()
+		syncModelAvailabilityNotices(c, beforeModels)
 		if req.Status != common.ChannelStatusEnabled {
 			closeActiveChannelWebSockets([]int{id})
 		}
@@ -1577,6 +1595,7 @@ func BatchUpdateChannelStatus(c *gin.Context) {
 		common.ApiErrorT(c, "Invalid parameters")
 		return
 	}
+	beforeModels := captureModelAvailabilitySnapshot()
 	changedCount := 0
 	var disabledIDs []int
 	for _, id := range req.Ids {
@@ -1590,6 +1609,7 @@ func BatchUpdateChannelStatus(c *gin.Context) {
 	}
 	if changedCount > 0 {
 		model.InitChannelCache()
+		syncModelAvailabilityNotices(c, beforeModels)
 	}
 	if len(disabledIDs) > 0 {
 		closeActiveChannelWebSockets(disabledIDs)
@@ -2137,6 +2157,7 @@ func ManageMultiKeys(c *gin.Context) {
 			return
 		}
 
+		beforeModels := captureModelAvailabilitySnapshot()
 		shouldCloseWebSocket := false
 		err = saveManagedKeyStatus(channel.Id, func(stored *model.Channel) error {
 			if stored.ChannelInfo.MultiKeyStatusList == nil {
@@ -2159,6 +2180,7 @@ func ManageMultiKeys(c *gin.Context) {
 			return
 		}
 		model.InitChannelCache()
+		syncModelAvailabilityNotices(c, beforeModels)
 		if shouldCloseWebSocket {
 			closeActiveChannelWebSockets([]int{channel.Id})
 		}
@@ -2177,6 +2199,7 @@ func ManageMultiKeys(c *gin.Context) {
 			return
 		}
 
+		beforeModels := captureModelAvailabilitySnapshot()
 		err = saveManagedKeyStatus(channel.Id, func(stored *model.Channel) error {
 			// 从状态列表中删除该密钥的记录，使其回到默认启用状态
 			delete(stored.ChannelInfo.MultiKeyStatusList, keyIndex)
@@ -2191,11 +2214,13 @@ func ManageMultiKeys(c *gin.Context) {
 		}
 
 		model.InitChannelCache()
+		syncModelAvailabilityNotices(c, beforeModels)
 		common.ApiSuccessT(c, "Key enabled", nil)
 		return
 
 	case "enable_all_keys":
 		// 清空所有禁用状态，使所有密钥回到默认启用状态
+		beforeModels := captureModelAvailabilitySnapshot()
 		var enabledCount int
 		err = saveManagedKeyStatus(channel.Id, func(stored *model.Channel) error {
 			enabledCount = len(stored.ChannelInfo.MultiKeyStatusList)
@@ -2211,11 +2236,13 @@ func ManageMultiKeys(c *gin.Context) {
 		}
 
 		model.InitChannelCache()
+		syncModelAvailabilityNotices(c, beforeModels)
 		common.ApiSuccessT(c, "Enabled {{count}} keys", nil, map[string]any{"count": enabledCount})
 		return
 
 	case "disable_all_keys":
 		// 禁用所有启用的密钥
+		beforeModels := captureModelAvailabilitySnapshot()
 		var disabledCount int
 		shouldCloseWebSocket := false
 		err = saveManagedKeyStatus(channel.Id, func(stored *model.Channel) error {
@@ -2254,6 +2281,7 @@ func ManageMultiKeys(c *gin.Context) {
 			return
 		}
 		model.InitChannelCache()
+		syncModelAvailabilityNotices(c, beforeModels)
 		if shouldCloseWebSocket {
 			closeActiveChannelWebSockets([]int{channel.Id})
 		}
@@ -2269,6 +2297,7 @@ func ManageMultiKeys(c *gin.Context) {
 		keyIndex := *request.KeyIndex
 		// The keys change under the channel's key lock, from the stored ones: a
 		// refresh may have replaced a credential since channel was read.
+		beforeModels := captureModelAvailabilitySnapshot()
 		var keyBefore string
 		shouldCloseWebSocket := false
 		stored, err := model.UpdateChannelLocked(channel.Id, func(stored *model.Channel) error {
@@ -2330,6 +2359,7 @@ func ManageMultiKeys(c *gin.Context) {
 			return
 		}
 		model.InitChannelCache()
+		syncModelAvailabilityNotices(c, beforeModels)
 		service.RevokeRemovedChannelCredentials(stored, keyBefore, stored.Key)
 		if shouldCloseWebSocket {
 			closeActiveChannelWebSockets([]int{channel.Id})
@@ -2339,6 +2369,7 @@ func ManageMultiKeys(c *gin.Context) {
 
 	case "delete_disabled_keys":
 		// As delete_key, from the stored keys under the channel's key lock.
+		beforeModels := captureModelAvailabilitySnapshot()
 		var keyBefore string
 		var deletedCount int
 		shouldCloseWebSocket := false
@@ -2401,6 +2432,7 @@ func ManageMultiKeys(c *gin.Context) {
 			return
 		}
 		model.InitChannelCache()
+		syncModelAvailabilityNotices(c, beforeModels)
 		service.RevokeRemovedChannelCredentials(stored, keyBefore, stored.Key)
 		if shouldCloseWebSocket {
 			closeActiveChannelWebSockets([]int{channel.Id})

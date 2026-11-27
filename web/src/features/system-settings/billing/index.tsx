@@ -59,6 +59,7 @@ const defaultBillingSettings: BillingSettings = {
   AutoGroups: '',
   MaxTokenAutoGroups: 5,
   DefaultUseAutoGroup: false,
+  SmartRoutingConfig: '',
   'group_ratio_setting.group_special_usable_group': '{}',
   'group_ratio_setting.user_management_groups': '{}',
   PayAddress: '',

@@ -209,3 +209,46 @@ describe('API key user quota query form mapping', () => {
     }
   )
 })
+
+describe('API key smart routing policy form mapping', () => {
+  test('maps a built-in smart routing policy to group=auto with cross-group retry enabled', () => {
+    const values = {
+      ...getApiKeyFormDefaultValues(false),
+      name: 'smart-key',
+      group: '',
+      route_policy: 'cost_first' as const,
+      auto_groups_mode: 'custom' as const,
+      auto_groups: ['vip'],
+      cross_group_retry: false,
+    }
+
+    const validation = getApiKeyFormSchema(t, 5, true).safeParse(values)
+    expect(validation.success).toBe(true)
+
+    const payload = transformFormDataToPayload(values)
+    expect(payload.group).toBe('auto')
+    expect(payload.route_policy).toBe('cost_first')
+    expect(payload.auto_groups).toEqual([])
+    expect(payload.cross_group_retry).toBe(true)
+  })
+
+  test('restores a stored smart routing policy when editing an existing key', () => {
+    const defaults = transformApiKeyToFormDefaults(
+      {
+        ...baseApiKey,
+        group: 'auto',
+        route_policy: 'stability_first',
+        auto_groups: null,
+        cross_group_retry: false,
+      },
+      ['default', 'vip'],
+      5
+    )
+
+    expect(defaults.group).toBe('auto')
+    expect(defaults.route_policy).toBe('stability_first')
+    expect(defaults.auto_groups_mode).toBe('inherit')
+    expect(defaults.auto_groups).toEqual([])
+    expect(defaults.cross_group_retry).toBe(true)
+  })
+})

@@ -28,6 +28,8 @@ import React, {
   useEffect,
 } from 'react'
 
+import { invalidatePublishedStatusQueries } from '@/lib/status-query'
+
 import { useChannelUpstreamUpdates } from '../hooks/use-channel-upstream-updates'
 import { channelsQueryKeys } from '../lib'
 import type { Channel } from '../types'
@@ -110,6 +112,7 @@ export function ChannelsProvider({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient()
   const refreshChannels = useCallback(async () => {
     await queryClient.invalidateQueries({ queryKey: channelsQueryKeys.all })
+    invalidatePublishedStatusQueries(queryClient)
   }, [queryClient])
   const upstream = useChannelUpstreamUpdates(refreshChannels)
 

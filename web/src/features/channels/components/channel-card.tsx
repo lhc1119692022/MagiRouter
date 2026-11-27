@@ -74,6 +74,7 @@ function ChannelCardComponent({
   const balanceCell = renderCell('balance')
   const responseCell = renderCell('response_time')
   const testCell = renderCell('test_time')
+  const ratioCell = renderCell('ratio')
 
   const labelClass = 'text-muted-foreground text-[11px] font-medium select-none'
 
@@ -157,20 +158,30 @@ function ChannelCardComponent({
         </StatusBadgeTypeContext.Provider>
 
         {/* Groups retain their compact, full-width footer. */}
-        <div className='min-w-0'>
-          {groups.length > 0 ? (
-            <div className='-ml-1.5 flex min-w-0 flex-wrap gap-1'>
-              {groups.map((g) => (
-                <GroupBadge
-                  key={g}
-                  group={g}
-                  label={sensitiveVisible ? undefined : SENSITIVE_MASK}
-                  size='sm'
-                />
-              ))}
+        <div className='flex min-w-0 items-center justify-between gap-2'>
+          <div className='min-w-0 flex-1'>
+            {groups.length > 0 ? (
+              <div className='-ml-1.5 flex min-w-0 flex-wrap gap-1'>
+                {groups.map((g) => (
+                  <GroupBadge
+                    key={g}
+                    group={g}
+                    label={sensitiveVisible ? undefined : SENSITIVE_MASK}
+                    size='sm'
+                  />
+                ))}
+              </div>
+            ) : (
+              <span className='text-muted-foreground text-sm'>-</span>
+            )}
+          </div>
+          {ratioCell && (
+            <div className='flex shrink-0 items-center gap-1.5 text-xs'>
+              <span className={labelClass}>{t('Multiplier')}</span>
+              <span className='[&_[data-slot=status-badge]]:!ml-0'>
+                {ratioCell}
+              </span>
             </div>
-          ) : (
-            <span className='text-muted-foreground text-sm'>-</span>
           )}
         </div>
       </div>

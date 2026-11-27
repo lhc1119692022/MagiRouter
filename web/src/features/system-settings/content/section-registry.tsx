@@ -66,6 +66,9 @@ const CONTENT_SECTIONS = [
     build: (settings: ContentSettings) => (
       <AnnouncementsSection
         enabled={settings['console_setting.announcements_enabled']}
+        autoModelChangeNoticeEnabled={
+          settings['console_setting.auto_model_change_notice_enabled']
+        }
         data={settings['console_setting.announcements']}
       />
     ),

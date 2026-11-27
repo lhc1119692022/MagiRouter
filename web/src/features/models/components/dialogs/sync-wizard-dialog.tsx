@@ -38,6 +38,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { handleServerError } from '@/lib/handle-server-error'
+import { invalidatePublishedStatusQueries } from '@/lib/status-query'
 import { isModelCatalogDeclaration } from '@/lib/model-task-capabilities'
 import { createServerError } from '@/lib/server-error-message'
 
@@ -153,6 +154,7 @@ export function SyncWizardDialog(props: {
           queryClient.invalidateQueries({ queryKey: [key] })
         )
       )
+      invalidatePublishedStatusQueries(queryClient)
       setStep(3)
     },
     onError: (error) => handleServerError(error),

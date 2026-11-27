@@ -85,12 +85,14 @@ import { formatNumber } from '@/lib/format'
 
 import { safeJsonParse } from '../utils/json-parser'
 import { GroupSpecialUsableRulesEditor } from './group-special-usable-editor'
+import { SmartRoutingEditor } from './smart-routing-editor'
 
 export type GroupSettingsSection =
   | 'pricing'
   | 'overrides'
   | 'visibility'
   | 'auto'
+  | 'smart-routing'
 
 type GroupRatioVisualEditorProps = {
   section: GroupSettingsSection
@@ -103,6 +105,7 @@ type GroupRatioVisualEditorProps = {
   userManagementGroups: string
   groupGroupRatio: string
   autoGroups: string
+  smartRoutingConfig?: string
   maxTokenAutoGroupsField: ReactNode
   groupSpecialUsableGroup: string
   onChange: (field: string, value: string) => void
@@ -435,6 +438,9 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor(
           <TabsTrigger value='auto' className='px-3'>
             {t('Auto group order')}
           </TabsTrigger>
+          <TabsTrigger value='smart-routing' className='px-3'>
+            {t('Smart routing')}
+          </TabsTrigger>
         </TabsList>
       </div>
       <TabsContent value='pricing' keepMounted>
@@ -532,6 +538,14 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor(
             </div>
           </CardContent>
         </Card>
+      </TabsContent>
+      <TabsContent value='smart-routing' keepMounted>
+        <SmartRoutingEditor
+          value={props.smartRoutingConfig ?? ''}
+          billingGroupNames={billingGroupNames}
+          active={props.section === 'smart-routing'}
+          onChange={(value) => onChange('SmartRoutingConfig', value)}
+        />
       </TabsContent>
 
       <GroupDetailSheet

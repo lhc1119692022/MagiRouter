@@ -35,14 +35,16 @@ func (input *tokenAutoGroupsInput) UnmarshalJSON(data []byte) error {
 
 type tokenRequest struct {
 	model.Token
-	AutoGroups tokenAutoGroupsInput `json:"auto_groups"`
+	AutoGroups  tokenAutoGroupsInput `json:"auto_groups"`
+	RoutePolicy *string              `json:"route_policy"`
 	// 指针区分“未传”和显式 false：新建时未传即开启，更新时未传则保留原值。
 	AllowUserQuotaQuery *bool `json:"allow_user_quota_query"`
 }
 
 type tokenResponse struct {
 	*model.Token
-	AutoGroups []string `json:"auto_groups"`
+	AutoGroups  []string `json:"auto_groups"`
+	RoutePolicy string   `json:"route_policy,omitempty"`
 }
 
 func maxTokenQuota() int {
@@ -69,7 +71,11 @@ func buildMaskedTokenResponse(token *model.Token) *tokenResponse {
 	if len(autoGroups) == 0 {
 		autoGroups = nil
 	}
-	return &tokenResponse{Token: &maskedToken, AutoGroups: autoGroups}
+	return &tokenResponse{
+		Token:       &maskedToken,
+		AutoGroups:  autoGroups,
+		RoutePolicy: token.GetRoutePolicy(),
+	}
 }
 
 func buildMaskedTokenResponses(tokens []*model.Token) []*tokenResponse {
@@ -90,11 +96,26 @@ func getTokenRequestUserGroup(c *gin.Context) (string, error) {
 	return model.GetUserGroup(c.GetInt("id"), false)
 }
 
-func validateTokenBillingGroup(c *gin.Context, tokenGroup string) bool {
+func validateTokenBillingGroup(c *gin.Context, tokenGroup string, routePolicy string) bool {
+	trimmedPolicy := strings.TrimSpace(routePolicy)
+	group := strings.TrimSpace(tokenGroup)
+	if trimmedPolicy != "" {
+		if !model.IsBuiltinTokenRoutePolicy(trimmedPolicy) {
+			common.ApiErrorT(c, "Invalid routing policy")
+			return false
+		}
+		if group != "" && group != "auto" {
+			common.ApiErrorT(c, "Invalid routing policy")
+			return false
+		}
+		if !setting.GetSmartRoutingConfig().Enabled {
+			common.ApiErrorT(c, "Smart routing is currently disabled")
+			return false
+		}
+	}
 	if !ratio_setting.HasUserManagementGroups() {
 		return true
 	}
-	group := strings.TrimSpace(tokenGroup)
 	if group != "" && ratio_setting.IsUserManagementGroup(group) {
 		common.ApiErrorT(c, "Group {{group}} is for user management only and cannot be used as a billing group", map[string]any{"group": group})
 		return false
@@ -112,6 +133,9 @@ func validateTokenBillingGroup(c *gin.Context, tokenGroup string) bool {
 		return false
 	}
 	if group == "auto" {
+		if model.IsBuiltinTokenRoutePolicy(trimmedPolicy) && setting.GetSmartRoutingConfig().Enabled {
+			return true
+		}
 		if !service.GroupInUserUsableGroups(userGroup, "auto") {
 			common.ApiErrorT(c, "Group {{group}} is unavailable or unauthorized", map[string]any{"group": group})
 			return false
@@ -218,8 +242,9 @@ func GetTokenAutoGroups(c *gin.Context) {
 		return
 	}
 	common.ApiSuccess(c, gin.H{
-		"groups":    service.GetUserAutoGroup(userGroup),
-		"max_count": setting.GetMaxTokenAutoGroups(),
+		"groups":        service.GetUserAutoGroup(userGroup),
+		"max_count":     setting.GetMaxTokenAutoGroups(),
+		"smart_routing": service.BuildSmartRoutingPolicySummaries(userGroup),
 	})
 }
 
@@ -369,11 +394,24 @@ func AddToken(c *gin.Context) {
 		common.ApiErrorT(c, "Maximum number of tokens reached ({{max}})", map[string]any{"max": maxTokens})
 		return
 	}
-	if !validateTokenBillingGroup(c, token.Group) {
+	routePolicy := ""
+	if request.RoutePolicy != nil {
+		routePolicy = strings.TrimSpace(*request.RoutePolicy)
+		if routePolicy != "" && strings.TrimSpace(token.Group) == "" {
+			token.Group = "auto"
+		}
+	}
+	if !validateTokenBillingGroup(c, token.Group, routePolicy) {
 		return
 	}
 	if token.Group == "auto" {
-		if !setTokenAutoGroups(c, &token, request.AutoGroups.Groups) {
+		if routePolicy != "" {
+			if err := token.SetRoutePolicy(routePolicy); err != nil {
+				common.ApiError(c, err)
+				return
+			}
+			token.CrossGroupRetry = true
+		} else if !setTokenAutoGroups(c, &token, request.AutoGroups.Groups) {
 			return
 		}
 	} else {
@@ -488,7 +526,16 @@ func UpdateToken(c *gin.Context) {
 	if statusOnly != "" {
 		cleanToken.Status = token.Status
 	} else {
-		if !validateTokenBillingGroup(c, token.Group) {
+		routePolicy := ""
+		if request.RoutePolicy != nil {
+			routePolicy = strings.TrimSpace(*request.RoutePolicy)
+			if routePolicy != "" && strings.TrimSpace(token.Group) == "" {
+				token.Group = "auto"
+			}
+		} else if token.Group == "auto" && !request.AutoGroups.Set {
+			routePolicy = cleanToken.GetRoutePolicy()
+		}
+		if !validateTokenBillingGroup(c, token.Group, routePolicy) {
 			return
 		}
 		// If you add more fields, please also update token.Update()
@@ -507,10 +554,26 @@ func UpdateToken(c *gin.Context) {
 		if token.Group != "auto" {
 			cleanToken.CrossGroupRetry = false
 			_ = cleanToken.SetAutoGroups(nil)
+		} else if request.RoutePolicy != nil {
+			if routePolicy != "" {
+				if err := cleanToken.SetRoutePolicy(routePolicy); err != nil {
+					common.ApiError(c, err)
+					return
+				}
+				cleanToken.CrossGroupRetry = true
+			} else if request.AutoGroups.Set {
+				if !setTokenAutoGroups(c, cleanToken, request.AutoGroups.Groups) {
+					return
+				}
+			} else {
+				_ = cleanToken.SetAutoGroups(nil)
+			}
 		} else if request.AutoGroups.Set {
 			if !setTokenAutoGroups(c, cleanToken, request.AutoGroups.Groups) {
 				return
 			}
+		} else if routePolicy != "" {
+			cleanToken.CrossGroupRetry = true
 		}
 	}
 	err = cleanToken.Update()

@@ -19,16 +19,6 @@ For commercial licensing, please contact support@quantumnous.com
 import { useQuery } from '@tanstack/react-query'
 import { getRouteApi } from '@tanstack/react-router'
 import type { ColumnDef } from '@tanstack/react-table'
-import {
-  Brain,
-  CircleDollarSign,
-  Database,
-  KeyRound,
-  Layers,
-  Plug,
-  Radio,
-  Zap,
-} from 'lucide-react'
 import { useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -78,46 +68,6 @@ const logTypeRowTint: Record<number, string> = {
 // Warning tint for logs where a quota conversion saturated (admin-only marker).
 // Takes precedence over the per-type tint since it flags a billing anomaly.
 const quotaSaturationRowTint = 'bg-amber-50/60 dark:bg-amber-950/25'
-
-function CommonLogsIconLegend() {
-  const { t } = useTranslation()
-  return (
-    <div className='logs-icon-legend' aria-label={t('Icon legend')}>
-      <span className='logs-legend-item'>
-        <KeyRound aria-hidden='true' />
-        {t('Key')}
-      </span>
-      <span className='logs-legend-item'>
-        <Plug aria-hidden='true' />
-        {t('Endpoint')}
-      </span>
-      <span className='logs-legend-item'>
-        <Brain aria-hidden='true' />
-        {t('Reasoning Effort')}
-      </span>
-      <span className='logs-legend-item'>
-        <Layers aria-hidden='true' />
-        {t('Group')}
-      </span>
-      <span className='logs-legend-item'>
-        <Radio aria-hidden='true' />
-        {t('Stream / Sync')}
-      </span>
-      <span className='logs-legend-item'>
-        <CircleDollarSign aria-hidden='true' />
-        {t('Billing Mode')}
-      </span>
-      <span className='logs-legend-item'>
-        <Database aria-hidden='true' />
-        {t('Cache (%)')}
-      </span>
-      <span className='logs-legend-item'>
-        <Zap aria-hidden='true' />
-        {t('TTFT / TPT')}
-      </span>
-    </div>
-  )
-}
 
 function getColumnVisibilityStorageKey(
   logCategory: LogCategory,
@@ -488,12 +438,7 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
               />
             </div>
           }
-          toolbar={
-            <>
-              <CommonLogsFilterBar table={table} editorial />
-              {!isMobile && <CommonLogsIconLegend />}
-            </>
-          }
+          toolbar={<CommonLogsFilterBar table={table} editorial />}
           renderRow={(row) => {
             const logType = (row.original as Record<string, unknown>).type as
               | number

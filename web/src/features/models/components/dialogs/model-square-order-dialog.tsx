@@ -97,6 +97,7 @@ function ModelIconTile(props: { children: ReactNode }) {
 type ModelSquareOrderDialogProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
+  initialBatchModels?: string[]
 }
 
 /** Lets the root admin choose the Recommended order of the model square. */
@@ -147,6 +148,61 @@ export function ModelSquareOrderDialog(props: ModelSquareOrderDialogProps) {
 
   const update = (changes: Partial<OrderOptions>) =>
     setDraft({ ...order, ...changes })
+
+  const pendingBatchModels = useMemo(() => {
+    if (!props.initialBatchModels?.length) return []
+    return [
+      ...new Set(
+        props.initialBatchModels
+          .map((name) => name.trim())
+          .filter(Boolean)
+      )
+    ]
+  }, [props.initialBatchModels])
+
+  const applyBatchModels = (position: 'top' | 'bottom') => {
+    if (pendingBatchModels.length === 0) return
+    const remaining = listed.filter((name) => !pendingBatchModels.includes(name))
+    const nextList =
+      position === 'top'
+        ? [...pendingBatchModels, ...remaining]
+        : [...remaining, ...pendingBatchModels]
+    update({
+      [MODE_KEY]: mode === 'usage' ? 'mixed' : mode,
+      [MODELS_KEY]: nextList,
+    })
+  }
+
+  const batchSortListed = (kind: 'name' | 'vendor' | 'reverse' | 'clear') => {
+    if (kind === 'clear') {
+      update({ [MODELS_KEY]: [] })
+      return
+    }
+    if (kind === 'reverse') {
+      update({ [MODELS_KEY]: [...listed].reverse() })
+      return
+    }
+    if (kind === 'name') {
+      update({
+        [MODELS_KEY]: [...listed].sort((left, right) =>
+          left.localeCompare(right)
+        ),
+      })
+      return
+    }
+    update({
+      [MODELS_KEY]: [...listed].sort((left, right) => {
+        const leftVendor = modelByName.get(left)?.vendor_name ?? ''
+        const rightVendor = modelByName.get(right)?.vendor_name ?? ''
+        if (leftVendor !== rightVendor) {
+          if (!leftVendor) return 1
+          if (!rightVendor) return -1
+          return leftVendor.localeCompare(rightVendor)
+        }
+        return left.localeCompare(right)
+      }),
+    })
+  }
 
   const moveModel = (index: number, direction: 'up' | 'down') => {
     const target = direction === 'up' ? index - 1 : index + 1
@@ -317,15 +373,87 @@ export function ModelSquareOrderDialog(props: ModelSquareOrderDialogProps) {
           </div>
         )}
 
+        {pendingBatchModels.length > 0 && (
+          <div className='bg-muted/40 flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2 text-xs'>
+            <span>
+              {t('{{count}} selected models ready to order', {
+                count: pendingBatchModels.length,
+              })}
+            </span>
+            <div className='flex flex-wrap items-center gap-1.5'>
+              <Button
+                type='button'
+                size='sm'
+                variant='outline'
+                className='h-7 text-xs'
+                onClick={() => applyBatchModels('top')}
+              >
+                {t('Pin to top')}
+              </Button>
+              <Button
+                type='button'
+                size='sm'
+                variant='outline'
+                className='h-7 text-xs'
+                onClick={() => applyBatchModels('bottom')}
+              >
+                {t('Append to list')}
+              </Button>
+            </div>
+          </div>
+        )}
+
         {mode !== 'usage' && (
           <div className='flex flex-col gap-2'>
-            <div className='flex items-baseline justify-between gap-3'>
+            <div className='flex flex-wrap items-center justify-between gap-2'>
               <div className='text-sm font-medium'>
                 {mode === 'mixed' ? t('Pinned models') : t('Model order')}
               </div>
-              {listed.length > 1 && (
-                <div className='text-muted-foreground text-xs'>
-                  {t('Drag to reorder')}
+              {listed.length > 0 && (
+                <div className='flex flex-wrap items-center gap-1.5'>
+                  {listed.length > 1 && (
+                    <>
+                      <span className='text-muted-foreground text-xs'>
+                        {t('Drag to reorder')}
+                      </span>
+                      <Button
+                        type='button'
+                        variant='ghost'
+                        size='sm'
+                        className='h-6 px-2 text-xs'
+                        onClick={() => batchSortListed('name')}
+                      >
+                        {t('Sort A–Z')}
+                      </Button>
+                      <Button
+                        type='button'
+                        variant='ghost'
+                        size='sm'
+                        className='h-6 px-2 text-xs'
+                        onClick={() => batchSortListed('vendor')}
+                      >
+                        {t('Group by vendor')}
+                      </Button>
+                      <Button
+                        type='button'
+                        variant='ghost'
+                        size='sm'
+                        className='h-6 px-2 text-xs'
+                        onClick={() => batchSortListed('reverse')}
+                      >
+                        {t('Reverse')}
+                      </Button>
+                    </>
+                  )}
+                  <Button
+                    type='button'
+                    variant='ghost'
+                    size='sm'
+                    className='text-muted-foreground h-6 px-2 text-xs'
+                    onClick={() => batchSortListed('clear')}
+                  >
+                    {t('Clear list')}
+                  </Button>
                 </div>
               )}
             </div>

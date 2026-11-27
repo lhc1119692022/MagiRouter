@@ -11,6 +11,7 @@ import (
 	"github.com/MoeForge/moego/ojson"
 	"github.com/MoeForge/moego/regexp"
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/cachex"
 	"github.com/QuantumNous/new-api/relaykit/dto"
@@ -728,6 +729,11 @@ func AppendChannelAffinityAdminInfo(c *gin.Context, other *model.LogOther) {
 
 func RecordChannelAffinity(c *gin.Context, channelID int) {
 	if channelID <= 0 {
+		return
+	}
+	// Do not pin session affinity onto a fallback group after cross-group failover
+	// so subsequent requests return to the primary group once it recovers.
+	if c != nil && common.GetContextKeyString(c, constant.ContextKeyRouteFallbackFrom) != "" {
 		return
 	}
 	setting := operation_setting.GetChannelAffinitySetting()

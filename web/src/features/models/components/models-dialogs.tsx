@@ -34,6 +34,8 @@ export function ModelsDialogs() {
     currentVendor,
     descriptionData,
     setDescriptionData,
+    batchOrderModels,
+    setBatchOrderModels,
   } = useModels()
 
   return (
@@ -76,7 +78,13 @@ export function ModelsDialogs() {
 
       <ModelSquareOrderDialog
         open={open === 'model-square-order'}
-        onOpenChange={(v) => !v && setOpen(null)}
+        initialBatchModels={batchOrderModels}
+        onOpenChange={(v) => {
+          if (!v) {
+            setOpen(null)
+            setBatchOrderModels([])
+          }
+        }}
       />
 
       {/* Prefill Groups Management */}

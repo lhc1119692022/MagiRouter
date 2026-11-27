@@ -32,7 +32,7 @@ afterEach(() => {
   })
 })
 
-test('renders editorial LLM logs stat strip with RPS/TPS, icon legend, renamed Type column, Billing Mode column, and trailing Details column', async () => {
+test('renders editorial LLM logs stat strip and split 12-column table layout with cache bar, billing details tooltip, and balance', async () => {
   useAuthStore.getState().auth.setUser({
     id: 7,
     username: 'alice',
@@ -66,6 +66,7 @@ test('renders editorial LLM logs stat strip with RPS/TPS, icon legend, renamed T
         frt: 410,
         model_ratio: 1,
         completion_ratio: 2,
+        wallet_remain: 64189200,
       }),
     }),
     usageLogSchema.parse({
@@ -87,6 +88,12 @@ test('renders editorial LLM logs stat strip with RPS/TPS, icon legend, renamed T
         reasoning_effort: 'high',
         group_ratio: 0.25,
         model_price: 0.25,
+        response_model: {
+          requested_model: 'gpt-6.2-sol',
+          upstream_model: 'gpt-6.2-sol',
+          returned_model: 'gpt-6.2-sol-preview',
+        },
+        wallet_remain: 64064200,
       }),
     }),
     usageLogSchema.parse({
@@ -166,27 +173,37 @@ test('renders editorial LLM logs stat strip with RPS/TPS, icon legend, renamed T
     .getAllByRole('columnheader')
     .map((header) => header.textContent?.trim())
   expect(headers).toEqual([
-    'Time / Key',
-    'Model / Attributes',
+    'Key Name',
+    'Model Name',
+    'Reasoning Effort',
+    'Protocol',
+    'Rate Group',
     'Type',
     'Tokens & Cache',
-    'Timing (TTFT · TPT)',
-    'Billing Mode',
     'This Cost',
+    'First Token / Throughput',
     'Details',
+    'Time',
+    'Balance',
   ])
 
   const rows = screen.getAllByRole('row').slice(1)
   expect(rows).toHaveLength(3)
   expect(within(rows[0]).getByText('Messages')).toBeVisible()
   expect(within(rows[0]).getByText('medium')).toBeVisible()
-  expect(within(rows[0]).getByText('GPT Fast 0.5x')).toBeVisible()
+  expect(within(rows[0]).getByText('GPT Fast')).toBeVisible()
+  expect(within(rows[0]).getByText('0.5x')).toBeVisible()
   expect(within(rows[0]).getByText('Stream')).toBeVisible()
   expect(within(rows[0]).getByText('100 t/s')).toBeVisible()
   expect(within(rows[0]).getByText('12.6K → 2K')).toBeVisible()
-  expect(within(rows[0]).getByText('8.9K (71%)')).toBeVisible()
+  expect(within(rows[0]).getByText('71%')).toBeVisible()
+  expect(within(rows[0]).getByText('8.9K')).toBeVisible()
+  expect(
+    within(rows[0]).getByRole('button', { name: 'Billing Details' })
+  ).toBeVisible()
   expect(within(rows[0]).getByText('410ms')).toBeVisible()
   expect(within(rows[0]).getByText('Per-token')).toBeVisible()
+  expect(within(rows[0]).getByText('$128.3784')).toBeVisible()
   expect(within(rows[1]).getByText('Per-call')).toBeVisible()
   expect(within(rows[2]).getByText('Free on failure')).toBeVisible()
 })

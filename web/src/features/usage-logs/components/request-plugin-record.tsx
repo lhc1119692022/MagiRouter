@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { Sparkles } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -493,6 +494,7 @@ export function RequestPluginAdminSteps(props: {
 /** The log list mark of a request that request processing touched. */
 export function RequestPluginLogMarker(props: {
   items: RequestPluginRecordItem[]
+  compactIcon?: boolean
 }) {
   const { t, i18n } = useTranslation()
   // Reading or checking alone did nothing to the request, and neither did a
@@ -520,6 +522,32 @@ export function RequestPluginLogMarker(props: {
       )
   )
   if (names.size === 0) return null
+  const tooltipText = t('Request processing: {{names}}', {
+    names: [...names].join(', '),
+  })
+  if (props.compactIcon) {
+    return (
+      <TooltipProvider delay={200}>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <span
+                className='inline-flex shrink-0 cursor-help items-center text-blue-600 dark:text-blue-400'
+                role='img'
+                aria-label={tooltipText}
+                tabIndex={0}
+              />
+            }
+          >
+            <Sparkles className='size-3.5' aria-hidden='true' />
+          </TooltipTrigger>
+          <TooltipContent side='top' className='max-w-xs break-words'>
+            {tooltipText}
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    )
+  }
   return (
     <TooltipProvider delay={300}>
       <Tooltip>
@@ -532,9 +560,7 @@ export function RequestPluginLogMarker(props: {
           />
         </TooltipTrigger>
         <TooltipContent side='top' className='max-w-xs break-words'>
-          {t('Request processing: {{names}}', {
-            names: [...names].join(', '),
-          })}
+          {tooltipText}
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>

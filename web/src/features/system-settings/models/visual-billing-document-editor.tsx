@@ -63,6 +63,41 @@ type PricingNodeProps = {
   currency: PricingCurrency
   issues: VisualBillingIssue[]
   onChange: (node: VisualPricingNode) => void
+  onBillingModeChange?: (
+    node: Extract<VisualPricingNode, { kind: 'tier' }>,
+    mode: 'token' | 'request' | 'image'
+  ) => void
+}
+
+function setAllTiersFixed(node: VisualPricingNode): VisualPricingNode {
+  if (node.kind === 'branch') {
+    return {
+      ...node,
+      yes: setAllTiersFixed(node.yes),
+      no: setAllTiersFixed(node.no),
+    }
+  }
+  return {
+    ...node,
+    billingUnit: 'request',
+  }
+}
+
+function replaceTierNode(
+  root: VisualPricingNode,
+  targetId: string,
+  updater: (
+    node: Extract<VisualPricingNode, { kind: 'tier' }>
+  ) => Extract<VisualPricingNode, { kind: 'tier' }>
+): VisualPricingNode {
+  if (root.kind === 'branch') {
+    return {
+      ...root,
+      yes: replaceTierNode(root.yes, targetId, updater),
+      no: replaceTierNode(root.no, targetId, updater),
+    }
+  }
+  return root.id === targetId ? updater(root) : root
 }
 
 function PricingTierFields(
@@ -123,18 +158,8 @@ function PricingTierFields(
         currency={props.currency}
         billingUnit={node.billingUnit}
         fixedPrice={node.fixedPrice}
-        onBillingUnitChange={(billingUnit) =>
-          props.onChange({
-            ...node,
-            billingUnit,
-            prices:
-              billingUnit === 'token' && node.prices.length === 0
-                ? [
-                    { variable: 'p', value: '0' },
-                    { variable: 'c', value: '0' },
-                  ]
-                : node.prices,
-          })
+        onBillingModeChange={(mode) =>
+          props.onBillingModeChange?.(node, mode)
         }
         onFixedPriceChange={(fixedPrice) =>
           props.onChange({ ...node, fixedPrice })
@@ -425,6 +450,39 @@ export function VisualBillingDocumentEditor(props: {
   onChange: (document: VisualBillingDocument) => void
 }) {
   const { t } = useTranslation()
+  const handleBillingModeChange = (
+    targetTier: Extract<VisualPricingNode, { kind: 'tier' }>,
+    mode: 'token' | 'request' | 'image'
+  ) => {
+    if (mode === 'image') {
+      props.onChange({
+        ...props.document,
+        imageCount: true,
+        root: setAllTiersFixed(props.document.root),
+      })
+      return
+    }
+    const nextRoot = replaceTierNode(
+      props.document.root,
+      targetTier.id,
+      (tier) => ({
+        ...tier,
+        billingUnit: mode,
+        prices:
+          mode === 'token' && tier.prices.length === 0
+            ? [
+                { variable: 'p', value: '0' },
+                { variable: 'c', value: '0' },
+              ]
+            : tier.prices,
+      })
+    )
+    props.onChange({
+      ...props.document,
+      imageCount: false,
+      root: nextRoot,
+    })
+  }
   return (
     <div className='space-y-3'>
       {props.document.root.kind === 'branch' && (
@@ -443,6 +501,7 @@ export function VisualBillingDocumentEditor(props: {
         currency={props.currency}
         issues={props.issues}
         onChange={(root) => props.onChange({ ...props.document, root })}
+        onBillingModeChange={handleBillingModeChange}
       />
     </div>
   )

@@ -150,6 +150,7 @@ const createGroupSchema = (t: Translate) =>
       }),
       MaxTokenAutoGroups: positiveIntegerSchema(t('Enter a positive integer')),
       DefaultUseAutoGroup: z.boolean(),
+      SmartRoutingConfig: createJsonStringField(t).optional(),
       GroupSpecialUsableGroup: createJsonStringField(t),
       UserManagementGroups: createJsonStringField(t, {
         predicate: (parsed) => {
@@ -321,6 +322,9 @@ export function RatioSettingsCard({
     AutoGroups: normalizeJsonString(groupDefaults.AutoGroups),
     MaxTokenAutoGroups: groupDefaults.MaxTokenAutoGroups,
     DefaultUseAutoGroup: groupDefaults.DefaultUseAutoGroup,
+    SmartRoutingConfig: normalizeJsonString(
+      groupDefaults.SmartRoutingConfig ?? ''
+    ),
     GroupSpecialUsableGroup: normalizeJsonString(
       groupDefaults.GroupSpecialUsableGroup
     ),
@@ -362,6 +366,9 @@ export function RatioSettingsCard({
       UserUsableGroups: formatJsonForTextarea(groupDefaults.UserUsableGroups),
       GroupGroupRatio: formatJsonForTextarea(groupDefaults.GroupGroupRatio),
       AutoGroups: formatJsonForTextarea(groupDefaults.AutoGroups),
+      SmartRoutingConfig: formatJsonForTextarea(
+        groupDefaults.SmartRoutingConfig ?? ''
+      ),
       GroupSpecialUsableGroup: formatJsonForTextarea(
         groupDefaults.GroupSpecialUsableGroup
       ),
@@ -417,6 +424,9 @@ export function RatioSettingsCard({
       AutoGroups: normalizeJsonString(groupDefaults.AutoGroups),
       MaxTokenAutoGroups: groupDefaults.MaxTokenAutoGroups,
       DefaultUseAutoGroup: groupDefaults.DefaultUseAutoGroup,
+      SmartRoutingConfig: normalizeJsonString(
+        groupDefaults.SmartRoutingConfig ?? ''
+      ),
       GroupSpecialUsableGroup: normalizeJsonString(
         groupDefaults.GroupSpecialUsableGroup
       ),
@@ -432,6 +442,9 @@ export function RatioSettingsCard({
       UserUsableGroups: formatJsonForTextarea(groupDefaults.UserUsableGroups),
       GroupGroupRatio: formatJsonForTextarea(groupDefaults.GroupGroupRatio),
       AutoGroups: formatJsonForTextarea(groupDefaults.AutoGroups),
+      SmartRoutingConfig: formatJsonForTextarea(
+        groupDefaults.SmartRoutingConfig ?? ''
+      ),
       GroupSpecialUsableGroup: formatJsonForTextarea(
         groupDefaults.GroupSpecialUsableGroup
       ),
@@ -501,6 +514,9 @@ export function RatioSettingsCard({
         AutoGroups: normalizeJsonString(values.AutoGroups),
         MaxTokenAutoGroups: values.MaxTokenAutoGroups,
         DefaultUseAutoGroup: values.DefaultUseAutoGroup,
+        SmartRoutingConfig: normalizeJsonString(
+          values.SmartRoutingConfig ?? ''
+        ),
         GroupSpecialUsableGroup: normalizeJsonString(
           values.GroupSpecialUsableGroup
         ),

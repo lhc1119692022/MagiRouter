@@ -47,6 +47,15 @@ func TestRecordChannelProbeAndSummary(t *testing.T) {
 	assert.Equal(t, 1, vipSummary.RecentSamples)
 	assert.Equal(t, float64(100), vipSummary.RecentSuccessRate)
 	assert.Nil(t, GetGroupProbeSummary("unknown"))
+
+	filtered := GetGroupProbeSummaryForModels("default", []string{"gpt-4o-mini", "gemini-2.5-flash"})
+	require.NotNil(t, filtered)
+	assert.Equal(t, 2, filtered.RecentSamples)
+	assert.Equal(t, float64(100), filtered.RecentSuccessRate)
+	assert.Equal(t, []string{"gemini-2.5-flash", "gpt-4o-mini"}, filtered.RecentModels)
+
+	assert.Nil(t, GetGroupProbeSummaryForModels("default", []string{"non-existent-model"}))
+	assert.Nil(t, GetGroupProbeSummaryForModels("default", []string{}))
 }
 
 func TestClassifyModelCapabilities(t *testing.T) {

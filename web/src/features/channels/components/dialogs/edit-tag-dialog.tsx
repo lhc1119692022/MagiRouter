@@ -34,6 +34,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { handleServerError } from '@/lib/handle-server-error'
 import { requireServerSuccess } from '@/lib/server-error-message'
+import { invalidatePublishedStatusQueries } from '@/lib/status-query'
 
 import {
   editTagChannels,
@@ -195,6 +196,7 @@ export function EditTagDialog({ open, onOpenChange }: EditTagDialogProps) {
       if (response.success) {
         toast.success(t('Tag updated successfully'))
         queryClient.invalidateQueries({ queryKey: channelsQueryKeys.lists() })
+        invalidatePublishedStatusQueries(queryClient)
         onOpenChange(false)
       } else {
         handleServerError(response, t('Failed to update tag'))

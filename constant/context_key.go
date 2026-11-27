@@ -21,6 +21,7 @@ const (
 	ContextKeyTokenModelLimit        ContextKey = "token_model_limit"
 	ContextKeyTokenCrossGroupRetry   ContextKey = "token_cross_group_retry"
 	ContextKeyTokenAutoGroups        ContextKey = "token_auto_groups"
+	ContextKeyTokenRoutePolicy       ContextKey = "token_route_policy"
 
 	/* channel related keys */
 	ContextKeyChannelId                ContextKey = "channel_id"
@@ -51,6 +52,8 @@ const (
 	ContextKeyAutoGroup           ContextKey = "auto_group"
 	ContextKeyAutoGroupIndex      ContextKey = "auto_group_index"
 	ContextKeyAutoGroupRetryIndex ContextKey = "auto_group_retry_index"
+	ContextKeyRoutePrimaryGroup   ContextKey = "route_primary_group"
+	ContextKeyRouteFallbackFrom   ContextKey = "route_fallback_from"
 
 	/* user related keys */
 	ContextKeyUserId             ContextKey = "id"

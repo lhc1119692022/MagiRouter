@@ -31,7 +31,7 @@ function ApiKeysPageContent() {
   const { totalKeysCount } = useApiKeys()
   return (
     <>
-      <SectionPageLayout>
+      <SectionPageLayout wideContent>
         <SectionPageLayout.Title>{t('API Keys')}</SectionPageLayout.Title>
         {totalKeysCount !== null && (
           <SectionPageLayout.Subtitle>

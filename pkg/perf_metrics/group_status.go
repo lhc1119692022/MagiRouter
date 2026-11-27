@@ -73,12 +73,40 @@ func addCounters(dst counters, src counters) counters {
 }
 
 func QueryGroupStatus(hours int, allowedGroups []string) (GroupStatusQueryResult, error) {
+	return QueryGroupStatusForModels(hours, allowedGroups, nil)
+}
+
+func QueryGroupStatusForModels(hours int, allowedGroups []string, allowedModelsByGroup map[string][]string) (GroupStatusQueryResult, error) {
 	if hours <= 0 {
 		hours = 24
 	}
 	hours = min(hours, 24*30)
 	startTs, endTs := queryWindow(time.Now(), hours)
 	allowedSet := allowedGroupSet(allowedGroups)
+	var allowedModelSets map[string]map[string]struct{}
+	if allowedModelsByGroup != nil {
+		allowedModelSets = make(map[string]map[string]struct{}, len(allowedModelsByGroup))
+		for groupName, models := range allowedModelsByGroup {
+			modelSet := make(map[string]struct{}, len(models))
+			for _, modelName := range models {
+				if modelName != "" {
+					modelSet[modelName] = struct{}{}
+				}
+			}
+			allowedModelSets[groupName] = modelSet
+		}
+	}
+	isModelAllowed := func(groupName string, modelName string) bool {
+		if allowedModelSets == nil {
+			return true
+		}
+		modelSet := allowedModelSets[groupName]
+		if len(modelSet) == 0 {
+			return false
+		}
+		_, ok := modelSet[modelName]
+		return ok
+	}
 
 	bucketSeconds := perf_metrics_setting.GetBucketSeconds()
 	if bucketSeconds <= 0 {
@@ -118,47 +146,76 @@ func QueryGroupStatus(hours int, allowedGroups []string) (GroupStatusQueryResult
 		groupModels[group][modelName] = addCounters(groupModels[group][modelName], value)
 	}
 
-	bucketRows, err := model.GetPerfMetricsGroupBuckets(startTs, endTs, allowedGroups)
-	if err != nil {
-		return GroupStatusQueryResult{}, err
-	}
-	for _, row := range bucketRows {
-		addGroupBucket(row.Group, row.BucketTs, counters{
-			requestCount:   row.RequestCount,
-			successCount:   row.SuccessCount,
-			totalLatencyMs: row.TotalLatencyMs,
-			ttftSumMs:      row.TtftSumMs,
-			ttftCount:      row.TtftCount,
-			outputTokens:   row.OutputTokens,
-			generationMs:   row.GenerationMs,
-			tpsCount:       row.TpsCount,
-			promptTokens:   row.PromptTokens,
-			cachedTokens:   row.CachedTokens,
-		})
-	}
+	if allowedModelSets != nil {
+		rows, err := model.GetPerfMetricsGroupModelBuckets(startTs, endTs, allowedGroups)
+		if err != nil {
+			return GroupStatusQueryResult{}, err
+		}
+		for _, row := range rows {
+			if !isModelAllowed(row.Group, row.ModelName) {
+				continue
+			}
+			sample := counters{
+				requestCount:   row.RequestCount,
+				successCount:   row.SuccessCount,
+				totalLatencyMs: row.TotalLatencyMs,
+				ttftSumMs:      row.TtftSumMs,
+				ttftCount:      row.TtftCount,
+				outputTokens:   row.OutputTokens,
+				generationMs:   row.GenerationMs,
+				tpsCount:       row.TpsCount,
+				promptTokens:   row.PromptTokens,
+				cachedTokens:   row.CachedTokens,
+			}
+			addGroupBucket(row.Group, row.BucketTs, sample)
+			addGroupModel(row.Group, row.ModelName, sample)
+		}
+	} else {
+		bucketRows, err := model.GetPerfMetricsGroupBuckets(startTs, endTs, allowedGroups)
+		if err != nil {
+			return GroupStatusQueryResult{}, err
+		}
+		for _, row := range bucketRows {
+			addGroupBucket(row.Group, row.BucketTs, counters{
+				requestCount:   row.RequestCount,
+				successCount:   row.SuccessCount,
+				totalLatencyMs: row.TotalLatencyMs,
+				ttftSumMs:      row.TtftSumMs,
+				ttftCount:      row.TtftCount,
+				outputTokens:   row.OutputTokens,
+				generationMs:   row.GenerationMs,
+				tpsCount:       row.TpsCount,
+				promptTokens:   row.PromptTokens,
+				cachedTokens:   row.CachedTokens,
+			})
+		}
 
-	modelRows, err := model.GetPerfMetricsGroupModelSummaries(startTs, endTs, allowedGroups)
-	if err != nil {
-		return GroupStatusQueryResult{}, err
-	}
-	for _, row := range modelRows {
-		addGroupModel(row.Group, row.ModelName, counters{
-			requestCount:   row.RequestCount,
-			successCount:   row.SuccessCount,
-			totalLatencyMs: row.TotalLatencyMs,
-			ttftSumMs:      row.TtftSumMs,
-			ttftCount:      row.TtftCount,
-			outputTokens:   row.OutputTokens,
-			generationMs:   row.GenerationMs,
-			tpsCount:       row.TpsCount,
-			promptTokens:   row.PromptTokens,
-			cachedTokens:   row.CachedTokens,
-		})
+		modelRows, err := model.GetPerfMetricsGroupModelSummaries(startTs, endTs, allowedGroups)
+		if err != nil {
+			return GroupStatusQueryResult{}, err
+		}
+		for _, row := range modelRows {
+			addGroupModel(row.Group, row.ModelName, counters{
+				requestCount:   row.RequestCount,
+				successCount:   row.SuccessCount,
+				totalLatencyMs: row.TotalLatencyMs,
+				ttftSumMs:      row.TtftSumMs,
+				ttftCount:      row.TtftCount,
+				outputTokens:   row.OutputTokens,
+				generationMs:   row.GenerationMs,
+				tpsCount:       row.TpsCount,
+				promptTokens:   row.PromptTokens,
+				cachedTokens:   row.CachedTokens,
+			})
+		}
 	}
 
 	hotBuckets.Range(func(key, value any) bool {
 		bucket := key.(bucketKey)
 		if bucket.bucketTs < startTs || bucket.bucketTs > endTs {
+			return true
+		}
+		if !isModelAllowed(bucket.group, bucket.model) {
 			return true
 		}
 		snap := value.(*atomicBucket).snapshot()

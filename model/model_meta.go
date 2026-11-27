@@ -172,6 +172,24 @@ func FillModelSquareStates(rows []*Model, configured map[string][]int, connectio
 	return nil
 }
 
+func GetHiddenModelNames(names []string) (map[string]struct{}, error) {
+	hidden := make(map[string]struct{})
+	if DB == nil || len(names) == 0 || !DB.Migrator().HasTable(&Model{}) {
+		return hidden, nil
+	}
+	var metadata []Model
+	if err := DB.Select("id", "model_name", "name_rule", "status").Find(&metadata).Error; err != nil {
+		return nil, err
+	}
+	resolved := resolveModelMetadata(metadata, names)
+	for _, name := range names {
+		if policy := resolved[name]; policy != nil && policy.Status != 1 {
+			hidden[name] = struct{}{}
+		}
+	}
+	return hidden, nil
+}
+
 // GetConfiguredModelChannels includes disabled channels and reads no credentials.
 func GetConfiguredModelChannels() (map[string][]int, error) {
 	var channels []Channel
@@ -611,4 +629,264 @@ func parseModelSyncFilter(syncOfficial string) (value int, ok bool) {
 		}
 		return n, true
 	}
+}
+
+type ModelBatchUpdateRequest struct {
+	ModelIDs             []int    `json:"model_ids"`
+	ChannelModels        []string `json:"channel_models"`
+	VendorID             *int     `json:"vendor_id"`
+	Status               *int     `json:"status"`
+	SyncOfficial         *int     `json:"sync_official"`
+	TagsMode             string   `json:"tags_mode"`
+	Tags                 string   `json:"tags"`
+	CapabilityLabelsMode string   `json:"capability_labels_mode"`
+	CapabilityLabels     []string `json:"capability_labels"`
+}
+
+type ModelBatchUpdateResult struct {
+	UpdatedCount int `json:"updated_count"`
+	CreatedCount int `json:"created_count"`
+}
+
+func applyBatchModelTagUpdate(
+	existingTags string,
+	tagsMode string,
+	newTags string,
+	capMode string,
+	capLabels []string,
+) (string, error) {
+	ordinary, declarations := SplitCatalogTaskTags(existingTags)
+
+	switch tagsMode {
+	case "":
+	case "replace":
+		nextOrdinary, _ := SplitCatalogTaskTags(newTags)
+		ordinary = nextOrdinary
+	case "append":
+		nextOrdinary, _ := SplitCatalogTaskTags(newTags)
+		if nextOrdinary != "" {
+			if ordinary == "" {
+				ordinary = nextOrdinary
+			} else {
+				ordinary, _ = SplitCatalogTaskTags(ordinary + "," + nextOrdinary)
+			}
+		}
+	case "clear":
+		ordinary = ""
+	default:
+		return "", errors.New("invalid tags update mode")
+	}
+
+	switch capMode {
+	case "":
+	case "auto":
+		declarations = ""
+	case "set":
+		ordered := []string{"text", "image", "video", "audio", "transcription", "other"}
+		allowed := map[string]bool{
+			"text":          true,
+			"image":         true,
+			"video":         true,
+			"audio":         true,
+			"transcription": true,
+			"other":         true,
+		}
+		selected := make(map[string]bool, len(capLabels))
+		for _, raw := range capLabels {
+			code := strings.TrimSpace(raw)
+			if code == "" {
+				continue
+			}
+			if !allowed[code] {
+				return "", errors.New("invalid capability label")
+			}
+			selected[code] = true
+		}
+		codes := make([]string, 0, len(selected))
+		for _, code := range ordered {
+			if selected[code] {
+				codes = append(codes, code)
+			}
+		}
+		if len(codes) == 0 {
+			declarations = "@mr:catalog:v1=none"
+		} else {
+			declarations = "@mr:catalog:v1=" + strings.Join(codes, "+")
+		}
+	default:
+		return "", errors.New("invalid capability labels mode")
+	}
+
+	if ordinary == "" {
+		return declarations, nil
+	}
+	if declarations == "" {
+		return ordinary, nil
+	}
+	return NormalizeModelTags(ordinary + "," + declarations), nil
+}
+
+func BatchUpdateModels(req ModelBatchUpdateRequest) (ModelBatchUpdateResult, error) {
+	idSeen := make(map[int]struct{}, len(req.ModelIDs))
+	modelIDs := make([]int, 0, len(req.ModelIDs))
+	for _, id := range req.ModelIDs {
+		if id <= 0 {
+			continue
+		}
+		if _, ok := idSeen[id]; ok {
+			continue
+		}
+		idSeen[id] = struct{}{}
+		modelIDs = append(modelIDs, id)
+	}
+	channelModels := normalizeLookupValues(req.ChannelModels)
+	if len(modelIDs) == 0 && len(channelModels) == 0 {
+		return ModelBatchUpdateResult{}, errors.New("no models selected")
+	}
+	if req.Status != nil && *req.Status != 0 && *req.Status != 1 {
+		return ModelBatchUpdateResult{}, errors.New("invalid catalog visibility")
+	}
+	if req.SyncOfficial != nil && *req.SyncOfficial != 0 && *req.SyncOfficial != 1 {
+		return ModelBatchUpdateResult{}, errors.New("invalid sync policy")
+	}
+	if req.TagsMode != "" && req.TagsMode != "replace" && req.TagsMode != "append" && req.TagsMode != "clear" {
+		return ModelBatchUpdateResult{}, errors.New("invalid tags update mode")
+	}
+	if req.CapabilityLabelsMode != "" && req.CapabilityLabelsMode != "set" && req.CapabilityLabelsMode != "auto" {
+		return ModelBatchUpdateResult{}, errors.New("invalid capability labels mode")
+	}
+
+	var result ModelBatchUpdateResult
+	err := metadataTransaction(func(tx *gorm.DB) error {
+		if req.VendorID != nil {
+			if err := validateModelVendor(tx, *req.VendorID); err != nil {
+				return err
+			}
+		}
+		now := common.GetTimestamp()
+		applyFields := func(record *Model) error {
+			if req.VendorID != nil {
+				record.VendorID = *req.VendorID
+			}
+			if req.Status != nil {
+				record.Status = *req.Status
+			}
+			if req.SyncOfficial != nil {
+				record.SyncOfficial = *req.SyncOfficial
+			}
+			if req.TagsMode != "" || req.CapabilityLabelsMode != "" {
+				updatedTags, err := applyBatchModelTagUpdate(
+					record.Tags,
+					req.TagsMode,
+					req.Tags,
+					req.CapabilityLabelsMode,
+					req.CapabilityLabels,
+				)
+				if err != nil {
+					return err
+				}
+				record.Tags = updatedTags
+			}
+			if err := ValidateMetadataValues(MetadataValues{
+				Tags:      record.Tags,
+				Endpoints: record.Endpoints,
+				Status:    record.Status,
+				NameRule:  record.NameRule,
+			}); err != nil {
+				return err
+			}
+			record.UpdatedTime = now
+			return nil
+		}
+
+		updatedIDs := make(map[int]struct{}, len(modelIDs))
+		if len(modelIDs) > 0 {
+			var existing []Model
+			if err := tx.Where("id IN ?", modelIDs).Find(&existing).Error; err != nil {
+				return err
+			}
+			for i := range existing {
+				record := &existing[i]
+				if err := applyFields(record); err != nil {
+					return err
+				}
+				updates := map[string]any{
+					"vendor_id":     record.VendorID,
+					"status":        record.Status,
+					"sync_official": record.SyncOfficial,
+					"tags":          record.Tags,
+					"updated_time":  record.UpdatedTime,
+				}
+				if err := tx.Model(&Model{}).Where("id = ?", record.Id).Updates(updates).Error; err != nil {
+					return err
+				}
+				updatedIDs[record.Id] = struct{}{}
+				result.UpdatedCount++
+			}
+		}
+
+		if len(channelModels) > 0 {
+			var byName []Model
+			if err := tx.Where("model_name IN ?", channelModels).Find(&byName).Error; err != nil {
+				return err
+			}
+			existingByName := make(map[string]*Model, len(byName))
+			for i := range byName {
+				existingByName[byName[i].ModelName] = &byName[i]
+			}
+			for _, name := range channelModels {
+				if record, exists := existingByName[name]; exists {
+					if _, already := updatedIDs[record.Id]; already {
+						continue
+					}
+					if err := applyFields(record); err != nil {
+						return err
+					}
+					updates := map[string]any{
+						"vendor_id":     record.VendorID,
+						"status":        record.Status,
+						"sync_official": record.SyncOfficial,
+						"tags":          record.Tags,
+						"updated_time":  record.UpdatedTime,
+					}
+					if err := tx.Model(&Model{}).Where("id = ?", record.Id).Updates(updates).Error; err != nil {
+						return err
+					}
+					updatedIDs[record.Id] = struct{}{}
+					result.UpdatedCount++
+					continue
+				}
+				record := &Model{
+					ModelName:    name,
+					NameRule:     NameRuleExact,
+					Status:       1,
+					SyncOfficial: 1,
+					CreatedTime:  now,
+					UpdatedTime:  now,
+				}
+				if err := applyFields(record); err != nil {
+					return err
+				}
+				status, syncOfficial := record.Status, record.SyncOfficial
+				if err := tx.Create(record).Error; err != nil {
+					return err
+				}
+				record.Status, record.SyncOfficial = status, syncOfficial
+				if err := tx.Model(&Model{}).Where("id = ?", record.Id).Updates(map[string]any{
+					"status":        status,
+					"sync_official": syncOfficial,
+				}).Error; err != nil {
+					return err
+				}
+				result.CreatedCount++
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		return ModelBatchUpdateResult{}, err
+	}
+	RefreshPricing()
+	return result, nil
 }

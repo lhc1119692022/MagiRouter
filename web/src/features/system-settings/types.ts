@@ -225,6 +225,7 @@ export type ContentSettings = {
   'console_setting.api_info_enabled': boolean
   'console_setting.auth_domains_enabled': boolean
   'console_setting.announcements_enabled': boolean
+  'console_setting.auto_model_change_notice_enabled': boolean
   'console_setting.faq_enabled': boolean
   'console_setting.uptime_kuma_enabled': boolean
   SidebarModulesAdmin: string
@@ -279,6 +280,7 @@ export type ModelSettings = {
   AutoGroups: string
   MaxTokenAutoGroups: number
   DefaultUseAutoGroup: boolean
+  SmartRoutingConfig: string
   'group_ratio_setting.group_special_usable_group': string
   'group_ratio_setting.user_management_groups': string
   'model_deployment.ionet.api_key': string
@@ -320,6 +322,7 @@ export type BillingSettings = {
   AutoGroups: string
   MaxTokenAutoGroups: number
   DefaultUseAutoGroup: boolean
+  SmartRoutingConfig: string
   'group_ratio_setting.group_special_usable_group': string
   'group_ratio_setting.user_management_groups': string
   PayAddress: string
@@ -517,4 +520,61 @@ export type UpstreamRatiosResponse = {
     prices: PricingSyncModels
     test_results: TestResult[]
   }
+}
+
+export interface SmartRoutingStabilityWeights {
+  success_rate: number
+  speed: number
+  cache_hit: number
+  price_tie_break: number
+}
+
+export interface SmartRoutingConfig {
+  enabled: boolean
+  short_window_hours: number
+  long_window_hours: number
+  healthy_success_rate: number
+  degraded_success_rate: number
+  allow_outage_fallback: boolean
+  cost_max_fallback_ratio: number
+  excluded_groups: string[]
+  pinned_groups: string[]
+  demoted_groups: string[]
+  stability_weights: SmartRoutingStabilityWeights
+}
+
+export interface SmartRoutingRankedCandidate {
+  group: string
+  effective_ratio: number
+  tier: 'healthy' | 'degraded' | 'outage' | string
+  score: number
+  effective_success_rate: number
+  smoothed_reliability: number
+  effective_samples: number
+  avg_ttft_ms: number
+  avg_tps: number
+  cache_hit_rate?: number | null
+  is_idle?: boolean
+}
+
+export interface SmartRoutingModelPreview {
+  model: string
+  cost_first: SmartRoutingRankedCandidate[]
+  stability_first: SmartRoutingRankedCandidate[]
+}
+
+export interface SmartRoutingPreviewData {
+  meta: {
+    short_window_hours: number
+    long_window_hours: number
+    eligible_group_count: number
+    model_count: number
+  }
+  models: SmartRoutingModelPreview[]
+}
+
+export interface SmartRoutingPreviewResponse {
+  success: boolean
+  message?: string
+  data?: SmartRoutingPreviewData
 }

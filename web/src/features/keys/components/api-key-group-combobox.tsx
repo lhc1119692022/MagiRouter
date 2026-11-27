@@ -48,6 +48,7 @@ export type ApiKeyGroupOption = {
   label: string
   desc?: string
   ratio?: number | string
+  hasActiveChannels?: boolean
 }
 
 type ApiKeyGroupComboboxProps = {
@@ -120,8 +121,15 @@ export function ApiKeyGroupCombobox({
         )}
         <span className='flex min-w-0 flex-1 items-center justify-between gap-2 sm:gap-3'>
           <span className='min-w-0'>
-            <span className='block truncate font-medium'>
-              {selectedOption?.label || placeholder || t('Select a group')}
+            <span className='flex items-center gap-1.5 font-medium'>
+              <span className='truncate'>
+                {selectedOption?.label || placeholder || t('Select a group')}
+              </span>
+              {selectedOption?.hasActiveChannels === false && (
+                <span className='shrink-0 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300'>
+                  {t('Temporarily disconnected')}
+                </span>
+              )}
             </span>
             {selectedOption?.desc && (
               <span className='text-muted-foreground block truncate text-[11px] sm:text-xs'>
@@ -188,8 +196,13 @@ export function ApiKeyGroupCombobox({
                       )}
                     />
                     <span className='min-w-0 flex-1'>
-                      <span className='block truncate font-medium'>
-                        {option.label}
+                      <span className='flex items-center gap-1.5 font-medium'>
+                        <span className='truncate'>{option.label}</span>
+                        {option.hasActiveChannels === false && (
+                          <span className='shrink-0 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300'>
+                            {t('Temporarily disconnected')}
+                          </span>
+                        )}
                       </span>
                       {option.desc && (
                         <span className='text-muted-foreground block truncate text-xs'>

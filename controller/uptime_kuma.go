@@ -206,7 +206,7 @@ func GetUptimeHealth(c *gin.Context) {
 		filterGroups = []string{group}
 	}
 
-	enabledCounts, err := model.GetEnabledModelCountsByGroup(filterGroups)
+	enabledModelsByGroup, err := model.GetEnabledModelsByGroup(filterGroups)
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{
 			"status": "outage",
@@ -214,17 +214,18 @@ func GetUptimeHealth(c *gin.Context) {
 		})
 		return
 	}
+	enabledModelsByGroup, _ = filterHiddenModelsByGroup(enabledModelsByGroup)
 
 	enabledModels := 0
 	activeGroups := 0
-	for _, count := range enabledCounts {
-		if count > 0 {
-			enabledModels += count
+	for _, models := range enabledModelsByGroup {
+		if len(models) > 0 {
+			enabledModels += len(models)
 			activeGroups++
 		}
 	}
 
-	metricsResult, err := perfmetrics.QueryGroupStatus(hours, filterGroups)
+	metricsResult, err := perfmetrics.QueryGroupStatusForModels(hours, filterGroups, enabledModelsByGroup)
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{
 			"status": "outage",

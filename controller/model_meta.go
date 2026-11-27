@@ -31,13 +31,33 @@ func listModelsMeta(c *gin.Context, keyword, vendor string) {
 		return
 	}
 
+	sortBy := strings.ToLower(strings.TrimSpace(c.Query("sort_by")))
+	sortOrder := strings.ToLower(strings.TrimSpace(c.Query("sort_order")))
+	switch sortBy {
+	case "", "default", "id", "model_name", "vendor", "updated_time", "created_time", "channels", "issues":
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "Invalid sort field"})
+		return
+	}
+	if sortBy == "default" {
+		sortBy = ""
+	}
+	if sortOrder != "asc" && sortOrder != "desc" {
+		if sortBy == "model_name" || sortBy == "vendor" {
+			sortOrder = "asc"
+		} else {
+			sortOrder = "desc"
+		}
+	}
+
 	pageInfo := common.GetPageQuery(c)
-	if squareState != "" && (pageInfo.GetPage() < 1 || pageInfo.GetPageSize() < 1) {
+	needsFullEnrich := squareState != "" || sortBy != ""
+	if needsFullEnrich && (pageInfo.GetPage() < 1 || pageInfo.GetPageSize() < 1) {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "Invalid pagination"})
 		return
 	}
 	offset, limit := pageInfo.GetStartIdx(), pageInfo.GetPageSize()
-	if squareState != "" {
+	if needsFullEnrich {
 		// Visibility depends on live channels and metadata rules. Filter the
 		// enriched candidate set before counting and paginating the results.
 		offset, limit = 0, -1
@@ -62,13 +82,23 @@ func listModelsMeta(c *gin.Context, keyword, vendor string) {
 				filtered = append(filtered, metadata)
 			}
 		}
-		total = int64(len(filtered))
-		start := len(filtered)
-		if pageInfo.GetPage()-1 <= len(filtered)/pageInfo.GetPageSize() {
+		modelsMeta = filtered
+	}
+	if sortBy != "" {
+		var vendorNames map[int]string
+		if sortBy == "vendor" {
+			vendorNames = loadVendorNameMap()
+		}
+		sortModelsMeta(modelsMeta, sortBy, sortOrder == "desc", vendorNames)
+	}
+	if needsFullEnrich {
+		total = int64(len(modelsMeta))
+		start := len(modelsMeta)
+		if pageInfo.GetPage()-1 <= len(modelsMeta)/pageInfo.GetPageSize() {
 			start = (pageInfo.GetPage() - 1) * pageInfo.GetPageSize()
 		}
-		end := min(start+pageInfo.GetPageSize(), len(filtered))
-		modelsMeta = filtered[start:end]
+		end := min(start+pageInfo.GetPageSize(), len(modelsMeta))
+		modelsMeta = modelsMeta[start:end]
 	}
 
 	vendorCounts, _ := model.GetVendorModelCounts()
@@ -128,11 +158,13 @@ func CreateModelMeta(c *gin.Context) {
 		return
 	}
 
+	beforeModels := captureModelAvailabilitySnapshot()
 	if err := m.Insert(); err != nil {
 		common.ApiError(c, err)
 		return
 	}
 	model.RefreshPricing()
+	syncModelAvailabilityNotices(c, beforeModels)
 	m.HasMetadata = m.Id > 0
 	common.ApiSuccess(c, &m)
 }
@@ -150,6 +182,7 @@ func UpdateModelMeta(c *gin.Context) {
 		common.ApiErrorT(c, "Missing model ID")
 		return
 	}
+	beforeModels := captureModelAvailabilitySnapshot()
 
 	if statusOnly {
 		if m.Status != 0 && m.Status != 1 {
@@ -187,6 +220,7 @@ func UpdateModelMeta(c *gin.Context) {
 		}
 	}
 	model.RefreshPricing()
+	syncModelAvailabilityNotices(c, beforeModels)
 	m.HasMetadata = m.Id > 0
 	common.ApiSuccess(c, &m)
 }
@@ -213,11 +247,13 @@ func DeleteModelMeta(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "Model pricing is managed by a super administrator."})
 		return
 	}
+	beforeModels := captureModelAvailabilitySnapshot()
 	result, err := model.DeleteModelMetadata([]int{id}, removeFromChannels, removePricing)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
+	syncModelAvailabilityNotices(c, beforeModels)
 	recordManageAudit(c, "model.delete", map[string]any{"model_ids": []int{id}, "remove_from_channels": removeFromChannels, "remove_pricing": removePricing, "updated_channels": result.UpdatedChannels})
 	common.ApiSuccess(c, result)
 }
@@ -237,11 +273,13 @@ func BatchDeleteModelMeta(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "Model pricing is managed by a super administrator."})
 		return
 	}
+	beforeModels := captureModelAvailabilitySnapshot()
 	result, err := model.DeleteModels(request.ModelIDs, request.ChannelModels, request.RemoveFromChannels, request.RemovePricing)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
+	syncModelAvailabilityNotices(c, beforeModels)
 	auditPayload := map[string]any{
 		"model_ids":            request.ModelIDs,
 		"remove_from_channels": request.RemoveFromChannels,
@@ -253,6 +291,149 @@ func BatchDeleteModelMeta(c *gin.Context) {
 	}
 	recordManageAudit(c, "model.delete_batch", auditPayload)
 	common.ApiSuccess(c, result)
+}
+
+func BatchUpdateModelMeta(c *gin.Context) {
+	var request model.ModelBatchUpdateRequest
+	if err := common.DecodeJson(c.Request.Body, &request); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	beforeModels := captureModelAvailabilitySnapshot()
+	result, err := model.BatchUpdateModels(request)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	syncModelAvailabilityNotices(c, beforeModels)
+	auditPayload := map[string]any{
+		"model_ids":     request.ModelIDs,
+		"updated_count": result.UpdatedCount,
+		"created_count": result.CreatedCount,
+	}
+	if len(request.ChannelModels) > 0 {
+		auditPayload["channel_models"] = request.ChannelModels
+	}
+	recordManageAudit(c, "model.update_batch", auditPayload)
+	common.ApiSuccess(c, result)
+}
+
+func loadVendorNameMap() map[int]string {
+	var vendors []model.Vendor
+	result := make(map[int]string)
+	if err := model.DB.Select("id", "name").Find(&vendors).Error; err != nil {
+		return result
+	}
+	for _, vendor := range vendors {
+		result[vendor.Id] = strings.ToLower(strings.TrimSpace(vendor.Name))
+	}
+	return result
+}
+
+func modelConfigIssueScore(metadata *model.Model) int {
+	if metadata == nil {
+		return 0
+	}
+	score := 0
+	if metadata.Id <= 0 {
+		score += 100
+	}
+	if metadata.SquareState == model.ModelSquareUnavailable {
+		score += 40
+	} else if metadata.SquareState == model.ModelSquarePartial {
+		score += 15
+	}
+	if metadata.Id > 0 && metadata.VendorID <= 0 {
+		score += 25
+	}
+	if metadata.Id > 0 && strings.TrimSpace(metadata.Description) == "" {
+		score += 10
+	}
+	if metadata.Id > 0 {
+		_, declarations := model.SplitCatalogTaskTags(metadata.Tags)
+		if declarations == "" {
+			score += 5
+		}
+	}
+	return score
+}
+
+func sortModelsMeta(modelsMeta []*model.Model, sortBy string, desc bool, vendorNames map[int]string) {
+	sort.SliceStable(modelsMeta, func(i, j int) bool {
+		left, right := modelsMeta[i], modelsMeta[j]
+		cmp := 0
+		switch sortBy {
+		case "id":
+			if left.Id != right.Id {
+				if left.Id < right.Id {
+					cmp = -1
+				} else {
+					cmp = 1
+				}
+			}
+		case "model_name":
+			cmp = strings.Compare(strings.ToLower(left.ModelName), strings.ToLower(right.ModelName))
+		case "vendor":
+			leftVendor := vendorNames[left.VendorID]
+			rightVendor := vendorNames[right.VendorID]
+			if leftVendor == "" && rightVendor != "" {
+				return false
+			}
+			if leftVendor != "" && rightVendor == "" {
+				return true
+			}
+			cmp = strings.Compare(leftVendor, rightVendor)
+		case "updated_time":
+			if left.UpdatedTime != right.UpdatedTime {
+				if left.UpdatedTime < right.UpdatedTime {
+					cmp = -1
+				} else {
+					cmp = 1
+				}
+			}
+		case "created_time":
+			if left.CreatedTime != right.CreatedTime {
+				if left.CreatedTime < right.CreatedTime {
+					cmp = -1
+				} else {
+					cmp = 1
+				}
+			}
+		case "channels":
+			leftChannels := len(left.BoundChannels)
+			rightChannels := len(right.BoundChannels)
+			if leftChannels != rightChannels {
+				if leftChannels < rightChannels {
+					cmp = -1
+				} else {
+					cmp = 1
+				}
+			} else if left.ConfiguredChannelCount != right.ConfiguredChannelCount {
+				if left.ConfiguredChannelCount < right.ConfiguredChannelCount {
+					cmp = -1
+				} else {
+					cmp = 1
+				}
+			}
+		case "issues":
+			leftScore := modelConfigIssueScore(left)
+			rightScore := modelConfigIssueScore(right)
+			if leftScore != rightScore {
+				if leftScore < rightScore {
+					cmp = -1
+				} else {
+					cmp = 1
+				}
+			}
+		}
+		if cmp == 0 {
+			return strings.ToLower(left.ModelName) < strings.ToLower(right.ModelName)
+		}
+		if desc {
+			return cmp > 0
+		}
+		return cmp < 0
+	})
 }
 
 // enrichModels keeps configured endpoints intact and derives connections from

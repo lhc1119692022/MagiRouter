@@ -22,7 +22,8 @@ import { toast } from 'sonner'
 
 import { handleServerError } from '@/lib/handle-server-error'
 
-import { updateModelStatus } from '../api'
+import { batchUpdateModels, updateModelStatus } from '../api'
+import type { Model } from '../types'
 import { invalidateVendorData } from '../vendor-api'
 
 // ============================================================================
@@ -197,5 +198,62 @@ export async function handleBatchDisableModels(
     }
   } catch (error: unknown) {
     handleServerError(error, i18next.t('Batch disable failed'))
+  }
+}
+
+export async function handleBatchSetModelVisibility(
+  models: Model[],
+  status: 0 | 1,
+  queryClient?: QueryClient,
+  onSuccess?: () => void
+): Promise<void> {
+  const modelIds = models
+    .filter((model) => model.id > 0)
+    .map((model) => model.id)
+  const channelModels = models
+    .filter((model) => model.id <= 0)
+    .map((model) => model.model_name)
+
+  if (modelIds.length === 0 && channelModels.length === 0) {
+    toast.error(i18next.t('Please select at least one model'))
+    return
+  }
+
+  try {
+    const response = await batchUpdateModels({
+      model_ids: modelIds,
+      channel_models: channelModels,
+      status,
+    })
+    if (response.success) {
+      const total =
+        (response.data?.updated_count ?? 0) +
+        (response.data?.created_count ?? 0)
+      toast.success(
+        status === 1
+          ? i18next.t('Shown {{count}} models in model square', {
+              count: total || models.length,
+            })
+          : i18next.t('Hidden {{count}} models from model square', {
+              count: total || models.length,
+            })
+      )
+      if (queryClient) await invalidateVendorData(queryClient)
+      onSuccess?.()
+    } else {
+      handleServerError(
+        response,
+        status === 1
+          ? i18next.t('Batch enable failed')
+          : i18next.t('Batch disable failed')
+      )
+    }
+  } catch (error: unknown) {
+    handleServerError(
+      error,
+      status === 1
+        ? i18next.t('Batch enable failed')
+        : i18next.t('Batch disable failed')
+    )
   }
 }

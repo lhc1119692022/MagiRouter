@@ -134,7 +134,27 @@ func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, m
 	appendParamOverrideInfo(relayInfo, other)
 	appendRequestPluginRecord(relayInfo, other)
 	appendStreamStatus(relayInfo, other)
+	appendRouteDecisionInfo(ctx, other)
 	return other
+}
+
+func appendRouteDecisionInfo(ctx *gin.Context, other *model.LogOther) {
+	if ctx == nil || other == nil {
+		return
+	}
+	tokenGroup := common.GetContextKeyString(ctx, constant.ContextKeyTokenGroup)
+	routePolicy := GetRequestRoutePolicy(ctx)
+	if routePolicy != "" {
+		other.SetPublic("route_policy", routePolicy)
+	} else if tokenGroup == "auto" {
+		other.SetPublic("route_policy", "custom_auto")
+	}
+	if primaryGroup := common.GetContextKeyString(ctx, constant.ContextKeyRoutePrimaryGroup); primaryGroup != "" {
+		other.SetPublic("route_primary_group", primaryGroup)
+	}
+	if fallbackFrom := common.GetContextKeyString(ctx, constant.ContextKeyRouteFallbackFrom); fallbackFrom != "" {
+		other.SetPublic("route_fallback_from", fallbackFrom)
+	}
 }
 
 func AppendResponseModelLogInfo(relayInfo *relaycommon.RelayInfo, other *model.LogOther) {

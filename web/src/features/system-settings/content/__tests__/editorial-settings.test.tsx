@@ -72,3 +72,38 @@ test('reordering FAQ persists the published order through the original option', 
     value: JSON.stringify([second, first]),
   })
 })
+
+test('auto-sync model notices switch persists option and renders auto-synced badge', async () => {
+  const user = userEvent.setup()
+  const write = vi
+    .spyOn(api, 'put')
+    .mockResolvedValue({ data: { success: true } })
+  const autoNotice = {
+    id: 101,
+    title: 'Model launched: deepseek-v4',
+    category: 'model',
+    kindLabel: 'Model launch',
+    content: 'Newly available models (1): deepseek-v4',
+    publishDate: '2026-11-27T11:20:00Z',
+    type: 'success',
+    source: 'auto_model_sync',
+  }
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <AnnouncementsSection
+        enabled
+        autoModelChangeNoticeEnabled
+        data={JSON.stringify([autoNotice])}
+      />
+    </QueryClientProvider>
+  )
+  expect(await screen.findByText('Auto-synced')).toBeInTheDocument()
+  const toggle = screen.getByRole('switch', {
+    name: /Auto-sync model notices/i,
+  })
+  await user.click(toggle)
+  expect(write).toHaveBeenCalledWith('/api/option/', {
+    key: 'console_setting.auto_model_change_notice_enabled',
+    value: false,
+  })
+})

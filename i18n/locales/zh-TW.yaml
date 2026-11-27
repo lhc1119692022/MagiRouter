@@ -32,6 +32,7 @@ distributor.get_channel_failed: "獲取分組 {{.Group}} 下模型 {{.Model}} �
 distributor.no_available_channel: "分組 {{.Group}} 下模型 {{.Model}} 無可用管道（distributor）"
 distributor.no_available_channel_task_plugin: "分組 {{.Group}} 下模型 {{.Model}} 無可用管道：該模型由任務插件認領，但目前沒有啟用的管道可服務此模型（distributor）"
 distributor.invalid_request_parse_model: "無法解析模型"
+distributor.smart_route_reasoning_only: "目前金鑰為推理模型自動路由，暫不支援呼叫 {{.Model}}（圖片/影片/音訊等非推理模型），請單獨建立並選擇對應專項分組的金鑰。"
 quota.user_insufficient: "使用者額度不足，剩餘額度：{{.Remaining}}"
 quota.pre_consume_insufficient: "預扣費額度失敗，使用者剩餘額度：{{.Remaining}}，需要預扣費額度：{{.Required}}"
 quota.subscription_insufficient: "訂閱額度不足或未設定訂閱：{{.Error}}"
@@ -103,3 +104,17 @@ channel.upstream_update_failed_channels: "失敗管道 ID（顯示 {{.Shown}}/{{
 channel.upstream_update_more_omitted: "（其餘 {{.Count}} 個已省略）"
 
 channel.notify_scheduled_subject: "渠道「{{.Name}}」(#{{.Id}}) 外掛通知"
+
+# Site notices published automatically when models come online or go offline
+model_notice.launch_kind: "模型上線"
+model_notice.offline_kind: "模型下線"
+model_notice.launch_title_single: "模型上線：{{.Models}}"
+model_notice.launch_title_multi: "模型上線：{{.Models}} 等 {{.Count}} 個模型"
+model_notice.offline_title_single: "模型下線：{{.Models}}"
+model_notice.offline_title_multi: "模型下線：{{.Models}} 等 {{.Count}} 個模型"
+model_notice.launch_content: "新上線模型（{{.Count}} 個）：{{.Models}}"
+model_notice.offline_content: "以下模型已下線並暫停服務（{{.Count}} 個）：{{.Models}}"
+model_notice.groups_suffix: "可用分組：{{.Groups}}"
+model_notice.prev_groups_suffix: "原所屬分組：{{.Groups}}"
+model_notice.more_models: "等共 {{.Count}} 個"
+model_notice.auto_extra: "後台管理自動同步"

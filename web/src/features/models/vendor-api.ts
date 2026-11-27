@@ -22,6 +22,7 @@ import { t } from 'i18next'
 
 import { api } from '@/lib/api'
 import { createServerError } from '@/lib/server-error-message'
+import { invalidatePublishedStatusQueries } from '@/lib/status-query'
 
 import type { Model, Vendor } from './types'
 
@@ -100,6 +101,7 @@ export async function invalidateVendorData(client: QueryClient) {
       client.invalidateQueries({ queryKey: [key] })
     )
   )
+  invalidatePublishedStatusQueries(client)
 }
 
 export async function previewVendorOperation(

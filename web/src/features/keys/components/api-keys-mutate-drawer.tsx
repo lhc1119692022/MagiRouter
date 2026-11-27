@@ -18,7 +18,15 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery } from '@tanstack/react-query'
-import { Calendar, ChevronDown } from 'lucide-react'
+import {
+  Calendar,
+  Check,
+  ChevronDown,
+  Coins,
+  Info,
+  ShieldCheck,
+  Sparkles,
+} from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useForm, type SubmitErrorHandler } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -54,6 +62,7 @@ import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { RelatedPolicyLink } from '@/features/system-settings/request-policies/related-policy-link'
 import { useStatus } from '@/hooks/use-status'
+import { toIntlLocale } from '@/i18n/languages'
 import { getUserModels, getUserGroups } from '@/lib/api'
 import { getCurrencyDisplay, getCurrencyLabel } from '@/lib/currency'
 import { handleServerError } from '@/lib/handle-server-error'
@@ -76,10 +85,15 @@ import {
   getApiKeyFormSchema,
   type ApiKeyFormValues,
   getApiKeyFormDefaultValues,
+  normalizeTokenRoutePolicy,
   transformFormDataToPayload,
   transformApiKeyToFormDefaults,
 } from '../lib'
-import type { ApiKey } from '../types'
+import type {
+  ApiKey,
+  SmartRoutingPolicySummary,
+  TokenRoutePolicy,
+} from '../types'
 import {
   ApiKeyGroupCombobox,
   type ApiKeyGroupOption,
@@ -106,7 +120,8 @@ export function ApiKeysMutateDrawer({
   singleCreate,
   currentRow,
 }: ApiKeyMutateDrawerProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const locale = toIntlLocale(i18n.language)
   const isUpdate = !!currentRow
   const currentRowId = currentRow?.id
   const { triggerRefresh } = useApiKeys()
@@ -180,10 +195,22 @@ export function ApiKeysMutateDrawer({
           label: key,
           desc: info.desc ? translateServerText(t, info.desc) : key,
           ratio: info.ratio,
+          hasActiveChannels: info.has_active_channels,
         })),
     [groupsData, isUpdate, currentKeyGroup, t]
   )
   const backendHasAuto = groups.some((g) => g.value === 'auto')
+  const smartRouting = autoGroupsData?.data?.smart_routing
+  const smartRoutingEnabled =
+    smartRouting?.enabled === true &&
+    groupsData?.smart_routing_enabled !== false
+  const smartPolicies = useMemo(
+    () => (smartRoutingEnabled ? (smartRouting?.policies ?? []) : []),
+    [smartRouting, smartRoutingEnabled]
+  )
+  const hasAvailableSmartPolicies = smartPolicies.some(
+    (policy) => policy.available
+  )
   const availableAutoGroupNames = useMemo(
     () => groups.filter((group) => group.value !== 'auto').map((g) => g.value),
     [groups]
@@ -250,7 +277,8 @@ export function ApiKeysMutateDrawer({
         form.reset(defaults)
         setExpirePreset(defaults.expired_time ? 'custom' : 'never')
         setAdvancedOpen(
-          defaults.model_limits.length > 0 || Boolean(defaults.allow_ips?.trim())
+          defaults.model_limits.length > 0 ||
+            Boolean(defaults.allow_ips?.trim())
         )
         setInitializedTarget(target)
       }
@@ -286,11 +314,24 @@ export function ApiKeysMutateDrawer({
     isUpdate && currentRow ? `update:${currentRow.id}` : 'create'
   const isFormInitialized = initializedTarget === formTarget
   const selectedGroup = form.watch('group')
+  const selectedRoutePolicy = normalizeTokenRoutePolicy(
+    form.watch('route_policy')
+  )
+  const isSmartPolicySelected =
+    selectedGroup === 'auto' && selectedRoutePolicy !== ''
+  const activeSmartPolicy = useMemo<SmartRoutingPolicySummary | undefined>(
+    () =>
+      selectedRoutePolicy
+        ? smartPolicies.find((policy) => policy.id === selectedRoutePolicy)
+        : undefined,
+    [selectedRoutePolicy, smartPolicies]
+  )
 
   // Correct group after groups load: if the form value is not in available groups, fall back
   useEffect(() => {
     if (!groupsFetched || groupsFetching) return
     if (groups.length === 0 && !requireExplicitGroup) return
+    if (isSmartPolicySelected && (smartRoutingEnabled || isUpdate)) return
     const currentGroup = selectedGroup
     if (currentGroup && !groups.some((g) => g.value === currentGroup)) {
       let fallback = ''
@@ -304,6 +345,7 @@ export function ApiKeysMutateDrawer({
       if (currentGroup === 'auto') {
         form.setValue('auto_groups', [])
         form.setValue('auto_groups_mode', 'inherit')
+        form.setValue('route_policy', '')
         form.setValue('cross_group_retry', false)
       }
     }
@@ -313,6 +355,9 @@ export function ApiKeysMutateDrawer({
     groupsFetching,
     form,
     selectedGroup,
+    isSmartPolicySelected,
+    smartRoutingEnabled,
+    isUpdate,
     requireExplicitGroup,
   ])
 
@@ -406,10 +451,48 @@ export function ApiKeysMutateDrawer({
     : t('Enter quota in {{currency}}', { currency: currencyLabel })
   const autoGroupsMode = form.watch('auto_groups_mode')
   const unlimitedQuota = form.watch('unlimited_quota')
-  const noBillingGroupsAvailable = requireExplicitGroup && groups.length === 0
+  const noBillingGroupsAvailable =
+    requireExplicitGroup && groups.length === 0 && !hasAvailableSmartPolicies
   const groupPlaceholder = requireExplicitGroup
     ? t('Select a billing group (required)')
     : t('Select a group')
+  const formatRatioRange = (
+    minRatio?: number | null,
+    maxRatio?: number | null
+  ) => {
+    if (minRatio == null || maxRatio == null) return null
+    const formatter = new Intl.NumberFormat(locale, {
+      maximumFractionDigits: 4,
+    })
+    const minText = `${formatter.format(minRatio)}x`
+    const maxText = `${formatter.format(maxRatio)}x`
+    return Math.abs(minRatio - maxRatio) < 1e-6
+      ? minText
+      : `${minText} – ${maxText}`
+  }
+  const handleSelectSmartPolicy = (policyId: TokenRoutePolicy) => {
+    if (!policyId) return
+    if (selectedRoutePolicy === policyId && selectedGroup === 'auto') {
+      form.setValue('route_policy', '', { shouldDirty: true })
+      form.setValue('group', requireExplicitGroup ? '' : 'default', {
+        shouldDirty: true,
+        shouldValidate: true,
+      })
+      form.setValue('cross_group_retry', false, { shouldDirty: true })
+      return
+    }
+    form.setValue('group', 'auto', {
+      shouldDirty: true,
+      shouldValidate: true,
+    })
+    form.setValue('route_policy', policyId, {
+      shouldDirty: true,
+      shouldValidate: true,
+    })
+    form.setValue('auto_groups_mode', 'inherit', { shouldDirty: true })
+    form.setValue('auto_groups', [], { shouldDirty: true })
+    form.setValue('cross_group_retry', true, { shouldDirty: true })
+  }
 
   return (
     <Sheet
@@ -464,17 +547,195 @@ export function ApiKeysMutateDrawer({
                 name='group'
                 render={({ field }) => (
                   <FormItem>
+                    {smartPolicies.length > 0 && (
+                      <div className='kform-smart-block'>
+                        <div className='kform-label-row'>
+                          <span className='kform-label inline-flex items-center gap-1.5'>
+                            <Sparkles
+                              className='text-primary size-3.5'
+                              aria-hidden='true'
+                            />
+                            {t('Smart routing')}
+                          </span>
+                          <span className='kform-hint'>
+                            {t('Reasoning models only')}
+                          </span>
+                        </div>
+                        <div
+                          className='kform-smart-grid'
+                          role='radiogroup'
+                          aria-label={t('Smart routing')}
+                        >
+                          {smartPolicies.map((policy) => {
+                            const policyId = normalizeTokenRoutePolicy(
+                              policy.id
+                            )
+                            if (!policyId) return null
+                            const isCostFirst = policyId === 'cost_first'
+                            const isActive =
+                              isSmartPolicySelected &&
+                              selectedRoutePolicy === policyId
+                            const ratioRange = formatRatioRange(
+                              policy.min_ratio,
+                              policy.max_ratio
+                            )
+                            return (
+                              <button
+                                key={policy.id}
+                                type='button'
+                                role='radio'
+                                aria-checked={isActive}
+                                disabled={!policy.available}
+                                data-smart-policy={policy.id}
+                                className={cn(
+                                  'kform-smart-card',
+                                  isActive && 'is-active'
+                                )}
+                                onClick={() =>
+                                  handleSelectSmartPolicy(policyId)
+                                }
+                              >
+                                <div className='kform-smart-card-head'>
+                                  <span className='kform-smart-card-title'>
+                                    {isCostFirst ? (
+                                      <Coins
+                                        className='size-3.5 shrink-0'
+                                        aria-hidden='true'
+                                      />
+                                    ) : (
+                                      <ShieldCheck
+                                        className='size-3.5 shrink-0'
+                                        aria-hidden='true'
+                                      />
+                                    )}
+                                    <span>
+                                      {isCostFirst
+                                        ? t('Cost first')
+                                        : t('Stability first')}
+                                    </span>
+                                  </span>
+                                  <span className='inline-flex items-center gap-1'>
+                                    {ratioRange && (
+                                      <span className='kform-smart-ratio'>
+                                        {ratioRange}
+                                      </span>
+                                    )}
+                                    {isActive && (
+                                      <Check
+                                        className='text-primary size-3.5 shrink-0'
+                                        aria-hidden='true'
+                                      />
+                                    )}
+                                  </span>
+                                </div>
+                                <span className='kform-smart-card-desc'>
+                                  {!policy.available &&
+                                    t(
+                                      'No eligible reasoning models available yet.'
+                                    )}
+                                  {policy.available &&
+                                    isCostFirst &&
+                                    t(
+                                      'Picks healthy lowest-rate groups first and avoids outages automatically.'
+                                    )}
+                                  {policy.available &&
+                                    !isCostFirst &&
+                                    t(
+                                      'Picks the highest reliability, fastest TTFT/TPS, and best cache hit groups.'
+                                    )}
+                                </span>
+                              </button>
+                            )
+                          })}
+                        </div>
+
+                        {isSmartPolicySelected && (
+                          <div className='kform-smart-preview'>
+                            <div className='kform-smart-notice'>
+                              <Info
+                                className='text-primary mt-0.5 size-3.5 shrink-0'
+                                aria-hidden='true'
+                              />
+                              <span>
+                                {t(
+                                  'Smart routing applies to reasoning & text models only. Image, video, audio, and embedding models require a specific billing group.'
+                                )}
+                              </span>
+                            </div>
+                            {activeSmartPolicy?.sample_routes &&
+                              activeSmartPolicy.sample_routes.length > 0 && (
+                                <div className='kform-smart-samples'>
+                                  <span className='kform-smart-samples-title'>
+                                    {t('Current primary routes')}
+                                  </span>
+                                  <div className='kform-smart-samples-list'>
+                                    {activeSmartPolicy.sample_routes
+                                      .slice(0, 4)
+                                      .map((sample) => (
+                                        <span
+                                          key={`${sample.model}:${sample.group}`}
+                                          className='kform-smart-sample-chip'
+                                        >
+                                          <span
+                                            className={cn(
+                                              'kform-smart-dot',
+                                              sample.status === 'degraded' &&
+                                                'is-degraded',
+                                              sample.status === 'outage' &&
+                                                'is-outage',
+                                              sample.status !== 'degraded' &&
+                                                sample.status !== 'outage' &&
+                                                'is-healthy'
+                                            )}
+                                            aria-hidden='true'
+                                          />
+                                          <span className='truncate font-mono'>
+                                            {sample.model}
+                                          </span>
+                                          <span className='opacity-50'>→</span>
+                                          <span className='truncate font-medium'>
+                                            {sample.group}
+                                          </span>
+                                          <span className='tabular-nums opacity-70'>
+                                            {new Intl.NumberFormat(locale, {
+                                              maximumFractionDigits: 4,
+                                            }).format(sample.ratio)}
+                                            x
+                                          </span>
+                                        </span>
+                                      ))}
+                                  </div>
+                                </div>
+                              )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {isSmartPolicySelected && !smartRoutingEnabled && (
+                      <FormDescription className='text-xs text-amber-600 dark:text-amber-400'>
+                        {t(
+                          'Smart routing is currently disabled. Select a billing group below to replace this policy.'
+                        )}
+                      </FormDescription>
+                    )}
+
                     <FormLabel
                       className='kform-label'
                       required={requireExplicitGroup}
                     >
-                      {t('Group')}
+                      {smartPolicies.length > 0
+                        ? t('Or choose a specific billing group')
+                        : t('Group')}
                     </FormLabel>
                     <FormControl>
                       <ApiKeyGroupCombobox
                         options={groups}
-                        value={field.value}
+                        value={isSmartPolicySelected ? undefined : field.value}
                         onValueChange={(group) => {
+                          form.setValue('route_policy', '', {
+                            shouldDirty: true,
+                          })
                           field.onChange(group)
                           if (group === 'auto') {
                             form.setValue('cross_group_retry', true, {
@@ -486,7 +747,13 @@ export function ApiKeysMutateDrawer({
                             shouldDirty: true,
                           })
                         }}
-                        placeholder={groupPlaceholder}
+                        placeholder={
+                          isSmartPolicySelected
+                            ? t(
+                                'Using smart routing (click to switch to a fixed group)'
+                              )
+                            : groupPlaceholder
+                        }
                       />
                     </FormControl>
                     {requireExplicitGroup && (
@@ -512,7 +779,7 @@ export function ApiKeysMutateDrawer({
                 )}
               />
 
-              {selectedGroup === 'auto' && (
+              {selectedGroup === 'auto' && !isSmartPolicySelected && (
                 <FormField
                   control={form.control}
                   name='auto_groups'
@@ -555,7 +822,7 @@ export function ApiKeysMutateDrawer({
                 />
               )}
 
-              {selectedGroup === 'auto' && (
+              {selectedGroup === 'auto' && !isSmartPolicySelected && (
                 <FormField
                   control={form.control}
                   name='cross_group_retry'

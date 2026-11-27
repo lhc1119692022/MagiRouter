@@ -256,9 +256,35 @@ func RecordOperationAuditLog(logUserId, actorRole int, content string, ip string
 	RecordAuditLog(c, AuditLog{UserId: logUserId, Username: username, ActorRole: actorRole, Category: category, Action: action, Content: content, Ip: ip, Status: status, Success: success, Other: other})
 }
 
+func attachWalletRemain(userId int, other *LogOther) *LogOther {
+	if userId <= 0 || DB == nil {
+		return other
+	}
+	if other != nil {
+		if _, hasSubRemain := other.public["subscription_remain"]; hasSubRemain {
+			return other
+		}
+		if _, hasWalletRemain := other.public["wallet_remain"]; hasWalletRemain {
+			return other
+		}
+	}
+	var row struct {
+		Quota int
+	}
+	tx := DB.Model(&User{}).Select("quota").Where("id = ?", userId).Limit(1).Find(&row)
+	if tx.Error == nil && tx.RowsAffected > 0 {
+		if other == nil {
+			other = NewLogOther()
+		}
+		other.SetPublic("wallet_remain", row.Quota)
+	}
+	return other
+}
+
 func RecordTopupLog(userId int, content *common.Message, callerIp string, paymentMethod string, callbackPaymentMethod string) {
 	username, _ := GetUsernameById(userId, false)
 	other := NewLogOther()
+	other = attachWalletRemain(userId, other)
 	other.MergeAdmin(map[string]any{
 		"server_ip":               common.GetIp(),
 		"node_name":               common.NodeName,
@@ -288,6 +314,7 @@ func RecordErrorLog(c *gin.Context, userId int, channelId int, modelName string,
 	username := c.GetString("username")
 	requestId := c.GetString(common.RequestIdKey)
 	upstreamRequestId := c.GetString(common.UpstreamRequestIdKey)
+	other = attachWalletRemain(userId, other)
 	otherStr := other.JSONString()
 	// 判断是否需要记录 IP
 	needRecordIp := false
@@ -356,6 +383,7 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 	upstreamRequestId := c.GetString(common.UpstreamRequestIdKey)
 	createdAt := common.GetTimestamp()
 	other := params.Other
+	other = attachWalletRemain(userId, other)
 	content := other.setContent(params.Content)
 	otherStr := other.JSONString()
 	// 判断是否需要记录 IP
@@ -446,6 +474,7 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 	}
 	createdAt := common.GetTimestamp()
 	other := params.Other
+	other = attachWalletRemain(params.UserId, other)
 	log := &Log{
 		UserId:    params.UserId,
 		Username:  username,

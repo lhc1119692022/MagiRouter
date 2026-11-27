@@ -39,6 +39,10 @@ func GetUserGroups(c *gin.Context) {
 			enabledGroupSet[groupName] = struct{}{}
 		}
 	}
+	visibleModelsByGroup, visibleErr := model.GetVisibleModelsByGroup(nil)
+	if visibleErr != nil {
+		visibleModelsByGroup = nil
+	}
 	for groupName := range ratio_setting.GetGroupRatioCopy() {
 		if ratio_setting.IsUserManagementGroup(groupName) {
 			continue
@@ -49,9 +53,19 @@ func GetUserGroups(c *gin.Context) {
 				"ratio": service.GetUserGroupRatio(userGroup, groupName),
 				"desc":  desc,
 			}
-			if enabledGroupSet != nil {
+			if visibleModelsByGroup != nil {
+				models := visibleModelsByGroup[groupName]
+				entry["has_models"] = len(models) > 0
+				if len(models) > 0 {
+					entry["models"] = models
+				}
+			} else if enabledGroupSet != nil {
 				_, hasModels := enabledGroupSet[groupName]
 				entry["has_models"] = hasModels
+			}
+			if enabledGroupSet != nil {
+				_, hasActiveChannels := enabledGroupSet[groupName]
+				entry["has_active_channels"] = hasActiveChannels
 			}
 			usableGroups[groupName] = entry
 		}
@@ -61,15 +75,35 @@ func GetUserGroups(c *gin.Context) {
 			"ratio": "auto",
 			"desc":  setting.GetUsableGroupDescription("auto"),
 		}
-		if enabledGroupSet != nil {
+		autoGroups := service.GetUserAutoGroup(userGroup)
+		if visibleModelsByGroup != nil {
 			hasModels := false
-			for _, autoGroup := range service.GetUserAutoGroup(userGroup) {
+			for _, autoGroup := range autoGroups {
+				if len(visibleModelsByGroup[autoGroup]) > 0 {
+					hasModels = true
+					break
+				}
+			}
+			entry["has_models"] = hasModels
+		} else if enabledGroupSet != nil {
+			hasModels := false
+			for _, autoGroup := range autoGroups {
 				if _, ok := enabledGroupSet[autoGroup]; ok {
 					hasModels = true
 					break
 				}
 			}
 			entry["has_models"] = hasModels
+		}
+		if enabledGroupSet != nil {
+			hasActiveChannels := false
+			for _, autoGroup := range autoGroups {
+				if _, ok := enabledGroupSet[autoGroup]; ok {
+					hasActiveChannels = true
+					break
+				}
+			}
+			entry["has_active_channels"] = hasActiveChannels
 		}
 		usableGroups["auto"] = entry
 	}
@@ -79,5 +113,6 @@ func GetUserGroups(c *gin.Context) {
 		"data":                   usableGroups,
 		"user_group":             userGroup,
 		"require_explicit_group": ratio_setting.IsUserManagementGroup(userGroup),
+		"smart_routing_enabled":  setting.GetSmartRoutingConfig().Enabled,
 	})
 }

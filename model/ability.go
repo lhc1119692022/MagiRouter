@@ -58,15 +58,81 @@ func GetEnabledModelGroups() ([]string, error) {
 	if DB == nil {
 		return nil, errors.New("database not initialized")
 	}
+	groupCol := perfMetricGroupCol()
 	var groups []string
 	err := DB.Table("abilities").
 		Joins("JOIN channels ON abilities.channel_id = channels.id").
 		Where("abilities.enabled = ? AND channels.status = ? AND abilities.model <> ?", true, common.ChannelStatusEnabled, "").
-		Distinct("abilities." + commonGroupCol).
-		Pluck("abilities."+commonGroupCol, &groups).Error
+		Distinct("abilities."+groupCol).
+		Pluck("abilities."+groupCol, &groups).Error
 	return groups, err
 }
 
+// GetVisibleModelsByGroup returns distinct non-empty models configured for each group
+// on either active enabled channels or auto-disabled (temporarily disconnected) channels.
+// Groups with only manually-disabled channels or zero models are excluded so truly empty
+// groups remain hidden while temporarily disconnected groups stay visible as backups.
+func GetVisibleModelsByGroup(groups []string) (map[string][]string, error) {
+	result := make(map[string][]string)
+	if DB == nil {
+		return result, errors.New("database not initialized")
+	}
+	groupCol := perfMetricGroupCol()
+	query := DB.Table("abilities").
+		Select("DISTINCT abilities."+groupCol+" AS group_name, abilities.model AS model").
+		Joins("JOIN channels ON abilities.channel_id = channels.id").
+		Where(
+			"((abilities.enabled = ? AND channels.status = ?) OR channels.status = ?) AND abilities.model <> ?",
+			true, common.ChannelStatusEnabled, common.ChannelStatusAutoDisabled, "",
+		)
+	if groups != nil {
+		if len(groups) == 0 {
+			return result, nil
+		}
+		query = query.Where("abilities."+groupCol+" IN ?", groups)
+	}
+	var rows []struct {
+		Group string `gorm:"column:group_name"`
+		Model string `gorm:"column:model"`
+	}
+	if err := query.Scan(&rows).Error; err != nil {
+		return result, err
+	}
+	for _, row := range rows {
+		if row.Group == "" || row.Model == "" {
+			continue
+		}
+		result[row.Group] = append(result[row.Group], row.Model)
+	}
+	for group := range result {
+		sort.Strings(result[group])
+	}
+	return result, nil
+}
+
+// GetEnabledGroupsForModel returns distinct groups that currently have at least one
+// enabled channel serving modelName (also matching normalized routing model names).
+func GetEnabledGroupsForModel(modelName string) ([]string, error) {
+	if DB == nil {
+		return nil, errors.New("database not initialized")
+	}
+	trimmed := strings.TrimSpace(modelName)
+	if trimmed == "" {
+		return nil, nil
+	}
+	names := []string{trimmed}
+	if normalized := ratio_setting.RoutingMatchModelName(trimmed); normalized != "" && normalized != trimmed {
+		names = append(names, normalized)
+	}
+	groupCol := perfMetricGroupCol()
+	var groups []string
+	err := DB.Table("abilities").
+		Joins("JOIN channels ON abilities.channel_id = channels.id").
+		Where("abilities.enabled = ? AND channels.status = ? AND abilities.model IN ?", true, common.ChannelStatusEnabled, names).
+		Distinct("abilities."+groupCol).
+		Pluck("abilities."+groupCol, &groups).Error
+	return groups, err
+}
 func GetAllEnableAbilities() []Ability {
 	var abilities []Ability
 	DB.Find(&abilities, "enabled = ?", true)

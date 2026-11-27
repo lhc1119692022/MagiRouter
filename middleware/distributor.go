@@ -106,6 +106,12 @@ func Distribute() func(c *gin.Context) {
 		}
 		if pinned || shouldSelectChannel {
 			usingGroup := common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
+			if !pinned && usingGroup == "auto" {
+				if routePolicy := service.GetRequestRoutePolicy(c); routePolicy != "" && !service.IsReasoningModelForSmartPolicy(modelRequest.Model, c.Request.URL.Path) {
+					abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorSmartRouteReasoningOnly, map[string]any{"Model": modelRequest.Model}))
+					return
+				}
+			}
 			var selectErr *service.ChannelSelectError
 			if value, exists := c.Get(contextKeyTaskPluginEndpointSelection); exists && !pinned {
 				if selected, ok := value.(taskPluginEndpointSelection); ok && selected.Model == modelRequest.Model && selected.Channel != nil && selected.Channel.Status == common.ChannelStatusEnabled {

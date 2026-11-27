@@ -40,6 +40,7 @@ const (
 	MsgDistributorNoAvailableChannel           = "distributor.no_available_channel"
 	MsgDistributorNoAvailableChannelTaskPlugin = "distributor.no_available_channel_task_plugin"
 	MsgDistributorInvalidParseModel            = "distributor.invalid_request_parse_model"
+	MsgDistributorSmartRouteReasoningOnly      = "distributor.smart_route_reasoning_only"
 
 	MsgQuotaUserInsufficient             = "quota.user_insufficient"
 	MsgQuotaPreConsumeInsufficient       = "quota.pre_consume_insufficient"
@@ -125,4 +126,20 @@ const (
 	MsgChannelUpstreamUpdateRemovedModels   = "channel.upstream_update_removed_models"
 	MsgChannelUpstreamUpdateFailedChannels  = "channel.upstream_update_failed_channels"
 	MsgChannelUpstreamUpdateMoreOmitted     = "channel.upstream_update_more_omitted"
+)
+
+// Site notices published automatically when models come online or go offline
+const (
+	MsgModelNoticeLaunchKind          = "model_notice.launch_kind"
+	MsgModelNoticeOfflineKind         = "model_notice.offline_kind"
+	MsgModelNoticeLaunchTitleSingle   = "model_notice.launch_title_single"
+	MsgModelNoticeLaunchTitleMulti    = "model_notice.launch_title_multi"
+	MsgModelNoticeOfflineTitleSingle  = "model_notice.offline_title_single"
+	MsgModelNoticeOfflineTitleMulti   = "model_notice.offline_title_multi"
+	MsgModelNoticeLaunchContent       = "model_notice.launch_content"
+	MsgModelNoticeOfflineContent      = "model_notice.offline_content"
+	MsgModelNoticeGroupsSuffix        = "model_notice.groups_suffix"
+	MsgModelNoticePrevGroupsSuffix    = "model_notice.prev_groups_suffix"
+	MsgModelNoticeMoreModels          = "model_notice.more_models"
+	MsgModelNoticeAutoExtra           = "model_notice.auto_extra"
 )

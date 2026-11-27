@@ -73,6 +73,7 @@ type GroupFormValues = {
   AutoGroups: string
   MaxTokenAutoGroups: number
   DefaultUseAutoGroup: boolean
+  SmartRoutingConfig?: string
   GroupSpecialUsableGroup: string
   UserManagementGroups: string
 }
@@ -180,6 +181,7 @@ export const GroupRatioForm = memo(function GroupRatioForm({
             userManagementGroups={values.UserManagementGroups ?? ''}
             groupGroupRatio={values.GroupGroupRatio ?? ''}
             autoGroups={values.AutoGroups ?? ''}
+            smartRoutingConfig={values.SmartRoutingConfig ?? ''}
             maxTokenAutoGroupsField={
               <FormField
                 control={form.control}
@@ -466,6 +468,31 @@ export const GroupRatioForm = memo(function GroupRatioForm({
                     />
                   </FormControl>
                 </SettingsSwitchItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name='SmartRoutingConfig'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('Smart routing')}</FormLabel>
+                  <FormControl>
+                    <JsonCodeEditor
+                      value={field.value ?? ''}
+                      onChange={field.onChange}
+                      name={field.name}
+                      onBlur={field.onBlur}
+                      textareaRef={field.ref}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    {t(
+                      'JSON configuration for built-in smart routing policies (Cost first & Stability first).'
+                    )}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
               )}
             />
           </SettingsForm>

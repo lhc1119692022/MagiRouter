@@ -124,6 +124,8 @@ export interface ChannelSettings {
   http_protocol?: 'auto' | 'http1' | string
   http2_connection_shards?: number
   tls_insecure_skip_verify?: boolean
+  upstream_group_ratio?: number
+  upstream_group_name?: string
 }
 
 export interface ChannelOtherSettings {
@@ -314,6 +316,7 @@ export type ChannelSortBy =
   | 'balance'
   | 'response_time'
   | 'test_time'
+  | 'created_time'
 
 export type ChannelSortOrder = 'asc' | 'desc'
 

@@ -18,7 +18,17 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useQueryClient } from '@tanstack/react-query'
 import type { Table } from '@tanstack/react-table'
-import { Eye, EyeOff, Trash2, Copy, Building2, Unlink } from 'lucide-react'
+import {
+  ArrowUpDown,
+  Building2,
+  Copy,
+  DollarSign,
+  Eye,
+  EyeOff,
+  SlidersHorizontal,
+  Trash2,
+  Unlink,
+} from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -30,13 +40,19 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { useCanEditModelPricing } from '@/features/model-pricing/api'
 import { copyToClipboard } from '@/lib/copy-to-clipboard'
+import { ROLE } from '@/lib/roles'
+import { useAuthStore } from '@/stores/auth-store'
 
-import { handleBatchEnableModels, handleBatchDisableModels } from '../lib'
+import { handleBatchSetModelVisibility } from '../lib'
 import type { Model } from '../types'
 import type { VendorOperation } from '../vendor-api'
+import { ModelBatchManageDialog } from './dialogs/model-batch-manage-dialog'
+import { ModelBatchPricingDialog } from './dialogs/model-batch-pricing-dialog'
 import { ModelDeleteDialog } from './dialogs/model-delete-dialog'
 import { VendorOperationDialog } from './dialogs/vendor-operation-dialog'
+import { useModels } from './models-provider'
 
 interface DataTableBulkActionsProps<TData> {
   table: Table<TData>
@@ -47,9 +63,16 @@ export function DataTableBulkActions<TData>({
 }: DataTableBulkActionsProps<TData>) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
+  const { setOpen, setBatchOrderModels } = useModels()
+  const canPrice = useCanEditModelPricing()
+  const isRoot = useAuthStore(
+    (state) => state.auth.user?.role === ROLE.SUPER_ADMIN
+  )
   const [vendorOperation, setVendorOperation] =
     useState<VendorOperation | null>(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [showBatchManage, setShowBatchManage] = useState(false)
+  const [showBatchPricing, setShowBatchPricing] = useState(false)
 
   const selectedRows = table.getFilteredSelectedRowModel().rows
   const selectedIds = selectedRows.reduce<number[]>((ids, row) => {
@@ -67,17 +90,35 @@ export function DataTableBulkActions<TData>({
   )
 
   const selectedModels = selectedRows.map((row) => row.original as Model)
+  const exactSelectedModels = selectedModels.filter(
+    (model) => model.name_rule === 0
+  )
 
   const handleClearSelection = () => {
     table.resetRowSelection()
   }
 
   const handleEnableAll = () => {
-    handleBatchEnableModels(selectedIds, queryClient, handleClearSelection)
+    void handleBatchSetModelVisibility(
+      selectedModels,
+      1,
+      queryClient,
+      handleClearSelection
+    )
   }
 
   const handleDisableAll = () => {
-    handleBatchDisableModels(selectedIds, queryClient, handleClearSelection)
+    void handleBatchSetModelVisibility(
+      selectedModels,
+      0,
+      queryClient,
+      handleClearSelection
+    )
+  }
+
+  const handleOpenBatchOrder = () => {
+    setBatchOrderModels(selectedModels.map((model) => model.model_name))
+    setOpen('model-square-order')
   }
 
   const handleCopyNames = async () => {
@@ -100,40 +141,53 @@ export function DataTableBulkActions<TData>({
         />
       )}
       <BulkActionsToolbar table={table} entityName='model'>
-        {hasMissingMetadata && (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <span
-                  tabIndex={0}
-                  aria-description={t(
-                    'Add metadata to all selected models first.'
-                  )}
-                  className='text-muted-foreground max-w-28 truncate text-xs'
-                />
-              }
-            >
-              {t('Missing metadata')}
-            </TooltipTrigger>
-            <TooltipContent>
-              {t('Add metadata to all selected models first.')}
-            </TooltipContent>
-          </Tooltip>
+        <Button
+          variant='default'
+          size='sm'
+          className='h-8 gap-1.5 px-2.5 text-xs'
+          onClick={() => setShowBatchManage(true)}
+        >
+          <SlidersHorizontal className='size-3.5' aria-hidden='true' />
+          <span>{t('Batch manage')}</span>
+        </Button>
+
+        {canPrice && exactSelectedModels.length > 0 && (
+          <Button
+            variant='outline'
+            size='sm'
+            className='h-8 gap-1.5 px-2.5 text-xs'
+            onClick={() => setShowBatchPricing(true)}
+          >
+            <DollarSign className='size-3.5' aria-hidden='true' />
+            <span className='hidden sm:inline'>{t('Copy pricing')}</span>
+          </Button>
         )}
+
+        {isRoot && (
+          <Button
+            variant='outline'
+            size='sm'
+            className='h-8 gap-1.5 px-2.5 text-xs'
+            onClick={handleOpenBatchOrder}
+          >
+            <ArrowUpDown className='size-3.5' aria-hidden='true' />
+            <span className='hidden sm:inline'>{t('Batch sort')}</span>
+          </Button>
+        )}
+
         <Button
           variant='outline'
           size='icon'
           className='size-8'
-          disabled={hasMissingMetadata}
-          title={t(
-            hasMissingMetadata
-              ? 'Add metadata to all selected models first.'
-              : 'Change vendor'
-          )}
+          title={t('Change vendor')}
           aria-label={t('Change vendor')}
-          onClick={() =>
-            setVendorOperation({ action: 'assign', model_ids: selectedIds })
-          }
+          onClick={() => {
+            if (hasMissingMetadata) {
+              setShowBatchManage(true)
+            } else {
+              setVendorOperation({ action: 'assign', model_ids: selectedIds })
+            }
+          }}
         >
           <Building2 />
         </Button>
@@ -141,20 +195,19 @@ export function DataTableBulkActions<TData>({
           variant='outline'
           size='icon'
           className='size-8'
-          disabled={hasMissingMetadata}
-          title={t(
-            hasMissingMetadata
-              ? 'Add metadata to all selected models first.'
-              : 'Clear vendor'
-          )}
+          title={t('Clear vendor')}
           aria-label={t('Clear vendor')}
-          onClick={() =>
-            setVendorOperation({
-              action: 'assign',
-              model_ids: selectedIds,
-              target_vendor_id: 0,
-            })
-          }
+          onClick={() => {
+            if (hasMissingMetadata) {
+              setShowBatchManage(true)
+            } else {
+              setVendorOperation({
+                action: 'assign',
+                model_ids: selectedIds,
+                target_vendor_id: 0,
+              })
+            }
+          }}
         >
           <Unlink />
         </Button>
@@ -164,7 +217,6 @@ export function DataTableBulkActions<TData>({
               <Button
                 variant='outline'
                 size='icon'
-                disabled={hasMissingMetadata}
                 onClick={handleEnableAll}
                 className='size-8'
                 aria-label={t('Show selected models in model square')}
@@ -178,13 +230,7 @@ export function DataTableBulkActions<TData>({
             </span>
           </TooltipTrigger>
           <TooltipContent>
-            <p>
-              {t(
-                hasMissingMetadata
-                  ? 'Add metadata to all selected models first.'
-                  : 'Show selected models in model square'
-              )}
-            </p>
+            <p>{t('Show selected models in model square')}</p>
           </TooltipContent>
         </Tooltip>
 
@@ -194,7 +240,6 @@ export function DataTableBulkActions<TData>({
               <Button
                 variant='outline'
                 size='icon'
-                disabled={hasMissingMetadata}
                 onClick={handleDisableAll}
                 className='size-8'
                 aria-label={t('Hide selected models from model square')}
@@ -208,13 +253,7 @@ export function DataTableBulkActions<TData>({
             </span>
           </TooltipTrigger>
           <TooltipContent>
-            <p>
-              {t(
-                hasMissingMetadata
-                  ? 'Add metadata to all selected models first.'
-                  : 'Hide selected models from model square'
-              )}
-            </p>
+            <p>{t('Hide selected models from model square')}</p>
           </TooltipContent>
         </Tooltip>
 
@@ -260,6 +299,24 @@ export function DataTableBulkActions<TData>({
           </TooltipContent>
         </Tooltip>
       </BulkActionsToolbar>
+
+      {showBatchManage && (
+        <ModelBatchManageDialog
+          models={selectedModels}
+          open={showBatchManage}
+          onOpenChange={setShowBatchManage}
+          onSuccess={handleClearSelection}
+        />
+      )}
+
+      {showBatchPricing && (
+        <ModelBatchPricingDialog
+          models={selectedModels}
+          open={showBatchPricing}
+          onOpenChange={setShowBatchPricing}
+          onSuccess={handleClearSelection}
+        />
+      )}
 
       {showDeleteConfirm && (
         <ModelDeleteDialog

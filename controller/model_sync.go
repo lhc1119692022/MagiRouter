@@ -440,6 +440,7 @@ func SyncUpstreamModels(c *gin.Context) {
 		}
 		updates = append(updates, model.MetadataSyncUpdate{MetadataSyncSelection: selection, Values: values})
 	}
+	beforeModels := captureModelAvailabilitySnapshot()
 	result, err := model.ApplyMetadataSync(updates, vendors)
 	if err != nil {
 		status := http.StatusBadRequest
@@ -449,6 +450,7 @@ func SyncUpstreamModels(c *gin.Context) {
 		c.JSON(status, gin.H{"success": false, "message": err.Error()})
 		return
 	}
+	syncModelAvailabilityNotices(c, beforeModels)
 	recordManageAudit(c, "model.metadata.sync", map[string]any{"created_models": result.CreatedModels, "updated_models": result.UpdatedModels, "created_vendors": result.CreatedVendors})
 	common.ApiSuccess(c, result)
 }

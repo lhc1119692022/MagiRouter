@@ -344,6 +344,91 @@ function TagWeightCell({ channel }: { channel: TagRow }) {
 const MAX_INLINE_BALANCE_CHARS = 8
 const SENSITIVE_MASK = '••••'
 
+function formatChannelRatioValue(ratio: number): string {
+  if (Number.isInteger(ratio)) return String(ratio)
+  return ratio.toFixed(4).replace(/\.?0+$/, '')
+}
+
+function ChannelRatioCell(props: {
+  channel: Channel
+  sensitiveVisible: boolean
+}) {
+  const { t } = useTranslation()
+
+  if (isTagAggregateRow(props.channel)) {
+    const ratios = props.channel.children
+      .map((child) => parseChannelSettings(child.setting).upstream_group_ratio)
+      .filter(
+        (value): value is number =>
+          typeof value === 'number' && Number.isFinite(value) && value >= 0
+      )
+    if (ratios.length === 0) {
+      return <span className='text-muted-foreground text-xs'>—</span>
+    }
+    const minRatio = Math.min(...ratios)
+    const maxRatio = Math.max(...ratios)
+    const label =
+      minRatio === maxRatio
+        ? `${formatChannelRatioValue(minRatio)}x`
+        : `${formatChannelRatioValue(minRatio)}x ~ ${formatChannelRatioValue(maxRatio)}x`
+    return (
+      <StatusBadge
+        label={label}
+        variant='neutral'
+        size='sm'
+        copyable={false}
+        className='-ml-1.5 font-mono tabular-nums'
+      />
+    )
+  }
+
+  const settings = parseChannelSettings(props.channel.setting)
+  const ratio = settings.upstream_group_ratio
+  if (typeof ratio !== 'number' || !Number.isFinite(ratio) || ratio < 0) {
+    return <span className='text-muted-foreground text-xs'>—</span>
+  }
+
+  const label = `${formatChannelRatioValue(ratio)}x`
+  const groupName = settings.upstream_group_name?.trim()
+
+  if (!groupName) {
+    return (
+      <StatusBadge
+        label={label}
+        variant='neutral'
+        size='sm'
+        copyable={false}
+        className='-ml-1.5 font-mono tabular-nums'
+      />
+    )
+  }
+
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <StatusBadge
+              label={label}
+              variant='neutral'
+              size='sm'
+              copyable={false}
+              className='-ml-1.5 cursor-pointer font-mono tabular-nums'
+            />
+          }
+        />
+        <TooltipContent side='top'>
+          <span>
+            {t('Upstream group: {{group}}', {
+              group: props.sensitiveVisible ? groupName : SENSITIVE_MASK,
+            })}
+          </span>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  )
+}
+
 /**
  * Balance cell component with click to update
  */
@@ -1179,6 +1264,21 @@ export function useChannelsColumns(
         size: 150,
       },
 
+      // Multiplier (Upstream group ratio) column
+      {
+        id: 'ratio',
+        header: t('Multiplier'),
+        meta: { mobileHidden: true, label: t('Multiplier') },
+        cell: ({ row }) => (
+          <ChannelRatioCell
+            channel={row.original}
+            sensitiveVisible={sensitiveVisible}
+          />
+        ),
+        size: 105,
+        enableSorting: false,
+      },
+
       // Tag column
       {
         accessorKey: 'tag',
@@ -1292,6 +1392,42 @@ export function useChannelsColumns(
         },
         size: 120,
         enableSorting: false,
+      },
+
+      // Created Time column (hidden by default; also backs created_time sort)
+      {
+        accessorKey: 'created_time',
+        header: t('Created'),
+        meta: { mobileHidden: true, label: t('Created') },
+        cell: ({ row }) => {
+          const createdTime = row.getValue('created_time') as number
+          if (!createdTime || createdTime <= 0) {
+            return <span className='text-muted-foreground text-xs'>—</span>
+          }
+          const timeText = formatRelativeTime(createdTime, locale)
+          const fullDate = formatTimestampToDate(createdTime)
+          return (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <StatusBadge
+                      label={timeText}
+                      variant='neutral'
+                      size='sm'
+                      copyable={false}
+                      className='-ml-1.5 cursor-pointer'
+                    />
+                  }
+                />
+                <TooltipContent side='top'>
+                  <p className='font-mono text-sm'>{fullDate}</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )
+        },
+        size: 125,
       },
 
       // Actions column

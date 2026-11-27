@@ -26,6 +26,7 @@ import { useMediaQuery } from '@/hooks'
 import { toIntlLocale } from '@/i18n/languages'
 import { getUserGroups } from '@/lib/api'
 import { getCurrencyDisplay } from '@/lib/currency'
+import dayjs from '@/lib/dayjs'
 import { requireServerSuccess } from '@/lib/server-error-message'
 import { useSystemConfigStore } from '@/stores/system-config-store'
 
@@ -33,26 +34,17 @@ import { API_KEY_STATUS, API_KEY_STATUSES } from '../constants'
 import type { ApiKey } from '../types'
 import { ApiKeyGroupCell } from './api-key-group-cell'
 import { ApiKeyQuotaCell } from './api-key-quota-cell'
-import {
-  ApiKeyActivityCell,
-  ApiKeyTimestampCell,
-} from './api-key-timestamp-cell'
-import {
-  ApiKeyCell,
-  IpRestrictionsCell,
-  ModelLimitsCell,
-} from './api-keys-cells'
+import { ApiKeyTimestampCell } from './api-key-timestamp-cell'
+import { ApiKeyCell } from './api-keys-cells'
 import { DataTableRowActions } from './data-table-row-actions'
 
 type UserGroupsMeta = {
   ratios: Record<string, number | string>
-  descriptions: Record<string, string>
   requireExplicitGroup: boolean
 }
 
 const EMPTY_USER_GROUPS_META: UserGroupsMeta = {
   ratios: {},
-  descriptions: {},
   requireExplicitGroup: false,
 }
 
@@ -63,7 +55,6 @@ function useUserGroupsMeta(): UserGroupsMeta {
     staleTime: 0,
     select: (res): UserGroupsMeta => {
       const ratios: Record<string, number | string> = {}
-      const descriptions: Record<string, string> = {}
       if (res.success && res.data) {
         for (const [group, info] of Object.entries(res.data)) {
           if (
@@ -72,14 +63,10 @@ function useUserGroupsMeta(): UserGroupsMeta {
           ) {
             ratios[group] = info.ratio
           }
-          if (typeof info.desc === 'string' && info.desc.trim()) {
-            descriptions[group] = info.desc.trim()
-          }
         }
       }
       return {
         ratios,
-        descriptions,
         requireExplicitGroup:
           res.success && res.require_explicit_group === true,
       }
@@ -101,11 +88,7 @@ export function useApiKeysColumns(now: number): ColumnDef<ApiKey>[] {
   useSystemConfigStore((state) => state.config.currency)
   const { meta: currency } = getCurrencyDisplay()
   const quotaUnit = currency.kind === 'tokens' ? t('Tokens') : currency.symbol
-  const {
-    ratios: groupRatios,
-    descriptions: groupDescriptions,
-    requireExplicitGroup,
-  } = useUserGroupsMeta()
+  const { ratios: groupRatios, requireExplicitGroup } = useUserGroupsMeta()
   const shouldReduceMotion = useMediaQuery('(prefers-reduced-motion: reduce)')
   const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
   const justNowLabel = t('Just now')
@@ -164,23 +147,29 @@ export function useApiKeysColumns(now: number): ColumnDef<ApiKey>[] {
         cell: ({ row }) => {
           const apiKey = row.original
           const group = row.getValue('group') as string
-          const autoOrderText =
-            group === 'auto' && apiKey.auto_groups?.length
-              ? apiKey.auto_groups.join(' → ')
-              : ''
-          const subNote = autoOrderText || groupDescriptions[group] || ''
+          const routePolicy = apiKey.route_policy || ''
+          const isSmartPolicy =
+            group === 'auto' &&
+            (routePolicy === 'cost_first' || routePolicy === 'stability_first')
+          let autoOrderText = ''
+          if (isSmartPolicy) {
+            autoOrderText = t('Reasoning models only')
+          } else if (group === 'auto' && apiKey.auto_groups?.length) {
+            autoOrderText = apiKey.auto_groups.join(' → ')
+          }
           return (
             <div className='key-group-wrap'>
               <ApiKeyGroupCell
                 group={group}
+                routePolicy={routePolicy}
                 ratio={groupRatios[group]}
                 crossGroupRetry={apiKey.cross_group_retry}
                 shouldReduceMotion={shouldReduceMotion}
                 requireExplicitGroup={requireExplicitGroup}
               />
-              {subNote && (
-                <span className='key-sub-note' title={subNote}>
-                  {subNote}
+              {autoOrderText && (
+                <span className='key-sub-note' title={autoOrderText}>
+                  {autoOrderText}
                 </span>
               )}
             </div>
@@ -255,31 +244,41 @@ export function useApiKeysColumns(now: number): ColumnDef<ApiKey>[] {
         meta: { mobileHidden: true },
       },
       {
-        id: 'activity_time',
         accessorKey: 'created_time',
-        header: t('Time'),
+        header: t('Created'),
         cell: ({ row }) => (
-          <ApiKeyActivityCell apiKey={row.original} now={now} />
+          <ApiKeyTimestampCell
+            timestamp={row.original.created_time}
+            now={now}
+            locale={locale}
+            justNowLabel={justNowLabel}
+            className='text-muted-foreground'
+          />
         ),
-        size: 185,
+        size: 132,
         meta: { mobileHidden: true },
       },
       {
-        id: 'model_limits',
-        accessorKey: 'model_limits',
-        header: t('Models'),
-        cell: ({ row }) => <ModelLimitsCell apiKey={row.original} />,
-        enableSorting: false,
-        size: 118,
-        meta: { mobileHidden: true },
-      },
-      {
-        id: 'allow_ips',
-        accessorKey: 'allow_ips',
-        header: t('IP Restriction'),
-        cell: ({ row }) => <IpRestrictionsCell apiKey={row.original} />,
-        enableSorting: false,
-        size: 118,
+        accessorKey: 'accessed_time',
+        header: t('Last Used'),
+        cell: ({ row }) => {
+          const accessedTime = row.original.accessed_time
+          const isStale =
+            accessedTime > 0 &&
+            accessedTime * 1000 < dayjs(now).subtract(3, 'month').valueOf()
+          return (
+            <ApiKeyTimestampCell
+              timestamp={accessedTime}
+              now={now}
+              locale={locale}
+              justNowLabel={justNowLabel}
+              className={
+                isStale ? 'text-warning' : 'text-muted-foreground'
+              }
+            />
+          )
+        },
+        size: 132,
         meta: { mobileHidden: true },
       },
       {
@@ -295,7 +294,6 @@ export function useApiKeysColumns(now: number): ColumnDef<ApiKey>[] {
       quotaUnit,
       now,
       groupRatios,
-      groupDescriptions,
       requireExplicitGroup,
       shouldReduceMotion,
       locale,

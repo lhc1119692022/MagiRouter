@@ -24,6 +24,8 @@ import type {
   ConfirmPaymentComplianceResponse,
   FetchUpstreamRatiosRequest,
   LogCleanupTask,
+  SmartRoutingConfig,
+  SmartRoutingPreviewResponse,
   SystemOptionsResponse,
   SystemTaskListResponse,
   SystemTaskFilters,
@@ -59,6 +61,14 @@ export async function updateGroupSettings(request: UpdateGroupSettingsRequest) {
   const res = await api.put<UpdateOptionResponse>(
     '/api/option/group_settings',
     request
+  )
+  return res.data
+}
+
+export async function previewSmartRouting(config: SmartRoutingConfig) {
+  const res = await api.post<SmartRoutingPreviewResponse>(
+    '/api/option/smart_routing/preview',
+    config
   )
   return res.data
 }

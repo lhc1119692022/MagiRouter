@@ -22,7 +22,14 @@ import { z } from 'zod'
 import { parseQuotaFromDollars, quotaUnitsToDollars } from '@/lib/format'
 
 import { DEFAULT_GROUP } from '../constants'
-import type { ApiKey, ApiKeyFormData } from '../types'
+import type { ApiKey, ApiKeyFormData, TokenRoutePolicy } from '../types'
+
+export function normalizeTokenRoutePolicy(value: unknown): TokenRoutePolicy {
+  if (value === 'cost_first' || value === 'stability_first') {
+    return value
+  }
+  return ''
+}
 
 // ============================================================================
 // Form Schema
@@ -48,11 +55,14 @@ export function getApiKeyFormSchema(
       group: z.string().optional(),
       auto_groups_mode: z.enum(['inherit', 'custom']),
       auto_groups: z.array(z.string()),
+      route_policy: z.enum(['', 'cost_first', 'stability_first']).optional(),
       cross_group_retry: z.boolean().optional(),
       tokenCount: z.number().min(1).optional(),
     })
     .superRefine((data, ctx) => {
-      if (requireExplicitGroup && !(data.group ?? '').trim()) {
+      const routePolicy = normalizeTokenRoutePolicy(data.route_policy)
+      const resolvedGroup = routePolicy ? 'auto' : (data.group ?? '').trim()
+      if (requireExplicitGroup && !resolvedGroup) {
         ctx.addIssue({
           code: 'custom',
           path: ['group'],
@@ -60,7 +70,7 @@ export function getApiKeyFormSchema(
         })
       }
 
-      if (data.group === 'auto') {
+      if (resolvedGroup === 'auto' && !routePolicy) {
         if (
           data.auto_groups_mode === 'custom' &&
           data.auto_groups.length === 0
@@ -127,6 +137,7 @@ export const API_KEY_FORM_DEFAULT_VALUES: ApiKeyFormValues = {
   group: DEFAULT_GROUP,
   auto_groups_mode: 'inherit',
   auto_groups: [],
+  route_policy: '',
   cross_group_retry: true,
   tokenCount: 1,
 }
@@ -139,6 +150,7 @@ export function getApiKeyFormDefaultValues(
     group: defaultUseAutoGroup ? 'auto' : DEFAULT_GROUP,
     auto_groups_mode: 'inherit',
     auto_groups: [],
+    route_policy: '',
     cross_group_retry: defaultUseAutoGroup,
   }
 }
@@ -153,6 +165,9 @@ export function getApiKeyFormDefaultValues(
 export function transformFormDataToPayload(
   data: ApiKeyFormValues
 ): ApiKeyFormData {
+  const routePolicy = normalizeTokenRoutePolicy(data.route_policy)
+  const isSmartPolicy = routePolicy !== ''
+  const group = isSmartPolicy ? 'auto' : data.group || ''
   return {
     name: data.name,
     remain_quota: data.unlimited_quota
@@ -166,12 +181,14 @@ export function transformFormDataToPayload(
     model_limits: data.model_limits.join(','),
     allow_ips: data.allow_ips || '',
     allow_user_quota_query: data.allow_user_quota_query,
-    group: data.group || '',
+    group,
     auto_groups:
-      data.group === 'auto' && data.auto_groups_mode === 'custom'
+      !isSmartPolicy && group === 'auto' && data.auto_groups_mode === 'custom'
         ? data.auto_groups
         : [],
-    cross_group_retry: data.group === 'auto' ? !!data.cross_group_retry : false,
+    route_policy: isSmartPolicy ? routePolicy : '',
+    cross_group_retry:
+      isSmartPolicy || (group === 'auto' && !!data.cross_group_retry),
   }
 }
 
@@ -183,12 +200,14 @@ export function transformApiKeyToFormDefaults(
   availableAutoGroups: string[] = [],
   maxAutoGroups = 5
 ): ApiKeyFormValues {
+  const routePolicy = normalizeTokenRoutePolicy(apiKey.route_policy)
   const availableSet = new Set(availableAutoGroups)
   const storedAutoGroups = apiKey.auto_groups ?? []
   const autoGroups = storedAutoGroups
     .filter((group) => availableSet.has(group))
     .slice(0, Math.max(0, maxAutoGroups))
-  const autoGroupsMode = storedAutoGroups.length > 0 ? 'custom' : 'inherit'
+  const autoGroupsMode =
+    !routePolicy && storedAutoGroups.length > 0 ? 'custom' : 'inherit'
 
   return {
     name: apiKey.name,
@@ -203,10 +222,11 @@ export function transformApiKeyToFormDefaults(
       : [],
     allow_ips: apiKey.allow_ips || '',
     allow_user_quota_query: !!apiKey.allow_user_quota_query,
-    group: apiKey.group || DEFAULT_GROUP,
+    group: routePolicy ? 'auto' : apiKey.group || DEFAULT_GROUP,
     auto_groups_mode: autoGroupsMode,
-    auto_groups: autoGroups,
-    cross_group_retry: !!apiKey.cross_group_retry,
+    auto_groups: routePolicy ? [] : autoGroups,
+    route_policy: routePolicy,
+    cross_group_retry: routePolicy ? true : !!apiKey.cross_group_retry,
     tokenCount: 1,
   }
 }

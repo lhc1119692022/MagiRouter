@@ -766,6 +766,26 @@ export function DetailsDialog(props: DetailsDialogProps) {
             />
           )}
 
+          {other?.route_policy && (
+            <DetailRow
+              label={t('Routing Policy')}
+              value={
+                {
+                  cost_first: t('Smart · Cost first'),
+                  stability_first: t('Smart · Stability first'),
+                }[other.route_policy] ?? t('Custom auto')
+              }
+            />
+          )}
+
+          {other?.route_fallback_from && (
+            <DetailRow
+              label={t('Route Fallback')}
+              value={`${other.route_fallback_from} → ${props.log.group || other?.group || '-'}`}
+              mono
+            />
+          )}
+
           {showAdminIp && (
             <DetailRow
               label={t('IP Address')}

@@ -274,7 +274,9 @@ describe('request processing in the log details', () => {
 test('a processed request is marked in the log list and the mark names its plugins', async () => {
   render(withClient(<ModelCell />))
 
-  const marker = screen.getByText('Processed')
+  const marker = screen.getByRole('img', {
+    name: 'Request processing: Request redaction, Request filter',
+  })
   expect(marker).toBeVisible()
   await userEvent.hover(marker)
 
@@ -311,7 +313,7 @@ test('a request no plugin could read gets no processed mark in the log list', ()
   )
 
   expect(screen.getByText('gpt-test')).toBeInTheDocument()
-  expect(screen.queryByText('Processed')).toBeNull()
+  expect(screen.queryByRole('img', { name: /^Request processing:/ })).toBeNull()
 })
 
 test('reply checks show their stage, the parts they masked, a stop with its code and an answer they could not read', () => {
@@ -513,7 +515,16 @@ test.each([
     )
 
     expect(screen.getByText('gpt-test')).toBeInTheDocument()
-    if (rewritten) expect(screen.getByText('Processed')).toBeVisible()
-    else expect(screen.queryByText('Processed')).toBeNull()
+    if (rewritten) {
+      expect(
+        screen.getByRole('img', {
+          name: 'Request processing: Request redaction',
+        })
+      ).toBeVisible()
+    } else {
+      expect(
+        screen.queryByRole('img', { name: /^Request processing:/ })
+      ).toBeNull()
+    }
   }
 )

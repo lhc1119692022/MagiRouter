@@ -69,6 +69,7 @@ import {
   createServerError,
   getServerErrorMessage,
 } from '@/lib/server-error-message'
+import { invalidatePublishedStatusQueries } from '@/lib/status-query'
 
 import { createModel, updateModel, getModel, getVendors } from '../../api'
 import { getNameRuleOptions, ENDPOINT_TEMPLATES } from '../../constants'
@@ -214,6 +215,7 @@ export function ModelMutateDrawer(props: {
         queryClient.invalidateQueries({ queryKey: ['pricing'] }),
         queryClient.invalidateQueries({ queryKey: vendorsQueryKeys.all }),
       ])
+      invalidatePublishedStatusQueries(queryClient)
       toast.success(t('Model metadata saved'))
       if (!pricingDirty) props.onOpenChange(false)
     },

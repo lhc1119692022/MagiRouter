@@ -35,6 +35,7 @@ export const apiKeySchema = z.object({
   accessed_time: z.number(),
   group: z.string().nullish().default(''),
   auto_groups: z.array(z.string()).nullish().default(null),
+  route_policy: z.string().nullish().optional(),
   cross_group_retry: z
     .preprocess((v) => {
       if (v === 1) return true
@@ -50,6 +51,7 @@ export const apiKeySchema = z.object({
 })
 
 export type ApiKey = z.infer<typeof apiKeySchema>
+export type TokenRoutePolicy = '' | 'cost_first' | 'stability_first'
 
 // ============================================================================
 // API Request/Response Types
@@ -95,12 +97,37 @@ export interface ApiKeyFormData {
   allow_user_quota_query: boolean
   group: string
   auto_groups: string[]
+  route_policy?: string
   cross_group_retry: boolean
+}
+
+export interface SmartRoutingSampleRoute {
+  model: string
+  group: string
+  ratio: number
+  status: 'healthy' | 'degraded' | 'outage' | string
+}
+
+export interface SmartRoutingPolicySummary {
+  id: 'cost_first' | 'stability_first' | string
+  available: boolean
+  reasoning_only: boolean
+  min_ratio?: number | null
+  max_ratio?: number | null
+  eligible_group_count: number
+  model_count: number
+  sample_routes?: SmartRoutingSampleRoute[]
+}
+
+export interface SmartRoutingPoliciesSummary {
+  enabled: boolean
+  policies: SmartRoutingPolicySummary[]
 }
 
 export interface TokenAutoGroupsConfig {
   groups: string[]
   max_count: number
+  smart_routing?: SmartRoutingPoliciesSummary
 }
 
 // ============================================================================

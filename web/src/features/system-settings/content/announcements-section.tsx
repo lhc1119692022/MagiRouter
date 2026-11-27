@@ -84,10 +84,12 @@ type Announcement = {
   publishDate: string
   type: 'default' | 'ongoing' | 'success' | 'warning' | 'error'
   extra?: string
+  source?: string
 }
 
 type AnnouncementsSectionProps = {
   enabled: boolean
+  autoModelChangeNoticeEnabled?: boolean
   data: string
 }
 
@@ -146,6 +148,7 @@ const typeOptions = [
 
 export function AnnouncementsSection({
   enabled,
+  autoModelChangeNoticeEnabled = true,
   data,
 }: AnnouncementsSectionProps) {
   const { t, i18n } = useTranslation()
@@ -153,6 +156,9 @@ export function AnnouncementsSection({
   const updateOption = useUpdateOption()
   const [announcements, setAnnouncements] = useState<Announcement[]>([])
   const [isEnabled, setIsEnabled] = useState(enabled)
+  const [isAutoModelSyncEnabled, setIsAutoModelSyncEnabled] = useState(
+    autoModelChangeNoticeEnabled
+  )
   const [hasChanges, setHasChanges] = useState(false)
   const [selectedIds, setSelectedIds] = useState<number[]>([])
   const [showDialog, setShowDialog] = useState(false)
@@ -194,6 +200,10 @@ export function AnnouncementsSection({
     setIsEnabled(enabled)
   }, [enabled])
 
+  useEffect(() => {
+    setIsAutoModelSyncEnabled(autoModelChangeNoticeEnabled)
+  }, [autoModelChangeNoticeEnabled])
+
   const handleToggleEnabled = async (checked: boolean) => {
     try {
       await updateOption.mutateAsync({
@@ -201,6 +211,19 @@ export function AnnouncementsSection({
         value: checked,
       })
       setIsEnabled(checked)
+      toast.success(t('Setting saved'))
+    } catch (error) {
+      handleServerError(error, t('Failed to update setting'))
+    }
+  }
+
+  const handleToggleAutoModelSync = async (checked: boolean) => {
+    try {
+      await updateOption.mutateAsync({
+        key: 'console_setting.auto_model_change_notice_enabled',
+        value: checked,
+      })
+      setIsAutoModelSyncEnabled(checked)
       toast.success(t('Setting saved'))
     } catch (error) {
       handleServerError(error, t('Failed to update setting'))
@@ -369,6 +392,19 @@ export function AnnouncementsSection({
           />
         </div>
 
+        <div className='bg-muted/30 rounded-lg border px-4 py-3'>
+          <SettingsSwitchField
+            controlId='auto-model-change-notice-enabled'
+            checked={isAutoModelSyncEnabled}
+            onCheckedChange={handleToggleAutoModelSync}
+            label={t('Auto-sync model notices')}
+            description={t(
+              'Automatically publish model launch and removal notices when channels or model visibility change in admin management.'
+            )}
+            className='py-0'
+          />
+        </div>
+
         <StaticDataTable
           data={sortedAnnouncements}
           getRowKey={(announcement) => announcement.id}
@@ -401,8 +437,20 @@ export function AnnouncementsSection({
               id: 'content',
               header: t('Content'),
               cellClassName: 'max-w-xs truncate',
-              cell: (announcement) =>
-                announcement.title || announcement.content,
+              cell: (announcement) => (
+                <div className='flex items-center gap-2 truncate'>
+                  <span className='truncate'>
+                    {announcement.title || announcement.content}
+                  </span>
+                  {announcement.source === 'auto_model_sync' && (
+                    <StatusBadge
+                      label={t('Auto-synced')}
+                      variant='info'
+                      copyable={false}
+                    />
+                  )}
+                </div>
+              ),
             },
             {
               id: 'category',

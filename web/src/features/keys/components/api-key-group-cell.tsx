@@ -34,6 +34,7 @@ import { GroupRatioBadge, type GroupRatio } from './auto-group-visuals'
 type ApiKeyGroupCellProps = {
   crossGroupRetry: boolean
   group: string
+  routePolicy?: string | null
   ratio?: GroupRatio
   shouldReduceMotion: boolean
   requireExplicitGroup?: boolean
@@ -96,6 +97,49 @@ export function ApiKeyGroupCell(props: ApiKeyGroupCellProps) {
           containerClassName={cn('gap-3', isMobile && 'w-full justify-between')}
         />
       </TruncatedCell>
+    )
+  }
+
+  if (
+    props.routePolicy === 'cost_first' ||
+    props.routePolicy === 'stability_first'
+  ) {
+    const isCostFirst = props.routePolicy === 'cost_first'
+    const label = isCostFirst
+      ? t('Smart · Cost first')
+      : t('Smart · Stability first')
+    const tooltip = isCostFirst
+      ? t(
+          'Dynamically selects healthy lowest-rate groups for reasoning models only.'
+        )
+      : t(
+          'Dynamically selects the most reliable and fastest groups for reasoning models only.'
+        )
+    return (
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <BadgeCell
+              data-api-key-group-cell={`smart:${props.routePolicy}`}
+              tabIndex={0}
+              className={cn(
+                'ml-0 gap-2 overflow-visible text-xs',
+                isMobile ? 'w-full justify-between' : 'max-w-52'
+              )}
+            />
+          }
+        >
+          <StatusBadge
+            label={label}
+            variant={isCostFirst ? 'success' : 'info'}
+            copyable={false}
+            className='px-0'
+          />
+        </TooltipTrigger>
+        <TooltipContent>
+          <span className='text-xs'>{tooltip}</span>
+        </TooltipContent>
+      </Tooltip>
     )
   }
 

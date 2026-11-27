@@ -95,6 +95,7 @@ const CHANNEL_SORTABLE_COLUMNS = new Set<ChannelSortBy>([
   'balance',
   'response_time',
   'test_time',
+  'created_time',
 ])
 
 function isDisabledChannelRow(channel: Channel) {
@@ -411,6 +412,7 @@ export function ChannelsTable() {
     initialColumnVisibility: {
       models: false,
       tag: false,
+      created_time: false,
     },
     columnVisibilityStorageKey: CHANNELS_COLUMN_VISIBILITY_STORAGE_KEY,
     columnSizingStorageKey: isMobile

@@ -36,6 +36,65 @@ type Token struct {
 	CacheMAC            string `json:"-" gorm:"-"`
 }
 
+const (
+	TokenRoutePolicyCostFirst      = "cost_first"
+	TokenRoutePolicyStabilityFirst = "stability_first"
+	tokenRoutePolicySentinelPrefix = "@mr:policy:"
+)
+
+func IsValidTokenRoutePolicy(policy string) bool {
+	switch strings.TrimSpace(policy) {
+	case "", TokenRoutePolicyCostFirst, TokenRoutePolicyStabilityFirst:
+		return true
+	default:
+		return false
+	}
+}
+
+func IsBuiltinTokenRoutePolicy(policy string) bool {
+	switch strings.TrimSpace(policy) {
+	case TokenRoutePolicyCostFirst, TokenRoutePolicyStabilityFirst:
+		return true
+	default:
+		return false
+	}
+}
+
+func (token *Token) GetRoutePolicy() string {
+	if token == nil || token.AutoGroups == "" {
+		return ""
+	}
+	var raw []string
+	if err := common.UnmarshalJsonStr(token.AutoGroups, &raw); err != nil {
+		return ""
+	}
+	if len(raw) != 1 || !strings.HasPrefix(raw[0], tokenRoutePolicySentinelPrefix) {
+		return ""
+	}
+	policy := strings.TrimSpace(strings.TrimPrefix(raw[0], tokenRoutePolicySentinelPrefix))
+	if !IsBuiltinTokenRoutePolicy(policy) {
+		return ""
+	}
+	return policy
+}
+
+func (token *Token) SetRoutePolicy(policy string) error {
+	trimmed := strings.TrimSpace(policy)
+	if !IsValidTokenRoutePolicy(trimmed) {
+		return fmt.Errorf("invalid route policy: %s", policy)
+	}
+	if trimmed == "" {
+		token.AutoGroups = ""
+		return nil
+	}
+	data, err := common.Marshal([]string{tokenRoutePolicySentinelPrefix + trimmed})
+	if err != nil {
+		return err
+	}
+	token.AutoGroups = string(data)
+	return nil
+}
+
 func (token *Token) GetAutoGroups() ([]string, error) {
 	if token.AutoGroups == "" {
 		return nil, nil
@@ -44,6 +103,9 @@ func (token *Token) GetAutoGroups() ([]string, error) {
 	if err := common.UnmarshalJsonStr(token.AutoGroups, &groups); err != nil {
 		return nil, err
 	}
+	if len(groups) == 1 && strings.HasPrefix(groups[0], tokenRoutePolicySentinelPrefix) {
+		return nil, nil
+	}
 	return groups, nil
 }
 
@@ -51,6 +113,11 @@ func (token *Token) SetAutoGroups(groups []string) error {
 	if len(groups) == 0 {
 		token.AutoGroups = ""
 		return nil
+	}
+	for _, group := range groups {
+		if strings.HasPrefix(strings.TrimSpace(group), tokenRoutePolicySentinelPrefix) {
+			return fmt.Errorf("reserved auto group value: %s", group)
+		}
 	}
 	data, err := common.Marshal(groups)
 	if err != nil {

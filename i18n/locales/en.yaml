@@ -31,6 +31,7 @@ distributor.get_channel_failed: "Failed to get available channel for model {{.Mo
 distributor.no_available_channel: "No available channel for model {{.Model}} under group {{.Group}} (distributor)"
 distributor.no_available_channel_task_plugin: "No available channel for model {{.Model}} under group {{.Group}}: the model is claimed by a task plugin, which has no enabled channel serving it (distributor)"
 distributor.invalid_request_parse_model: "unable to parse model"
+distributor.smart_route_reasoning_only: "This API key uses automatic reasoning-model routing and does not support model {{.Model}} (image, video, audio, or other non-reasoning models). Please create a separate API key with the corresponding billing group."
 quota.user_insufficient: "Insufficient user quota, remaining quota: {{.Remaining}}"
 quota.pre_consume_insufficient: "Not enough quota to pre-consume for this request: {{.Remaining}} remaining, {{.Required}} required"
 quota.subscription_insufficient: "Subscription quota is insufficient or no subscription is configured: {{.Error}}"
@@ -102,3 +103,17 @@ channel.upstream_update_failed_channels: "Failed channel IDs (showing {{.Shown}}
 channel.upstream_update_more_omitted: " ({{.Count}} more omitted)"
 
 channel.notify_scheduled_subject: "Channel \"{{.Name}}\" (#{{.Id}}) plugin notification"
+
+# Site notices published automatically when models come online or go offline
+model_notice.launch_kind: "Model launch"
+model_notice.offline_kind: "Model offline"
+model_notice.launch_title_single: "Model launched: {{.Models}}"
+model_notice.launch_title_multi: "Models launched: {{.Models}} (+{{.More}} more, {{.Count}} total)"
+model_notice.offline_title_single: "Model removed: {{.Models}}"
+model_notice.offline_title_multi: "Models removed: {{.Models}} (+{{.More}} more, {{.Count}} total)"
+model_notice.launch_content: "Newly available models ({{.Count}}): {{.Models}}"
+model_notice.offline_content: "The following models are now offline ({{.Count}}): {{.Models}}"
+model_notice.groups_suffix: "Available groups: {{.Groups}}"
+model_notice.prev_groups_suffix: "Previous groups: {{.Groups}}"
+model_notice.more_models: "+{{.More}} more ({{.Count}} total)"
+model_notice.auto_extra: "Auto-synced from admin"

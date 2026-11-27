@@ -50,6 +50,7 @@ const getGroupDefaults = (settings: BillingSettings) => ({
   AutoGroups: settings.AutoGroups,
   MaxTokenAutoGroups: settings.MaxTokenAutoGroups,
   DefaultUseAutoGroup: settings.DefaultUseAutoGroup,
+  SmartRoutingConfig: settings.SmartRoutingConfig,
   GroupSpecialUsableGroup:
     settings['group_ratio_setting.group_special_usable_group'],
   UserManagementGroups: settings['group_ratio_setting.user_management_groups'],

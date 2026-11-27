@@ -503,25 +503,24 @@ export function serializeVisualBillingDocument(
       ],
     }
   }
-  const pricingOrigin = document.imageCount
-    ? imageCountPricingRoot(original.ast)
-    : original.ast
-  if (!pricingOrigin) {
-    return {
-      ok: false,
-      issues: [
-        {
-          id: document.root.id,
-          message:
-            'This expression cannot be edited visually without losing information.',
-        },
-      ],
-    }
+  const existingImageRoot = imageCountPricingRoot(original.ast)
+  const wasImageCount = existingImageRoot !== null
+  let source: string
+  if (Boolean(document.imageCount) === wasImageCount) {
+    const pricingOrigin = existingImageRoot ?? original.ast
+    source =
+      document.source.slice(0, pricingOrigin.start) +
+      body +
+      document.source.slice(pricingOrigin.end)
+  } else if (document.imageCount) {
+    const wrapped =
+      document.root.kind === 'branch' && !body.startsWith('(')
+        ? `(${body})`
+        : body
+    source = `${wrapped} * image_count`
+  } else {
+    source = body
   }
-  const source =
-    document.source.slice(0, pricingOrigin.start) +
-    body +
-    document.source.slice(pricingOrigin.end)
   if (compileBillingExpression(source).status !== 'ready') {
     return {
       ok: false,

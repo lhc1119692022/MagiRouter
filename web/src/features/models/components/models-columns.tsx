@@ -47,10 +47,12 @@ import {
 
 import { getNameRuleConfig } from '../constants'
 import { parseModelTags, formatEndpointsDisplay } from '../lib'
+import { evaluateModelHealth } from '../lib/model-health'
 import { getModelChannelState } from '../lib/model-utils'
 import type { Model, Vendor } from '../types'
 import { DataTableRowActions } from './data-table-row-actions'
 import { DescriptionCell } from './description-cell'
+import { ModelHealthBadge } from './model-health-badge'
 import { ModelSquareStatus } from './model-square-status'
 import { useModels } from './models-provider'
 
@@ -225,6 +227,39 @@ export function useModelsColumns(
         enableSorting: false,
         meta: { mobileBadge: true },
         cell: ({ row }) => <ModelSquareStatus model={row.original} />,
+      },
+      {
+        id: 'config_check',
+        header: t('Config check'),
+        meta: { label: t('Config check') },
+        size: 132,
+        enableSorting: false,
+        cell: ({ row }) => {
+          const model = row.original
+          const report = evaluateModelHealth(
+            model,
+            priceMap.get(model.model_name),
+            {
+              canPrice,
+              pricingLoaded: !pricingState && Boolean(pricing),
+            }
+          )
+          return (
+            <ModelHealthBadge
+              model={model}
+              report={report}
+              canPrice={canPrice}
+              onEditMetadata={(target) => {
+                setCurrentRow(target)
+                setOpen('update-model')
+              }}
+              onEditPricing={(target) => {
+                setCurrentRow(target)
+                setOpen('price-model')
+              }}
+            />
+          )
+        },
       },
       {
         id: 'connections',
@@ -441,5 +476,14 @@ export function useModelsColumns(
         meta: { mobileHidden: true },
       },
     ]
-  }, [t, canPrice, vendorMap, priceMap, pricingState, setCurrentRow, setOpen])
+  }, [
+    t,
+    canPrice,
+    vendorMap,
+    priceMap,
+    pricing,
+    pricingState,
+    setCurrentRow,
+    setOpen,
+  ])
 }

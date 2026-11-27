@@ -32,6 +32,7 @@ distributor.get_channel_failed: "获取分组 {{.Group}} 下模型 {{.Model}} �
 distributor.no_available_channel: "分组 {{.Group}} 下模型 {{.Model}} 无可用渠道（distributor）"
 distributor.no_available_channel_task_plugin: "分组 {{.Group}} 下模型 {{.Model}} 无可用渠道：该模型由任务插件认领，但当前没有启用的渠道可服务此模型（distributor）"
 distributor.invalid_request_parse_model: "无法解析模型"
+distributor.smart_route_reasoning_only: "当前密钥为推理模型自动路由，暂不支持调用 {{.Model}}（图片/视频/音频等非推理模型），请单独创建并选择对应专项分组的密钥。"
 quota.user_insufficient: "用户额度不足, 剩余额度: {{.Remaining}}"
 quota.pre_consume_insufficient: "预扣费额度失败, 用户剩余额度: {{.Remaining}}, 需要预扣费额度: {{.Required}}"
 quota.subscription_insufficient: "订阅额度不足或未配置订阅: {{.Error}}"
@@ -103,3 +104,17 @@ channel.upstream_update_failed_channels: "失败渠道 ID（展示 {{.Shown}}/{{
 channel.upstream_update_more_omitted: "（其余 {{.Count}} 个已省略）"
 
 channel.notify_scheduled_subject: "渠道“{{.Name}}” (#{{.Id}}) 插件通知"
+
+# Site notices published automatically when models come online or go offline
+model_notice.launch_kind: "模型上线"
+model_notice.offline_kind: "模型下线"
+model_notice.launch_title_single: "模型上线：{{.Models}}"
+model_notice.launch_title_multi: "模型上线：{{.Models}} 等 {{.Count}} 个模型"
+model_notice.offline_title_single: "模型下线：{{.Models}}"
+model_notice.offline_title_multi: "模型下线：{{.Models}} 等 {{.Count}} 个模型"
+model_notice.launch_content: "新上线模型（{{.Count}} 个）：{{.Models}}"
+model_notice.offline_content: "以下模型已下线并暂停服务（{{.Count}} 个）：{{.Models}}"
+model_notice.groups_suffix: "可用分组：{{.Groups}}"
+model_notice.prev_groups_suffix: "原所属分组：{{.Groups}}"
+model_notice.more_models: "等共 {{.Count}} 个"
+model_notice.auto_extra: "后台管理自动同步"

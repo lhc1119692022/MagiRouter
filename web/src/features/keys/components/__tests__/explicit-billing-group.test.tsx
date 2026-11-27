@@ -46,16 +46,40 @@ afterEach(() => {
 type GroupsFixture = {
   data: Record<
     string,
-    { desc: string; ratio: number | string; has_models?: boolean }
+    {
+      desc: string
+      ratio: number | string
+      has_models?: boolean
+      has_active_channels?: boolean
+    }
   >
   user_group?: string
   require_explicit_group?: boolean
+  smart_routing_enabled?: boolean
 }
 
 async function renderDrawerWithGroups(options: {
   groupsFixture: GroupsFixture
   defaultUseAutoGroup?: boolean
   currentRow?: ApiKey
+  smartRouting?: {
+    enabled: boolean
+    policies: Array<{
+      id: 'cost_first' | 'stability_first'
+      available: boolean
+      reasoning_only: boolean
+      min_ratio?: number
+      max_ratio?: number
+      eligible_group_count: number
+      model_count: number
+      sample_routes?: Array<{
+        model: string
+        group: string
+        ratio: number
+        status: string
+      }>
+    }>
+  }
 }) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -86,7 +110,18 @@ async function renderDrawerWithGroups(options: {
       }
     }
     if (url === '/api/token/auto-groups') {
-      return { data: { success: true, data: { groups: [], max_count: 5 } } }
+      return {
+        data: {
+          success: true,
+          data: {
+            groups: [],
+            max_count: 5,
+            ...(options.smartRouting
+              ? { smart_routing: options.smartRouting }
+              : {}),
+          },
+        },
+      }
     }
     if (options.currentRow && url === `/api/token/${options.currentRow.id}`) {
       return { data: { success: true, data: options.currentRow } }
@@ -124,12 +159,17 @@ async function renderDrawerWithGroups(options: {
   return { createdPayloads, postSpy, saveButton }
 }
 
-function CellHarness(props: { group: string; requireExplicitGroup?: boolean }) {
+function CellHarness(props: {
+  group: string
+  routePolicy?: string | null
+  requireExplicitGroup?: boolean
+}) {
   return (
     <I18nextProvider i18n={i18n}>
       <TooltipProvider>
         <ApiKeyGroupCell
           group={props.group}
+          routePolicy={props.routePolicy}
           crossGroupRetry={false}
           shouldReduceMotion={false}
           requireExplicitGroup={props.requireExplicitGroup}
@@ -372,6 +412,88 @@ describe('ApiKeysMutateDrawer explicit billing group flow', () => {
     expect(await screen.findByText('Active Group')).toBeVisible()
     expect(screen.queryByText('Other Empty Group')).not.toBeInTheDocument()
   })
+
+  test('allows selecting a smart routing policy and shows disconnected backup groups', async () => {
+    const user = userEvent.setup()
+    const { createdPayloads, saveButton } = await renderDrawerWithGroups({
+      groupsFixture: {
+        data: {
+          'Economy Line': {
+            desc: 'Cheapest route',
+            ratio: 0.4,
+            has_models: true,
+            has_active_channels: true,
+          },
+          'GLM Special': {
+            desc: 'Backup route',
+            ratio: 0.25,
+            has_models: true,
+            has_active_channels: false,
+          },
+        },
+        user_group: 'default',
+        require_explicit_group: true,
+        smart_routing_enabled: true,
+      },
+      smartRouting: {
+        enabled: true,
+        policies: [
+          {
+            id: 'cost_first',
+            available: true,
+            reasoning_only: true,
+            min_ratio: 0.4,
+            max_ratio: 0.8,
+            eligible_group_count: 2,
+            model_count: 3,
+            sample_routes: [
+              {
+                model: 'gpt-5.2',
+                group: 'Economy Line',
+                ratio: 0.4,
+                status: 'healthy',
+              },
+            ],
+          },
+          {
+            id: 'stability_first',
+            available: true,
+            reasoning_only: true,
+            min_ratio: 0.8,
+            max_ratio: 1.0,
+            eligible_group_count: 2,
+            model_count: 3,
+          },
+        ],
+      },
+    })
+
+    // Disconnected backup group remains visible and labeled in the combobox
+    const groupCombobox = screen.getByRole('combobox')
+    await user.click(groupCombobox)
+    expect(await screen.findByText('GLM Special')).toBeVisible()
+    expect(screen.getByText('Temporarily disconnected')).toBeVisible()
+    await user.keyboard('{Escape}')
+
+    // Select Cost first smart routing policy
+    const costFirstBtn = screen.getByRole('radio', { name: /Cost first/i })
+    await user.click(costFirstBtn)
+    expect(screen.getByText('gpt-5.2')).toBeVisible()
+
+    fireEvent.change(screen.getByLabelText(/Name/i), {
+      target: { value: 'smart-cost-key' },
+    })
+    await user.click(saveButton)
+
+    await waitFor(() => expect(createdPayloads).toHaveLength(1))
+    expect(createdPayloads[0]).toMatchObject({
+      name: 'smart-cost-key',
+      group: 'auto',
+      route_policy: 'cost_first',
+      auto_groups: [],
+      cross_group_retry: true,
+    })
+  })
 })
 
 describe('ApiKeyGroupCell explicit billing group warning', () => {
@@ -396,5 +518,15 @@ describe('ApiKeyGroupCell explicit billing group warning', () => {
 
     expect(screen.getByText('Inherited')).toBeVisible()
     expect(screen.queryByText('Billing group required')).not.toBeInTheDocument()
+  })
+
+  test('renders smart routing badges for cost_first and stability_first keys', () => {
+    const { rerender } = render(
+      <CellHarness group='auto' routePolicy='cost_first' />
+    )
+    expect(screen.getByText('Smart · Cost first')).toBeVisible()
+
+    rerender(<CellHarness group='auto' routePolicy='stability_first' />)
+    expect(screen.getByText('Smart · Stability first')).toBeVisible()
   })
 })

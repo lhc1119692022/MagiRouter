@@ -35,6 +35,17 @@ export interface BoundChannel {
  */
 export type ModelSquareState = 'visible' | 'unavailable' | 'hidden' | 'partial'
 
+export type ModelSortBy =
+  | 'default'
+  | 'issues'
+  | 'model_name'
+  | 'vendor'
+  | 'channels'
+  | 'updated_time'
+  | 'created_time'
+
+export type ModelSortOrder = 'asc' | 'desc'
+
 export interface Model {
   square_state?: ModelSquareState
   has_metadata?: boolean
@@ -101,6 +112,8 @@ export interface GetModelsParams {
   vendor?: string // vendor ID to filter by
   status?: string // filter by status
   sync_official?: string // filter by sync_official status
+  sort_by?: ModelSortBy
+  sort_order?: ModelSortOrder
 }
 
 /**
@@ -113,8 +126,27 @@ export interface SearchModelsParams {
   vendor?: string // vendor ID to filter by
   status?: string // filter by status
   sync_official?: string // filter by sync_official status
+  sort_by?: ModelSortBy
+  sort_order?: ModelSortOrder
   p?: number
   page_size?: number
+}
+
+export interface BatchUpdateModelsRequest {
+  model_ids?: number[]
+  channel_models?: string[]
+  vendor_id?: number
+  status?: number
+  sync_official?: number
+  tags_mode?: 'replace' | 'append' | 'clear'
+  tags?: string
+  capability_labels_mode?: 'set' | 'auto'
+  capability_labels?: string[]
+}
+
+export interface BatchUpdateModelsResult {
+  updated_count: number
+  created_count: number
 }
 
 /**

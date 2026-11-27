@@ -398,18 +398,23 @@ export function ApiKeysTable() {
 
   const columnVisibility = table.getState().columnVisibility
   useEffect(() => {
-    // Restore the dates hidden by the previous default when adopting the combined time column.
+    // Restore dates hidden by legacy defaults when adopting separate created/last-used columns.
     if (
-      columnVisibility.activity_time === undefined &&
       columnVisibility.created_time === false &&
       columnVisibility.accessed_time === false &&
-      columnVisibility.expired_time === false
+      (columnVisibility.expired_time === false ||
+        columnVisibility.activity_time === true)
     ) {
-      table.setColumnVisibility((previous) => ({
-        ...previous,
-        activity_time: true,
-        expired_time: true,
-      }))
+      table.setColumnVisibility((previous) => {
+        const next = {
+          ...previous,
+          created_time: true,
+          accessed_time: true,
+          expired_time: true,
+        }
+        delete next.activity_time
+        return next
+      })
     }
   }, [columnVisibility, table])
 
