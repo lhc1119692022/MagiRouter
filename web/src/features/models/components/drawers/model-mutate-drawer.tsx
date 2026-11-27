@@ -33,7 +33,6 @@ import {
   sideDrawerSwitchItemClassName,
 } from '@/components/drawer-layout'
 import { ErrorState } from '@/components/error-state'
-import { JsonEditor } from '@/components/json-editor'
 import { LoadingState } from '@/components/loading-state'
 import { LobeIconField } from '@/components/lobe-icon-field'
 import { TagInput } from '@/components/tag-input'
@@ -72,7 +71,7 @@ import {
 import { invalidatePublishedStatusQueries } from '@/lib/status-query'
 
 import { createModel, updateModel, getModel, getVendors } from '../../api'
-import { getNameRuleOptions, ENDPOINT_TEMPLATES } from '../../constants'
+import { getNameRuleOptions } from '../../constants'
 import { modelsQueryKeys, vendorsQueryKeys } from '../../lib'
 import {
   modelFormSchema,
@@ -83,6 +82,7 @@ import {
 } from '../../lib/model-form'
 import type { Model } from '../../types'
 import { ModelConnections } from '../model-connections'
+import { ModelEndpointsEditor } from '../model-endpoints-editor'
 import { ModelTaskCapabilityField } from '../model-task-capability-field'
 
 export function ModelMutateDrawer(props: {
@@ -226,14 +226,6 @@ export function ModelMutateDrawer(props: {
     },
   })
   const isSubmitting = save.isPending
-  const handleFillEndpointTemplate = (key: string) => {
-    const template = ENDPOINT_TEMPLATES[key]
-    if (template) {
-      form.setValue('endpoints', JSON.stringify({ [key]: template }, null, 2), {
-        shouldDirty: true,
-      })
-    }
-  }
   const metadataDirty = form.formState.isDirty
   const close = (open: boolean) => {
     if (!open && isSubmitting) return
@@ -501,22 +493,9 @@ export function ModelMutateDrawer(props: {
 
                     {/* Endpoints Configuration */}
                     <SideDrawerSection>
-                      <div className='flex items-center justify-between'>
-                        <h3 className='text-sm font-semibold'>
-                          {t('Endpoints')}
-                        </h3>
-                        <Combobox
-                          options={Object.keys(ENDPOINT_TEMPLATES).map(
-                            (key) => ({ value: key, label: key })
-                          )}
-                          onValueChange={(value: string | null) => {
-                            if (value) handleFillEndpointTemplate(value)
-                          }}
-                          className='w-[200px]'
-                          placeholder={t('Load template...')}
-                          aria-label={t('Load template...')}
-                        />
-                      </div>
+                      <h3 className='text-sm font-semibold'>
+                        {t('Endpoints')}
+                      </h3>
 
                       <FormField
                         control={form.control}
@@ -525,17 +504,9 @@ export function ModelMutateDrawer(props: {
                           <FormItem>
                             <FormLabel>{t('Endpoint Configuration')}</FormLabel>
                             <FormControl>
-                              <JsonEditor
+                              <ModelEndpointsEditor
                                 value={field.value || ''}
                                 onChange={field.onChange}
-                                keyPlaceholder='endpoint_type'
-                                valuePlaceholder='{"path": "/v1/...", "method": "POST"}'
-                                keyLabel='Endpoint Type'
-                                valueLabel='Configuration'
-                                valueType='any'
-                                emptyMessage={t(
-                                  'No endpoints configured. Switch to JSON mode or add rows to define endpoints.'
-                                )}
                               />
                             </FormControl>
                             <FormDescription>

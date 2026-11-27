@@ -9900,6 +9900,14 @@
     "Official Repository (basellm)": "Official Repository (basellm)",
     "Partial source fallback": "Partial source fallback",
     "Smart Merge (Recommended)": "Smart Merge (Recommended)",
-    "models.dev": "models.dev"
+    "models.dev": "models.dev",
+    "Add custom endpoint": "Add custom endpoint",
+    "Delete endpoint": "Delete endpoint",
+    "Duplicate endpoint types will overwrite earlier entries.": "Duplicate endpoint types will overwrite earlier entries.",
+    "Invalid JSON. Fix syntax or structure errors before switching to visual mode.": "Invalid JSON. Fix syntax or structure errors before switching to visual mode.",
+    "No endpoints configured. Select templates above or add a custom endpoint.": "No endpoints configured. Select templates above or add a custom endpoint.",
+    "No matching endpoints": "No matching endpoints",
+    "Select endpoint templates...": "Select endpoint templates...",
+    "{{count}} template(s) selected": "{{count}} template(s) selected"
   }
 }

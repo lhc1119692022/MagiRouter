@@ -31,7 +31,6 @@ import {
   sideDrawerFormClassName,
   sideDrawerHeaderClassName,
 } from '@/components/drawer-layout'
-import { JsonEditor } from '@/components/json-editor'
 import { StatusBadge } from '@/components/status-badge'
 import { TagInput } from '@/components/tag-input'
 import { Button } from '@/components/ui/button'
@@ -66,13 +65,13 @@ import { Textarea } from '@/components/ui/textarea'
 import { handleServerError } from '@/lib/handle-server-error'
 
 import { createPrefillGroup, updatePrefillGroup } from '../../api'
-import { ENDPOINT_TEMPLATES } from '../../constants'
 import { prefillGroupsQueryKeys } from '../../lib'
 import {
   prefillGroupFormSchema,
   type PrefillGroup,
   type PrefillGroupFormValues,
 } from '../../types'
+import { ModelEndpointsEditor } from '../model-endpoints-editor'
 import {
   DEFAULT_FORM_VALUES,
   PREFILL_GROUP_TYPE_META,
@@ -125,13 +124,11 @@ export function PrefillGroupFormDrawer({
   }, [open, isEdit, currentGroup, form])
 
   useEffect(() => {
+    const currentType = form.getValues('type')
     const currentItems = form.getValues('items')
-    if (selectedType === 'endpoint' && Array.isArray(currentItems)) {
+    if (currentType === 'endpoint' && Array.isArray(currentItems)) {
       form.setValue('items', '', { shouldValidate: false })
-    } else if (
-      selectedType !== 'endpoint' &&
-      typeof currentItems === 'string'
-    ) {
+    } else if (currentType !== 'endpoint' && typeof currentItems === 'string') {
       form.setValue('items', [], { shouldValidate: false })
     }
   }, [selectedType, form])
@@ -349,18 +346,9 @@ export function PrefillGroupFormDrawer({
                       <FormLabel className='sr-only'>{t('Items')}</FormLabel>
                       <FormControl>
                         {selectedType === 'endpoint' ? (
-                          <JsonEditor
+                          <ModelEndpointsEditor
                             value={(field.value as string) || ''}
                             onChange={field.onChange}
-                            keyPlaceholder='provider'
-                            valuePlaceholder='{"path": "/v1/...","method": "POST"}'
-                            keyLabel={t('Provider')}
-                            valueLabel={t('Endpoint config')}
-                            valueType='any'
-                            template={ENDPOINT_TEMPLATES}
-                            emptyMessage={t(
-                              'Define endpoint mappings for each provider.'
-                            )}
                           />
                         ) : (
                           <TagInput

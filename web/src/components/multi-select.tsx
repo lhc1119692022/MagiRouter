@@ -302,6 +302,17 @@ export function MultiSelect(props: MultiSelectProps) {
       open={open}
       onOpenChange={setOpen}
       disabled={props.disabled}
+      filter={(item, query) => {
+        const term = query.trim().toLowerCase()
+        if (!term) return true
+        const label = labelMap.get(item) ?? item
+        const hint = hintMap.get(item) ?? ''
+        return (
+          item.toLowerCase().includes(term) ||
+          label.toLowerCase().includes(term) ||
+          hint.toLowerCase().includes(term)
+        )
+      }}
     >
       <ComboboxChips
         ref={chipsAnchorRef}

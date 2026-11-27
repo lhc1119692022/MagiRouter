@@ -156,17 +156,39 @@ export function getQuotaTypeConfig(
 // Endpoint Templates
 // ============================================================================
 
+export const ENDPOINT_HTTP_METHODS = [
+  'POST',
+  'GET',
+  'PUT',
+  'PATCH',
+  'DELETE',
+  'HEAD',
+  'OPTIONS',
+] as const
+
 export const ENDPOINT_TEMPLATES: Record<
   string,
   { path: string; method: string }
 > = {
   openai: { path: '/v1/chat/completions', method: 'POST' },
   'openai-response': { path: '/v1/responses', method: 'POST' },
+  'openai-response-compact': { path: '/v1/responses/compact', method: 'POST' },
+  'openai-completions': { path: '/v1/completions', method: 'POST' },
   anthropic: { path: '/v1/messages', method: 'POST' },
   gemini: { path: '/v1beta/models/{model}:generateContent', method: 'POST' },
-  'jina-rerank': { path: '/rerank', method: 'POST' },
   'image-generation': { path: '/v1/images/generations', method: 'POST' },
+  'image-edits': { path: '/v1/images/edits', method: 'POST' },
+  'openai-video': { path: '/v1/videos', method: 'POST' },
+  'audio-speech': { path: '/v1/audio/speech', method: 'POST' },
+  'audio-transcriptions': { path: '/v1/audio/transcriptions', method: 'POST' },
+  'audio-translations': { path: '/v1/audio/translations', method: 'POST' },
   embeddings: { path: '/v1/embeddings', method: 'POST' },
+  'jina-rerank': { path: '/v1/rerank', method: 'POST' },
+  moderations: { path: '/v1/moderations', method: 'POST' },
+  'openai-realtime': { path: '/v1/realtime', method: 'GET' },
+  'openai-alpha-search': { path: '/v1/alpha/search', method: 'POST' },
+  'deepseek-tools-search': { path: '/v1/tools/search', method: 'POST' },
+  'deepseek-tools-fetch': { path: '/v1/tools/fetch', method: 'POST' },
 }
 
 // ============================================================================

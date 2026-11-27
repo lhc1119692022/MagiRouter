@@ -9900,6 +9900,14 @@
     "Official Repository (basellm)": "官方仓库 (basellm)",
     "Partial source fallback": "部分来源降级提示",
     "Smart Merge (Recommended)": "多源智能融合（推荐）",
-    "models.dev": "models.dev"
+    "models.dev": "models.dev",
+    "Add custom endpoint": "添加自定义端点",
+    "Delete endpoint": "删除端点",
+    "Duplicate endpoint types will overwrite earlier entries.": "存在重复的端点类型，保存时后一项会覆盖前一项。",
+    "Invalid JSON. Fix syntax or structure errors before switching to visual mode.": "JSON 格式或结构无效，请修正后再切换回可视模式。",
+    "No endpoints configured. Select templates above or add a custom endpoint.": "暂未配置端点，请在上方选择端点模板或添加自定义端点。",
+    "No matching endpoints": "未找到匹配的端点",
+    "Select endpoint templates...": "选择端点模板（可多选）...",
+    "{{count}} template(s) selected": "已选 {{count}} 个模板"
   }
 }
