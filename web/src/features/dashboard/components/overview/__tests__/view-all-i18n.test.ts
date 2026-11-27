@@ -7,12 +7,7 @@ const bundles = import.meta.glob<ResourceLanguage>('/src/i18n/locales/*.json', {
 
 it.each([
   ['en', 'View all'],
-  ['fr', 'Tout voir'],
-  ['ja', 'すべて表示'],
-  ['ru', 'Посмотреть все'],
-  ['vi', 'Xem tất cả'],
   ['zh', '查看全部'],
-  ['zh-TW', '檢視全部'],
 ])(
   'translates the overview key-manager link in %s without fallback',
   async (locale, label) => {

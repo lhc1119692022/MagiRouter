@@ -33,7 +33,7 @@ def allowed(name):
         return True
     if name in {'relaykit/go.mod', 'relaykit/go.sum', 'tokenkit/go.mod', 'tokenkit/go.sum', 'common/log_text.zh-CN.json', 'common/limiter/lua/rate_limit.lua'}:
         return True
-    if re.fullmatch(r'i18n/locales/(?:en|zh-CN|zh-TW)\.yaml|plugins/tasks/[\w-]+/(?:plugin\.js|icon\.svg)', name):
+    if re.fullmatch(r'i18n/locales/(?:en|zh-CN)\.yaml|plugins/tasks/[\w-]+/(?:plugin\.js|icon\.svg)', name):
         return True
     if len(parts) == 2 and parts[0] == 'web':
         return parts[1] in WEB_FILES
@@ -42,7 +42,7 @@ def allowed(name):
     if parts[:2] != ('web', 'src'):
         return False
     return (path.suffix in {'.ts', '.tsx', '.css'} or name in {'web/src/assets/brand-icons/sglang.svg', 'web/src/assets/custom/wan.png'}
-            or re.fullmatch(r'web/src/i18n/locales/(?:en|fr|ja|ru|vi|zh|zh-TW)\.json', name) is not None)
+            or re.fullmatch(r'web/src/i18n/locales/(?:en|zh)\.json', name) is not None)
 
 
 def check_bytes(name, data):

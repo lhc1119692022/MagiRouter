@@ -184,7 +184,39 @@ export function getSyncLocaleOptions(t: TFunction) {
 export function getSyncSourceOptions(t: TFunction) {
   return [
     {
-      label: t('Official Repository'),
+      label: t('Smart Merge (Recommended)'),
+      value: 'merged' as SyncSource,
+      description: t(
+        'Combines LobeHub model-bank, OpenRouter, models.dev, and basellm with clean first-party vendors and Chinese descriptions.'
+      ),
+      disabled: false,
+    },
+    {
+      label: t('LobeHub model-bank'),
+      value: 'lobehub' as SyncSource,
+      description: t(
+        'First-party provider catalog with image/video models and capability metadata.'
+      ),
+      disabled: false,
+    },
+    {
+      label: t('OpenRouter'),
+      value: 'openrouter' as SyncSource,
+      description: t(
+        'Fastest updates for newly launched chat models with clean first-party prefixes.'
+      ),
+      disabled: false,
+    },
+    {
+      label: t('models.dev'),
+      value: 'models_dev' as SyncSource,
+      description: t(
+        'Large open catalog prioritizing canonical first-party providers.'
+      ),
+      disabled: false,
+    },
+    {
+      label: t('Official Repository (basellm)'),
       value: 'official' as SyncSource,
       description: t('Sync from the public upstream metadata repository.'),
       disabled: false,

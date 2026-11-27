@@ -230,10 +230,13 @@ func fetchJSON[T any](ctx context.Context, url string, out *upstreamEnvelope[T])
 }
 
 type metadataSyncSource struct {
-	Locale     string `json:"locale"`
-	ModelsURL  string `json:"models_url"`
-	VendorsURL string `json:"vendors_url"`
-	Version    string `json:"version"`
+	Source        string   `json:"source,omitempty"`
+	Locale        string   `json:"locale"`
+	ModelsURL     string   `json:"models_url"`
+	VendorsURL    string   `json:"vendors_url"`
+	Version       string   `json:"version"`
+	ActiveSources []string `json:"active_sources,omitempty"`
+	Warnings      []string `json:"warnings,omitempty"`
 }
 
 type metadataSyncField struct {
@@ -252,15 +255,15 @@ type metadataSyncCandidate struct {
 	VendorToCreate string                `json:"vendor_to_create,omitempty"`
 }
 
-func fetchMetadataCatalog(c *gin.Context, locale string) (metadataSyncSource, map[string]model.MetadataValues, map[string]model.Vendor, error) {
-	resolved, valid := normalizeLocale(locale)
-	if !valid {
-		return metadataSyncSource{}, nil, nil, errors.New("unsupported metadata language")
-	}
+func fetchOfficialMetadataCatalog(ctx context.Context, resolved string) (metadataSyncSource, map[string]model.MetadataValues, map[string]model.Vendor, error) {
 	modelsURL, vendorsURL := getUpstreamURLs(resolved)
-	source := metadataSyncSource{Locale: resolved, ModelsURL: modelsURL, VendorsURL: vendorsURL}
-	ctx, cancel := context.WithTimeout(c.Request.Context(), time.Duration(common.GetEnvOrDefault("SYNC_HTTP_TIMEOUT_SECONDS", 15))*time.Second)
-	defer cancel()
+	source := metadataSyncSource{
+		Source:        metadataSourceOfficial,
+		Locale:        resolved,
+		ModelsURL:     modelsURL,
+		VendorsURL:    vendorsURL,
+		ActiveSources: []string{metadataSourceOfficial},
+	}
 	var modelsEnv upstreamEnvelope[upstreamModel]
 	var vendorsEnv upstreamEnvelope[upstreamVendor]
 	var modelsErr, vendorsErr error
@@ -307,7 +310,41 @@ func fetchMetadataCatalog(c *gin.Context, locale string) (metadataSyncSource, ma
 		}
 		models[item.ModelName] = values
 	}
-	encoded, err := common.Marshal([]any{source.Locale, models, vendors})
+	return source, models, vendors, nil
+}
+
+func fetchMetadataCatalogForSource(
+	c *gin.Context,
+	locale string,
+	rawSource string,
+	localVendors map[string]*model.Vendor,
+) (metadataSyncSource, map[string]model.MetadataValues, map[string]model.Vendor, error) {
+	resolved, valid := normalizeLocale(locale)
+	if !valid {
+		return metadataSyncSource{}, nil, nil, errors.New("unsupported metadata language")
+	}
+	sourceType, sourceValid := normalizeMetadataSource(rawSource)
+	if !sourceValid {
+		return metadataSyncSource{}, nil, nil, errors.New("unsupported metadata source")
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), time.Duration(common.GetEnvOrDefault("SYNC_HTTP_TIMEOUT_SECONDS", 25))*time.Second)
+	defer cancel()
+
+	var (
+		source  metadataSyncSource
+		models  map[string]model.MetadataValues
+		vendors map[string]model.Vendor
+		err     error
+	)
+	if sourceType == metadataSourceOfficial {
+		source, models, vendors, err = fetchOfficialMetadataCatalog(ctx, resolved)
+	} else {
+		source, models, vendors, err = fetchMultiSourceMetadataCatalog(ctx, resolved, sourceType, localVendors)
+	}
+	if err != nil {
+		return source, nil, nil, err
+	}
+	encoded, err := common.Marshal([]any{source.Source, source.Locale, models, vendors})
 	if err != nil {
 		return source, nil, nil, err
 	}
@@ -316,12 +353,12 @@ func fetchMetadataCatalog(c *gin.Context, locale string) (metadataSyncSource, ma
 }
 
 func SyncUpstreamPreview(c *gin.Context) {
-	source, upstream, upstreamVendors, err := fetchMetadataCatalog(c, c.Query("locale"))
+	locals, vendors, err := model.GetMetadataSyncState(model.DB)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	locals, vendors, err := model.GetMetadataSyncState(model.DB)
+	source, upstream, upstreamVendors, err := fetchMetadataCatalogForSource(c, c.Query("locale"), c.Query("source"), vendors)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -415,6 +452,7 @@ func SyncUpstreamPreview(c *gin.Context) {
 func SyncUpstreamModels(c *gin.Context) {
 	var request struct {
 		Locale        string                        `json:"locale"`
+		Source        string                        `json:"source"`
 		SourceVersion string                        `json:"source_version"`
 		Selections    []model.MetadataSyncSelection `json:"selections"`
 	}
@@ -422,7 +460,12 @@ func SyncUpstreamModels(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "Preview and select metadata changes before applying"})
 		return
 	}
-	source, upstream, vendors, err := fetchMetadataCatalog(c, request.Locale)
+	_, localVendors, err := model.GetMetadataSyncState(model.DB)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	source, upstream, vendors, err := fetchMetadataCatalogForSource(c, request.Locale, request.Source, localVendors)
 	if err != nil {
 		common.ApiError(c, err)
 		return

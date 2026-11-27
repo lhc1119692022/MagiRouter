@@ -22,8 +22,6 @@ import { createInstance } from 'i18next'
 import { I18nextProvider } from 'react-i18next'
 import { expect, test, vi } from 'vitest'
 
-import fr from '@/i18n/locales/fr.json'
-
 import { ModelMappingBatchDialog } from '../model-mapping-batch-dialog'
 
 test('creating user aliases starts unselected, previews request-to-upstream pairs, and skips unchanged names', async () => {
@@ -246,7 +244,20 @@ test('cancelling after configuring a rule does not apply mappings', async () => 
 
 test('long translated source labels wrap inside their row without covering the model search', async () => {
   const i18n = createInstance()
-  await i18n.init({ lng: 'fr', resources: { fr }, keySeparator: false })
+  await i18n.init({
+    lng: 'en',
+    resources: {
+      en: {
+        translation: {
+          'Select models': 'Select models for batch alias mapping',
+          'Search models...': 'Search configured models...',
+          'Upstream models': 'Upstream models from selected provider endpoint',
+          'Channel models': 'Channel models currently configured on this route',
+        },
+      },
+    },
+    keySeparator: false,
+  })
   render(
     <I18nextProvider i18n={i18n}>
       <ModelMappingBatchDialog
@@ -258,12 +269,14 @@ test('long translated source labels wrap inside their row without covering the m
       />
     </I18nextProvider>
   )
-  const tabs = screen.getByRole('tablist', { name: 'Sélectionner les modèles' })
+  const tabs = screen.getByRole('tablist', {
+    name: 'Select models for batch alias mapping',
+  })
   expect(tabs).toHaveClass('grid-cols-2', 'group-data-horizontal/tabs:h-auto')
   for (const tab of within(tabs).getAllByRole('tab')) {
     expect(tab).toHaveClass('whitespace-normal', 'h-auto')
   }
   expect(
-    screen.getByRole('textbox', { name: 'Rechercher des modèles...' })
+    screen.getByRole('textbox', { name: 'Search configured models...' })
   ).toBeVisible()
 })

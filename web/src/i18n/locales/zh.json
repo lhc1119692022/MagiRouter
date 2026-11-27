@@ -9889,6 +9889,17 @@
     "Pick your AI app and paste the two fields above": "选一个常用 AI 应用，照着填入上面两项：",
     "Use CC Switch for one-click setup, or paste the Base URL above into Codex base_url together with your API Key.": "推荐用 CC Switch 一键写入；手动配置时将上方接口地址填到 Codex 的 base_url，并填入上方 API 密钥。",
     "Use CC Switch for one-click setup, or set ANTHROPIC_BASE_URL to the Base URL above and ANTHROPIC_AUTH_TOKEN to your API Key.": "推荐用 CC Switch 一键配置；手动配置时将 ANTHROPIC_BASE_URL 设为上方接口地址，ANTHROPIC_AUTH_TOKEN 填上方密钥即可。",
-    "{{count}} keys total": "共 {{count}} 把密钥"
+    "{{count}} keys total": "共 {{count}} 把密钥",
+    "Active sources": "已生效来源",
+    "Combines LobeHub model-bank, OpenRouter, models.dev, and basellm with clean first-party vendors and Chinese descriptions.": "融合 LobeHub model-bank、OpenRouter、models.dev 与 basellm：自动纠偏一手厂商与图标、补全生图等多模态模型，并优先保留中文简介。",
+    "Fastest updates for newly launched chat models with clean first-party prefixes.": "新发布对话模型更新最快，原生一手厂商前缀清晰（不含生图/音视频模型）。",
+    "First-party provider catalog with image/video models and capability metadata.": "严格按一手厂商分库，完整覆盖生图/视频等多模态模型与能力标签。",
+    "Large open catalog prioritizing canonical first-party providers.": "5,000+ 开源模型目录，已按一手厂商优先去重。",
+    "LobeHub model-bank": "LobeHub model-bank",
+    "Metadata source": "资料来源",
+    "Official Repository (basellm)": "官方仓库 (basellm)",
+    "Partial source fallback": "部分来源降级提示",
+    "Smart Merge (Recommended)": "多源智能融合（推荐）",
+    "models.dev": "models.dev"
   }
 }

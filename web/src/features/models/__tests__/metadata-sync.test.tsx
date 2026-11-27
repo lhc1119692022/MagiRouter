@@ -742,4 +742,93 @@ describe('metadata sync preview', () => {
     expect(post).not.toHaveBeenCalled()
     client.clear()
   })
+
+  it('defaults to merged metadata source, displays active sources and warnings, and forwards source on apply', async () => {
+    const mergedPreview: MetadataSyncPreview = {
+      ...preview,
+      source: {
+        source: 'merged',
+        locale: 'zh',
+        models_url: 'https://registry.npmjs.org/model-bank',
+        vendors_url: 'builtin:first-party-vendors',
+        version: 'merged-v2',
+        active_sources: ['lobehub', 'openrouter', 'official'],
+        warnings: ['models.dev: HTTP 503'],
+      },
+    }
+    const get = vi.spyOn(api, 'get').mockResolvedValue({
+      data: { success: true, data: mergedPreview },
+    })
+    const post = vi.spyOn(api, 'post').mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          created_models: ['new-model'],
+          updated_models: [],
+          created_vendors: ['Example vendor'],
+        },
+      },
+    })
+    const client = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    })
+    render(
+      <QueryClientProvider client={client}>
+        <SyncWizardDialog open onOpenChange={() => {}} />
+      </QueryClientProvider>
+    )
+    const user = userEvent.setup()
+    await user.click(
+      screen.getByRole('button', { name: 'Load metadata preview' })
+    )
+    expect(get).toHaveBeenCalledWith(
+      '/api/models/sync_upstream/preview?locale=zh&source=merged'
+    )
+    const activeSourcesLabel = await screen.findByText(/Active sources:/)
+    const activeSourcesRow = activeSourcesLabel.parentElement
+    expect(activeSourcesRow).not.toBeNull()
+    expect(
+      within(activeSourcesRow as HTMLElement).getByText('LobeHub model-bank')
+    ).toBeVisible()
+    expect(
+      within(activeSourcesRow as HTMLElement).getByText('OpenRouter')
+    ).toBeVisible()
+    expect(
+      within(activeSourcesRow as HTMLElement).getByText(
+        'Official Repository (basellm)'
+      )
+    ).toBeVisible()
+    expect(
+      screen.getByText(/Partial source fallback: models\.dev: HTTP 503/)
+    ).toBeVisible()
+
+    await user.click(screen.getByRole('checkbox', { name: 'Select new-model' }))
+    await user.click(
+      screen.getByRole('button', { name: 'Preview selected changes' })
+    )
+    await user.click(
+      screen.getByRole('button', { name: 'Review confirmation' })
+    )
+    await user.click(
+      screen.getByRole('button', { name: 'Apply 1 model changes' })
+    )
+    await screen.findByText('Metadata sync completed')
+    expect(post).toHaveBeenCalledWith('/api/models/sync_upstream', {
+      locale: 'zh',
+      source: 'merged',
+      source_version: 'merged-v2',
+      selections: [
+        {
+          model_name: 'new-model',
+          record_version: 'new-v1',
+          create: true,
+          fields: ['description'],
+        },
+      ],
+    })
+    client.clear()
+  })
 })

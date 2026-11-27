@@ -38,18 +38,19 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { handleServerError } from '@/lib/handle-server-error'
-import { invalidatePublishedStatusQueries } from '@/lib/status-query'
 import { isModelCatalogDeclaration } from '@/lib/model-task-capabilities'
 import { createServerError } from '@/lib/server-error-message'
+import { invalidatePublishedStatusQueries } from '@/lib/status-query'
 
 import { previewUpstreamDiff, syncUpstream } from '../../api'
-import { getSyncLocaleOptions } from '../../constants'
+import { getSyncLocaleOptions, getSyncSourceOptions } from '../../constants'
 import type {
   MetadataSyncCandidate,
   MetadataSyncField,
   MetadataSyncPreview,
   MetadataSyncSelection,
   SyncLocale,
+  SyncSource,
 } from '../../types'
 
 const FIELD_LABELS: Record<MetadataSyncField, string> = {
@@ -88,6 +89,7 @@ export function SyncWizardDialog(props: {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [locale, setLocale] = useState<SyncLocale>('zh')
+  const [source, setSource] = useState<SyncSource>('merged')
   const [preview, setPreview] = useState<MetadataSyncPreview | null>(null)
   const [scope, setScope] = useState('site')
   const [search, setSearch] = useState('')
@@ -97,6 +99,20 @@ export function SyncWizardDialog(props: {
   const [selection, setSelection] = useState<
     Record<string, MetadataSyncField[]>
   >({})
+  const sourceOptions = useMemo(() => getSyncSourceOptions(t), [t])
+  const selectedSourceOption = useMemo(
+    () =>
+      sourceOptions.find((option) => option.value === source) ??
+      sourceOptions[0],
+    [source, sourceOptions]
+  )
+  const sourceNameMap: Record<string, string> = {
+    merged: t('Smart Merge (Recommended)'),
+    lobehub: t('LobeHub model-bank'),
+    openrouter: t('OpenRouter'),
+    models_dev: t('models.dev'),
+    official: t('Official Repository (basellm)'),
+  }
   const load = useMutation({
     onMutate: () => {
       setPreview(null)
@@ -105,7 +121,7 @@ export function SyncWizardDialog(props: {
       setPage(0)
     },
     mutationFn: async () => {
-      const response = await previewUpstreamDiff({ locale })
+      const response = await previewUpstreamDiff({ locale, source })
       if (!response.success || !response.data) {
         throw createServerError(response, t('Failed to preview metadata'))
       }
@@ -138,11 +154,13 @@ export function SyncWizardDialog(props: {
   const apply = useMutation({
     mutationFn: async (selections: MetadataSyncSelection[]) => {
       if (!preview) throw new Error(t('Preview metadata first'))
-      const response = await syncUpstream({
+      const requestPayload = {
         locale: preview.source.locale,
+        ...(preview.source.source ? { source: preview.source.source } : {}),
         source_version: preview.source.version,
         selections,
-      })
+      }
+      const response = await syncUpstream(requestPayload)
       if (!response.success || !response.data) {
         throw createServerError(response, t('Metadata sync failed'))
       }
@@ -162,6 +180,7 @@ export function SyncWizardDialog(props: {
 
   useEffect(() => {
     if (props.open) {
+      setSource('merged')
       setPreview(null)
       setSelection({})
       setStep(0)
@@ -421,6 +440,38 @@ export function SyncWizardDialog(props: {
         <div className='space-y-4'>
           <div className='flex flex-wrap items-end gap-3'>
             <div className='space-y-1'>
+              <Label>{t('Metadata source')}</Label>
+              <Select
+                value={source}
+                disabled={busy}
+                items={sourceOptions.map(({ value, label }) => ({
+                  value,
+                  label,
+                }))}
+                onValueChange={(value) => {
+                  if (value) setSource(value as SyncSource)
+                  setPreview(null)
+                  setSelection({})
+                  setPage(0)
+                  load.reset()
+                }}
+              >
+                <SelectTrigger
+                  className='w-56'
+                  aria-label={t('Metadata source')}
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {sourceOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className='space-y-1'>
               <Label>{t('Metadata language')}</Label>
               <Select
                 value={locale}
@@ -457,6 +508,11 @@ export function SyncWizardDialog(props: {
               {t('Load metadata preview')}
             </Button>
           </div>
+          {selectedSourceOption?.description && (
+            <p className='text-muted-foreground text-xs leading-5'>
+              {selectedSourceOption.description}
+            </p>
+          )}
           {load.isPending && <LoadingState />}
           {load.isError && (
             <ErrorState
@@ -470,16 +526,42 @@ export function SyncWizardDialog(props: {
           )}
           {preview && (
             <>
-              <div className='text-muted-foreground space-y-1 text-xs break-all'>
-                <p>
+              <div className='bg-muted/40 text-muted-foreground space-y-1.5 rounded-lg border px-3 py-2.5 text-xs leading-5'>
+                {preview.source.active_sources &&
+                  preview.source.active_sources.length > 0 && (
+                    <div className='flex flex-wrap items-center gap-1.5'>
+                      <span className='text-foreground font-medium'>
+                        {t('Active sources')}:
+                      </span>
+                      {preview.source.active_sources.map((item) => (
+                        <span
+                          key={item}
+                          className='bg-background text-foreground rounded-md border px-2 py-0.5 text-[11px] font-medium'
+                        >
+                          {sourceNameMap[item] ?? item}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                <p className='break-all'>
                   {t('Models source')}: {preview.source.models_url}
                 </p>
-                <p>
+                <p className='break-all'>
                   {t('Vendors source')}: {preview.source.vendors_url}
                 </p>
                 <p>
                   {t('Metadata language')}: {preview.source.locale}
                 </p>
+                {preview.source.warnings &&
+                  preview.source.warnings.length > 0 && (
+                    <p
+                      className='text-amber-700 dark:text-amber-300'
+                      role='status'
+                    >
+                      {t('Partial source fallback')}:{' '}
+                      {preview.source.warnings.join('; ')}
+                    </p>
+                  )}
               </div>
               <div className='flex flex-wrap gap-3'>
                 <Select

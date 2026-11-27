@@ -236,10 +236,13 @@ export type MetadataSyncCandidate = {
   vendor_to_create?: string
 }
 export type MetadataSyncSource = {
+  source?: SyncSource
   locale: SyncLocale
   models_url: string
   vendors_url: string
   version: string
+  active_sources?: string[]
+  warnings?: string[]
 }
 export type MetadataSyncPreview = {
   source: MetadataSyncSource
@@ -253,6 +256,7 @@ export type MetadataSyncSelection = {
 }
 export type MetadataSyncRequest = {
   locale: SyncLocale
+  source?: SyncSource
   source_version: string
   selections: MetadataSyncSelection[]
 }
@@ -387,7 +391,12 @@ export type SyncLocale = 'zh' | 'zh-CN' | 'en' | 'ja'
 /**
  * Sync upstream source
  */
-export type SyncSource = 'official'
+export type SyncSource =
+  | 'merged'
+  | 'lobehub'
+  | 'openrouter'
+  | 'models_dev'
+  | 'official'
 
 // ============================================================================
 // Model Deployments Types

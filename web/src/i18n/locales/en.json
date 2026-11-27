@@ -9889,6 +9889,17 @@
     "Pick your AI app and paste the two fields above": "Pick your AI app and paste the two fields above",
     "Use CC Switch for one-click setup, or paste the Base URL above into Codex base_url together with your API Key.": "Use CC Switch for one-click setup, or paste the Base URL above into Codex base_url together with your API Key.",
     "Use CC Switch for one-click setup, or set ANTHROPIC_BASE_URL to the Base URL above and ANTHROPIC_AUTH_TOKEN to your API Key.": "Use CC Switch for one-click setup, or set ANTHROPIC_BASE_URL to the Base URL above and ANTHROPIC_AUTH_TOKEN to your API Key.",
-    "{{count}} keys total": "{{count}} keys total"
+    "{{count}} keys total": "{{count}} keys total",
+    "Active sources": "Active sources",
+    "Combines LobeHub model-bank, OpenRouter, models.dev, and basellm with clean first-party vendors and Chinese descriptions.": "Combines LobeHub model-bank, OpenRouter, models.dev, and basellm with clean first-party vendors and Chinese descriptions.",
+    "Fastest updates for newly launched chat models with clean first-party prefixes.": "Fastest updates for newly launched chat models with clean first-party prefixes.",
+    "First-party provider catalog with image/video models and capability metadata.": "First-party provider catalog with image/video models and capability metadata.",
+    "Large open catalog prioritizing canonical first-party providers.": "Large open catalog prioritizing canonical first-party providers.",
+    "LobeHub model-bank": "LobeHub model-bank",
+    "Metadata source": "Metadata source",
+    "Official Repository (basellm)": "Official Repository (basellm)",
+    "Partial source fallback": "Partial source fallback",
+    "Smart Merge (Recommended)": "Smart Merge (Recommended)",
+    "models.dev": "models.dev"
   }
 }
