@@ -9790,6 +9790,18 @@
     "Supported model families": "対応モデルファミリー",
     "Top up on demand (¥1 = $1 credit, never expires). A few yuan is enough to get started.": "必要な分だけチャージ（¥1 = $1 クレジット、有効期限なし）。少額からすぐ始められます。",
     "Use CC Switch for one-click import, or set base_url to the Base URL above and enter your API Key in Codex config.": "CC Switch でワンクリック設定するか、Codex 設定で base_url に上のベース URL を指定し API キーを入力してください。",
-    "Use CC Switch for one-click setup, or set ANTHROPIC_BASE_URL (without trailing /v1) and ANTHROPIC_AUTH_TOKEN to the values above.": "CC Switch でワンクリック設定するか、ANTHROPIC_BASE_URL（末尾の /v1 を除く）と ANTHROPIC_AUTH_TOKEN に上の値を設定してください。"
+    "Use CC Switch for one-click setup, or set ANTHROPIC_BASE_URL (without trailing /v1) and ANTHROPIC_AUTH_TOKEN to the values above.": "CC Switch でワンクリック設定するか、ANTHROPIC_BASE_URL（末尾の /v1 を除く）と ANTHROPIC_AUTH_TOKEN に上の値を設定してください。",
+    "Create & manage API keys": "API キーの作成と管理",
+    "Create one key to unlock all major models, then copy it in step 3.": "キーを 1 つ作成すれば全主要モデルに対応します。ステップ 3 でコピーしてご利用ください。",
+    "No /v1 needed": "/v1 不要",
+    "No active API key yet": "有効な API キーがありません",
+    "One key works across all major models": "1 つのキーで主要モデルに共通対応",
+    "Open CC Switch, add a profile, paste the root Base URL (no /v1) and API Key above, then sync to Claude Code / Codex in one click.": "CC Switch でプロファイルを追加し、上のルート URL（/v1 不要）と API キーを貼り付けて Claude Code / Codex へワンクリック同期します。",
+    "Open Magpie → Settings → Model Providers → add a provider, then paste the Base URL and API Key above to start chatting.": "Magpie → 設定 → モデルプロバイダー → プロバイダーを追加し、上の URL と API キーを貼り付けて開始します。",
+    "Open Settings → Custom Model / API Provider, paste the Base URL and API Key above, then pick a model to start.": "設定 → カスタムモデル / API プロバイダーを開き、上の URL と API キーを貼り付けてモデルを選択してください。",
+    "Pick your AI app and paste the two fields above": "お使いの AI アプリを選んで上の 2 項目を貼り付け",
+    "Use CC Switch for one-click setup, or paste the Base URL above into Codex base_url together with your API Key.": "CC Switch でワンクリック設定するか、Codex の base_url に上の URL を指定し API キーを入力してください。",
+    "Use CC Switch for one-click setup, or set ANTHROPIC_BASE_URL to the Base URL above and ANTHROPIC_AUTH_TOKEN to your API Key.": "CC Switch でワンクリック設定するか、ANTHROPIC_BASE_URL に上の URL、ANTHROPIC_AUTH_TOKEN に API キーを設定してください。",
+    "{{count}} keys total": "合計 {{count}} 個のキー"
   }
 }

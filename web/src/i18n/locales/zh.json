@@ -9877,6 +9877,18 @@
     "Supported model families": "支持的主流模型系列",
     "Top up on demand (¥1 = $1 credit, never expires). A few yuan is enough to get started.": "按需充值（充 ¥1 = $1 站内额度，余额永久有效），先充几元就能立刻体验。",
     "Use CC Switch for one-click import, or set base_url to the Base URL above and enter your API Key in Codex config.": "推荐用 CC Switch 一键写入；手动配置时将 Codex 的 base_url 设为上方接口地址，并填入 API 密钥。",
-    "Use CC Switch for one-click setup, or set ANTHROPIC_BASE_URL (without trailing /v1) and ANTHROPIC_AUTH_TOKEN to the values above.": "推荐用 CC Switch 一键配置；手动配置时设置 ANTHROPIC_BASE_URL（去掉末尾 /v1）和 ANTHROPIC_AUTH_TOKEN 为上方内容。"
+    "Use CC Switch for one-click setup, or set ANTHROPIC_BASE_URL (without trailing /v1) and ANTHROPIC_AUTH_TOKEN to the values above.": "推荐用 CC Switch 一键配置；手动配置时设置 ANTHROPIC_BASE_URL（去掉末尾 /v1）和 ANTHROPIC_AUTH_TOKEN 为上方内容。",
+    "Create & manage API keys": "添加与管理 API 密钥",
+    "Create one key to unlock all major models, then copy it in step 3.": "点击下方新建一把密钥即可通用全站模型，随后在第 3 步复制使用。",
+    "No /v1 needed": "无需加 /v1",
+    "No active API key yet": "暂无可用 API 密钥",
+    "One key works across all major models": "一把密钥通用全部主流模型",
+    "Open CC Switch, add a profile, paste the root Base URL (no /v1) and API Key above, then sync to Claude Code / Codex in one click.": "打开 CC Switch 新建配置，直接粘贴上方根地址（无需加 /v1）和 API 密钥，即可一键同步到 Claude Code / Codex。",
+    "Open Magpie → Settings → Model Providers → add a provider, then paste the Base URL and API Key above to start chatting.": "打开 Magpie → 设置 → 模型供应商 → 添加供应商，直接粘贴上方接口地址和 API 密钥即可开始对话。",
+    "Open Settings → Custom Model / API Provider, paste the Base URL and API Key above, then pick a model to start.": "打开应用设置 → 自定义模型 / 接口供应商，直接粘贴上方接口地址和 API 密钥，选好模型即可使用。",
+    "Pick your AI app and paste the two fields above": "选一个常用 AI 应用，照着填入上面两项：",
+    "Use CC Switch for one-click setup, or paste the Base URL above into Codex base_url together with your API Key.": "推荐用 CC Switch 一键写入；手动配置时将上方接口地址填到 Codex 的 base_url，并填入上方 API 密钥。",
+    "Use CC Switch for one-click setup, or set ANTHROPIC_BASE_URL to the Base URL above and ANTHROPIC_AUTH_TOKEN to your API Key.": "推荐用 CC Switch 一键配置；手动配置时将 ANTHROPIC_BASE_URL 设为上方接口地址，ANTHROPIC_AUTH_TOKEN 填上方密钥即可。",
+    "{{count}} keys total": "共 {{count}} 把密钥"
   }
 }

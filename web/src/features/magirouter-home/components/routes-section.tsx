@@ -336,9 +336,12 @@ export function RoutesSection(props: RoutesSectionProps) {
                 <div className='billing-calc-example'>
                   <div className='billing-calc-example-row'>
                     <span className='billing-example-tag'>汇率试算示例</span>
-                    <span className='billing-calc-copy'>假如官方美元按</span>
+                    <span className='billing-calc-lead'>
+                      <strong className='billing-calc-if'>假如</strong>
+                      官方直连按
+                    </span>
                     <label className='billing-rate-inline tabular-nums'>
-                      <span>$1 ≈ ¥</span>
+                      <span className='billing-rate-prefix'>$1 ≈ ¥</span>
                       <input
                         type='number'
                         step='0.1'
@@ -386,11 +389,10 @@ export function RoutesSection(props: RoutesSectionProps) {
                     </div>
                   </div>
                   <p className='billing-conversion-sub'>
-                    仅作官方直连价格换算演示，本站仍按{' '}
-                    <strong className='tabular-nums'>
+                    仅用于对比官方美元成本，非本站充值汇率 · 本站固定{' '}
+                    <span className='billing-site-rule-pill tabular-nums'>
                       充 ¥{priceRateText} = $1 站内额度
-                    </strong>{' '}
-                    计费
+                    </span>
                   </p>
                 </div>
 

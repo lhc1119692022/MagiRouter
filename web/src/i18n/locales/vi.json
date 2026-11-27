@@ -9790,6 +9790,18 @@
     "Supported model families": "Các dòng mô hình hỗ trợ",
     "Top up on demand (¥1 = $1 credit, never expires). A few yuan is enough to get started.": "Nạp theo nhu cầu (¥1 = $1 hạn mức, không hết hạn). Chỉ cần nạp một khoản nhỏ là có thể trải nghiệm ngay.",
     "Use CC Switch for one-click import, or set base_url to the Base URL above and enter your API Key in Codex config.": "Dùng CC Switch để nhập nhanh một chạm, hoặc đặt base_url thành Base URL ở trên và nhập API Key trong cấu hình Codex.",
-    "Use CC Switch for one-click setup, or set ANTHROPIC_BASE_URL (without trailing /v1) and ANTHROPIC_AUTH_TOKEN to the values above.": "Dùng CC Switch để cấu hình một chạm, hoặc đặt ANTHROPIC_BASE_URL (bỏ /v1 ở cuối) và ANTHROPIC_AUTH_TOKEN theo giá trị ở trên."
+    "Use CC Switch for one-click setup, or set ANTHROPIC_BASE_URL (without trailing /v1) and ANTHROPIC_AUTH_TOKEN to the values above.": "Dùng CC Switch để cấu hình một chạm, hoặc đặt ANTHROPIC_BASE_URL (bỏ /v1 ở cuối) và ANTHROPIC_AUTH_TOKEN theo giá trị ở trên.",
+    "Create & manage API keys": "Tạo & quản lý API Key",
+    "Create one key to unlock all major models, then copy it in step 3.": "Tạo một khóa để dùng mọi mô hình phổ biến, sau đó sao chép ở bước 3.",
+    "No /v1 needed": "Không cần /v1",
+    "No active API key yet": "Chưa có API Key hoạt động",
+    "One key works across all major models": "Một khóa dùng cho mọi mô hình phổ biến",
+    "Open CC Switch, add a profile, paste the root Base URL (no /v1) and API Key above, then sync to Claude Code / Codex in one click.": "Mở CC Switch, thêm cấu hình, dán Base URL gốc (không cần /v1) và API Key ở trên, rồi đồng bộ sang Claude Code / Codex chỉ với một cú nhấp.",
+    "Open Magpie → Settings → Model Providers → add a provider, then paste the Base URL and API Key above to start chatting.": "Mở Magpie → Cài đặt → Nhà cung cấp mô hình → thêm nhà cung cấp, sau đó dán Base URL và API Key ở trên để bắt đầu.",
+    "Open Settings → Custom Model / API Provider, paste the Base URL and API Key above, then pick a model to start.": "Mở Cài đặt → Mô hình tùy chỉnh / Nhà cung cấp API, dán Base URL và API Key ở trên rồi chọn mô hình để bắt đầu.",
+    "Pick your AI app and paste the two fields above": "Chọn ứng dụng AI của bạn và dán hai mục ở trên",
+    "Use CC Switch for one-click setup, or paste the Base URL above into Codex base_url together with your API Key.": "Dùng CC Switch để thiết lập một chạm, hoặc dán Base URL ở trên vào base_url của Codex cùng API Key.",
+    "Use CC Switch for one-click setup, or set ANTHROPIC_BASE_URL to the Base URL above and ANTHROPIC_AUTH_TOKEN to your API Key.": "Dùng CC Switch để thiết lập một chạm, hoặc đặt ANTHROPIC_BASE_URL bằng Base URL ở trên và ANTHROPIC_AUTH_TOKEN bằng API Key.",
+    "{{count}} keys total": "Tổng {{count}} khóa"
   }
 }

@@ -380,7 +380,8 @@ export function OverviewDashboard() {
     const root = (published || fallback)
       .replace(/\/+$/, '')
       .replace(/\/v1(?:\/(?:chat\/completions|responses|messages))?$/, '')
-    const apiBaseUrl = `${root}/v1`
+      .replace(/\/+$/, '')
+    const apiBaseUrl = root
     const endpoint = `${root}${protocol.path}`
     const model = selectedModel
     const keyName = preferredKey?.name ?? t('No API key yet')
@@ -501,6 +502,7 @@ export function OverviewDashboard() {
                     hasFirstRequest={hasFirstRequest}
                     keyId={requestExample.keyId}
                     keyName={requestExample.keyName}
+                    keyCount={apiKeysQuery.data?.total}
                     displayKey={requestExample.displayKey}
                     apiBaseUrl={requestExample.apiBaseUrl}
                     modelStatus={

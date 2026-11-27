@@ -9790,6 +9790,18 @@
     "Supported model families": "Поддерживаемые семейства моделей",
     "Top up on demand (¥1 = $1 credit, never expires). A few yuan is enough to get started.": "Пополняйте по мере необходимости (¥1 = $1 кредита, без срока действия). Для старта достаточно небольшой суммы.",
     "Use CC Switch for one-click import, or set base_url to the Base URL above and enter your API Key in Codex config.": "Используйте CC Switch для импорта в один клик или укажите base_url и API-ключ выше в конфигурации Codex.",
-    "Use CC Switch for one-click setup, or set ANTHROPIC_BASE_URL (without trailing /v1) and ANTHROPIC_AUTH_TOKEN to the values above.": "Используйте CC Switch для настройки в один клик или задайте ANTHROPIC_BASE_URL (без завершающего /v1) и ANTHROPIC_AUTH_TOKEN."
+    "Use CC Switch for one-click setup, or set ANTHROPIC_BASE_URL (without trailing /v1) and ANTHROPIC_AUTH_TOKEN to the values above.": "Используйте CC Switch для настройки в один клик или задайте ANTHROPIC_BASE_URL (без завершающего /v1) и ANTHROPIC_AUTH_TOKEN.",
+    "Create & manage API keys": "Создание и управление API-ключами",
+    "Create one key to unlock all major models, then copy it in step 3.": "Создайте один ключ для всех основных моделей и скопируйте его на шаге 3.",
+    "No /v1 needed": "Без /v1",
+    "No active API key yet": "Пока нет активного API-ключа",
+    "One key works across all major models": "Один ключ для всех основных моделей",
+    "Open CC Switch, add a profile, paste the root Base URL (no /v1) and API Key above, then sync to Claude Code / Codex in one click.": "Откройте CC Switch, добавьте профиль, вставьте корневой Base URL (без /v1) и API-ключ выше, затем синхронизируйте с Claude Code / Codex в один клик.",
+    "Open Magpie → Settings → Model Providers → add a provider, then paste the Base URL and API Key above to start chatting.": "Откройте Magpie → Настройки → Провайдеры моделей → добавьте провайдера и вставьте Base URL и API-ключ выше.",
+    "Open Settings → Custom Model / API Provider, paste the Base URL and API Key above, then pick a model to start.": "Откройте Настройки → Пользовательская модель / API-провайдер, вставьте Base URL и API-ключ выше и выберите модель.",
+    "Pick your AI app and paste the two fields above": "Выберите ИИ-приложение и вставьте два поля выше",
+    "Use CC Switch for one-click setup, or paste the Base URL above into Codex base_url together with your API Key.": "Используйте CC Switch для настройки в один клик или вставьте Base URL выше в base_url Codex вместе с API-ключом.",
+    "Use CC Switch for one-click setup, or set ANTHROPIC_BASE_URL to the Base URL above and ANTHROPIC_AUTH_TOKEN to your API Key.": "Используйте CC Switch для настройки в один клик или задайте ANTHROPIC_BASE_URL и ANTHROPIC_AUTH_TOKEN значениями выше.",
+    "{{count}} keys total": "Всего ключей: {{count}}"
   }
 }

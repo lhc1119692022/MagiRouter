@@ -49,24 +49,60 @@
 }
 .dashboard-overview .overview-setup-body.is-onboarding:not([hidden]) {
   display: block;
-  padding: 14px 18px 18px;
+  padding: 0;
 }
 .console-onboarding-wrap {
   display: flex;
   flex-direction: column;
-  gap: 12px;
 }
-.console-onboarding-grid {
+.console-onboarding-board {
+  display: grid;
+  grid-template-columns: minmax(0, 0.78fr) minmax(0, 1.02fr) minmax(0, 1.55fr);
+}
+.console-onboarding-step {
+  min-width: 0;
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
   gap: 14px;
 }
-.console-onboarding-card {
-  padding: 16px;
-  gap: 12px;
-  border-radius: 16px;
+.console-onboarding-step + .console-onboarding-step {
+  border-left: var(--hairline) solid var(--divider-color);
 }
-.console-onboarding-card .onboarding-step-num.is-done {
+@media (max-width: 1179px) {
+  .console-onboarding-board {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .console-onboarding-step-connect {
+    grid-column: 1 / -1;
+    border-left: 0;
+    border-top: var(--hairline) solid var(--divider-color);
+  }
+}
+@media (max-width: 759px) {
+  .console-onboarding-board {
+    grid-template-columns: 1fr;
+  }
+  .console-onboarding-step + .console-onboarding-step {
+    border-left: 0;
+    border-top: var(--hairline) solid var(--divider-color);
+  }
+}
+.console-onboarding-step-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.console-onboarding-step-head .onboarding-step-num.is-done {
   background: var(--el-green-600);
   color: #ffffff;
+}
+.console-onboarding-step-title {
+  margin: 0;
+  font-size: 14.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ink-strong);
 }
 .console-onboarding-status {
   margin-left: auto;
@@ -87,124 +123,273 @@ html[data-theme='dark'] .console-onboarding-status.is-done,
   background: rgba(74, 222, 128, 0.14);
   color: #86efac;
 }
-.console-onboarding-stage {
-  min-height: 216px;
-  padding: 16px 14px;
-}
-.console-onboarding-balance-box {
-  width: 100%;
-  max-width: 224px;
+.console-onboarding-step-body {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  padding: 12px 14px;
-  border-radius: 12px;
-  background: var(--bg-elevated);
-  box-shadow: inset 0 0 0 var(--hairline) var(--ring-color);
+  gap: 14px;
+  min-width: 0;
+}
+.console-onboarding-balance-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 .console-onboarding-balance-label {
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--ink-muted);
 }
 .console-onboarding-balance-val {
-  font-size: 22px;
+  font-size: 28px;
+  line-height: 1.15;
   font-weight: 600;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.025em;
   color: var(--ink-strong);
 }
-.console-onboarding-step-actions {
+.console-onboarding-step-note {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--ink-muted);
+}
+.console-onboarding-stack-actions {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.console-onboarding-btn-full {
   width: 100%;
+  justify-content: center;
+}
+.console-onboarding-inline-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: center;
   gap: 8px;
 }
-.console-onboarding-connect-stage {
-  align-items: stretch;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 14px;
-}
-.console-onboarding-config-box {
+.console-onboarding-key-summary {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 10px;
-  border-radius: 12px;
-  background: var(--bg-elevated);
-  box-shadow: inset 0 0 0 var(--hairline) var(--ring-color);
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--bg-subtle);
 }
-.console-onboarding-config-row {
-  display: grid;
-  grid-template-columns: 64px minmax(0, 1fr) auto;
+.console-onboarding-key-summary-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.console-onboarding-key-summary-label {
+  display: inline-flex;
   align-items: center;
   gap: 6px;
+  font-size: 12px;
+  color: var(--ink-muted);
 }
-.console-onboarding-config-label {
+.console-onboarding-key-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 9999px;
+  background: var(--ink-subtle);
+}
+.console-onboarding-key-dot.is-active {
+  background: var(--el-green-600);
+}
+.console-onboarding-key-count {
+  font-size: 11.5px;
+  color: var(--ink-muted);
+}
+.console-onboarding-key-summary-val {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.console-onboarding-key-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink-strong);
+}
+.console-onboarding-key-mask {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-muted);
+  word-break: break-all;
+}
+.console-onboarding-models-block {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.console-onboarding-sublabel {
   font-size: 11.5px;
   font-weight: 500;
   color: var(--ink-muted);
-  white-space: nowrap;
 }
-.console-onboarding-config-input {
-  width: 100%;
-  min-width: 0;
-  height: 26px;
-  padding: 0 8px;
-  border: 0;
-  border-radius: 7px;
-  background: var(--bg-subtle);
-  color: var(--ink-strong);
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  outline: none;
+.console-onboarding-model-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
-.console-onboarding-copy-mini {
+.console-onboarding-model-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   height: 26px;
   padding: 0 9px;
-  border: 0;
-  border-radius: 7px;
-  background: var(--bg-cream);
-  color: var(--ink-strong);
+  border-radius: 9999px;
+  background: var(--bg-subtle);
+  color: var(--ink-body);
+  font-size: 12px;
+  font-weight: 500;
+}
+.console-onboarding-credentials {
+  display: flex;
+  flex-direction: column;
+  border-radius: 10px;
+  background: var(--bg-subtle);
+  overflow: hidden;
+}
+.console-onboarding-cred-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 12px;
+}
+.console-onboarding-cred-row + .console-onboarding-cred-row {
+  border-top: var(--hairline) solid var(--divider-color);
+}
+.console-onboarding-cred-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.console-onboarding-cred-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.console-onboarding-cred-label {
   font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink-muted);
+}
+.console-onboarding-cred-hint {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--el-green-600);
+}
+html[data-theme='dark'] .console-onboarding-cred-hint,
+.dark .console-onboarding-cred-hint {
+  color: #86efac;
+}
+.console-onboarding-cred-keytag {
+  padding: 0 6px;
+  border-radius: 9999px;
+  background: var(--bg-elevated);
+  color: var(--ink-body);
+  font-size: 11px;
+  font-weight: 500;
+}
+.console-onboarding-cred-value {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink-strong);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  outline: none;
+}
+.console-onboarding-copy-btn {
+  flex-shrink: 0;
+  height: 30px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  box-shadow: inset 0 0 0 var(--hairline) var(--ring-color);
+  color: var(--ink-strong);
+  font-size: 12px;
   font-weight: 500;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
+  gap: 5px;
   white-space: nowrap;
   cursor: pointer;
   text-decoration: none;
   transition: background-color 140ms var(--ease-default);
 }
-.console-onboarding-copy-mini:hover {
-  background: color-mix(in srgb, var(--ink-strong) 10%, var(--bg-cream));
+.console-onboarding-copy-btn:hover {
+  background: var(--bg-cream);
+}
+.console-onboarding-app-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 .console-onboarding-apps {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 7px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
-.console-onboarding-app-btn {
-  width: 100%;
-  height: 36px;
+.console-onboarding-app-chip {
+  height: 30px;
+  padding: 0 10px 0 8px;
   border: 0;
-  border-radius: 10px;
+  border-radius: 8px;
+  background: var(--bg-subtle);
+  color: var(--ink-body);
+  font-size: 12px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   cursor: pointer;
+  transition:
+    background-color 140ms var(--ease-default),
+    color 140ms var(--ease-default),
+    box-shadow 140ms var(--ease-default);
 }
-.console-onboarding-app-btn.is-selected {
-  box-shadow:
-    inset 0 0 0 1.5px var(--ink-strong),
-    var(--shadow-sm);
+.console-onboarding-app-chip:hover {
+  color: var(--ink-strong);
+  background: var(--bg-cream);
+}
+.console-onboarding-app-chip.is-selected {
+  background: var(--bg-elevated);
+  color: var(--ink-strong);
+  box-shadow: inset 0 0 0 1.5px var(--ink-strong);
+}
+.console-onboarding-app-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.console-onboarding-app-asset {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  object-fit: contain;
+}
+.console-onboarding-app-name {
+  white-space: nowrap;
 }
 .console-onboarding-app-tip {
-  padding: 8px 10px;
-  border-radius: 10px;
-  background: var(--bg-elevated);
-  box-shadow: inset 0 0 0 var(--hairline) var(--ring-color);
-  font-size: 12px;
-  line-height: 1.5;
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.55;
   color: var(--ink-body);
 }
 .console-onboarding-app-tip-name {
@@ -225,7 +410,8 @@ html[data-theme='dark'] .console-onboarding-status.is-done,
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding-top: 2px;
+  padding: 10px 20px;
+  border-top: var(--hairline) solid var(--divider-color);
 }
 .console-onboarding-dev-toggle {
   display: inline-flex;
@@ -248,7 +434,7 @@ html[data-theme='dark'] .console-onboarding-status.is-done,
   background: var(--bg-cream);
 }
 .console-onboarding-dev-body {
-  margin-top: 2px;
+  padding: 0 20px 18px;
 }
 .dashboard-overview .setup-snippet-tabs {
   flex-wrap: wrap;

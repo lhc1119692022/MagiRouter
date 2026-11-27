@@ -5,6 +5,7 @@ import {
   ChevronDown,
   Copy,
   KeyRound,
+  Plus,
   Sparkles,
   Terminal,
   Wallet,
@@ -20,22 +21,16 @@ import { handleServerError } from '@/lib/handle-server-error'
 import { getLobeIcon } from '@/lib/lobe-icon'
 import { cn } from '@/lib/utils'
 
-const MODEL_BRICK_ROWS = [
-  [
-    { name: 'GPT', icon: 'OpenAI' },
-    { name: 'Claude', icon: 'Claude.Color' },
-    { name: 'Gemini', icon: 'Gemini.Color' },
-  ],
-  [
-    { name: 'DeepSeek', icon: 'DeepSeek.Color' },
-    { name: 'Qwen', icon: 'Qwen.Color' },
-    { name: 'Doubao', icon: 'Doubao.Color' },
-  ],
-  [
-    { name: 'GLM', icon: 'Zhipu.Color' },
-    { name: 'Grok', icon: 'Grok' },
-    { name: 'Kimi', icon: 'Kimi.Color' },
-  ],
+const MODEL_BADGES = [
+  { name: 'GPT', icon: 'OpenAI' },
+  { name: 'Claude', icon: 'Claude.Color' },
+  { name: 'Gemini', icon: 'Gemini.Color' },
+  { name: 'DeepSeek', icon: 'DeepSeek.Color' },
+  { name: 'Qwen', icon: 'Qwen.Color' },
+  { name: 'Doubao', icon: 'Doubao.Color' },
+  { name: 'GLM', icon: 'Zhipu.Color' },
+  { name: 'Grok', icon: 'Grok' },
+  { name: 'Kimi', icon: 'Kimi.Color' },
 ] as const
 
 type AppGuideTile =
@@ -49,7 +44,7 @@ const APP_GUIDE_TILES: readonly AppGuideTile[] = [
     kind: 'asset',
     src: '/cc-switch-icon.png',
     tipKey:
-      'Easiest for beginners: open CC Switch, add a profile, paste Base URL & API Key above, and sync to Claude Code / Codex in one click.',
+      'Open CC Switch, add a profile, paste the root Base URL (no /v1) and API Key above, then sync to Claude Code / Codex in one click.',
   },
   {
     id: 'magpie',
@@ -57,7 +52,7 @@ const APP_GUIDE_TILES: readonly AppGuideTile[] = [
     kind: 'asset',
     src: '/magpie-icon.svg',
     tipKey:
-      'Open Magpie → Settings → Model Providers → add an OpenAI-compatible provider, then paste Base URL & API Key above to start chatting.',
+      'Open Magpie → Settings → Model Providers → add a provider, then paste the Base URL and API Key above to start chatting.',
   },
   {
     id: 'claude-code',
@@ -65,7 +60,7 @@ const APP_GUIDE_TILES: readonly AppGuideTile[] = [
     kind: 'lobe',
     icon: 'ClaudeCode.Color',
     tipKey:
-      'Use CC Switch for one-click setup, or set ANTHROPIC_BASE_URL (without trailing /v1) and ANTHROPIC_AUTH_TOKEN to the values above.',
+      'Use CC Switch for one-click setup, or set ANTHROPIC_BASE_URL to the Base URL above and ANTHROPIC_AUTH_TOKEN to your API Key.',
   },
   {
     id: 'codex',
@@ -73,7 +68,7 @@ const APP_GUIDE_TILES: readonly AppGuideTile[] = [
     kind: 'lobe',
     icon: 'Codex.Color',
     tipKey:
-      'Use CC Switch for one-click import, or set base_url to the Base URL above and enter your API Key in Codex config.',
+      'Use CC Switch for one-click setup, or paste the Base URL above into Codex base_url together with your API Key.',
   },
   {
     id: 'workbuddy',
@@ -81,7 +76,7 @@ const APP_GUIDE_TILES: readonly AppGuideTile[] = [
     kind: 'lobe',
     icon: 'CodeBuddy.Color',
     tipKey:
-      'Open Settings → Custom Model / OpenAI-compatible API, paste Base URL & API Key above, and pick a model to start.',
+      'Open Settings → Custom Model / API Provider, paste the Base URL and API Key above, then pick a model to start.',
   },
   {
     id: 'doubao-work',
@@ -89,7 +84,7 @@ const APP_GUIDE_TILES: readonly AppGuideTile[] = [
     kind: 'lobe',
     icon: 'Doubao.Color',
     tipKey:
-      'Open Settings → Custom Model / OpenAI-compatible API, paste Base URL & API Key above, and pick a model to start.',
+      'Open Settings → Custom Model / API Provider, paste the Base URL and API Key above, then pick a model to start.',
   },
   {
     id: 'zcode',
@@ -97,7 +92,7 @@ const APP_GUIDE_TILES: readonly AppGuideTile[] = [
     kind: 'lobe',
     icon: 'ZAI',
     tipKey:
-      'Open Settings → Custom Model / OpenAI-compatible API, paste Base URL & API Key above, and pick a model to start.',
+      'Open Settings → Custom Model / API Provider, paste the Base URL and API Key above, then pick a model to start.',
   },
   {
     id: 'qoder',
@@ -105,7 +100,7 @@ const APP_GUIDE_TILES: readonly AppGuideTile[] = [
     kind: 'lobe',
     icon: 'Qoder.Color',
     tipKey:
-      'Open Settings → Custom Model / OpenAI-compatible API, paste Base URL & API Key above, and pick a model to start.',
+      'Open Settings → Custom Model / API Provider, paste the Base URL and API Key above, then pick a model to start.',
   },
 ] as const
 
@@ -116,6 +111,7 @@ export interface ConsoleOnboardingGuideProps {
   hasFirstRequest: boolean
   keyId?: number
   keyName: string
+  keyCount?: number
   displayKey: string
   apiBaseUrl: string
   modelStatus?: string
@@ -179,9 +175,9 @@ export function ConsoleOnboardingGuide(props: ConsoleOnboardingGuideProps) {
 
   return (
     <div className='console-onboarding-wrap'>
-      <div className='onboarding-grid-3 console-onboarding-grid'>
-        <article className='onboarding-card console-onboarding-card'>
-          <div className='onboarding-card-head'>
+      <div className='console-onboarding-board'>
+        <section className='console-onboarding-step'>
+          <div className='console-onboarding-step-head'>
             <span
               className={cn(
                 'onboarding-step-num tabular-nums',
@@ -190,7 +186,7 @@ export function ConsoleOnboardingGuide(props: ConsoleOnboardingGuideProps) {
             >
               {props.balanceReady ? <Check className='size-3.5' /> : 1}
             </span>
-            <h3 className='onboarding-card-title'>
+            <h3 className='console-onboarding-step-title'>
               {t('Prepare account balance')}
             </h3>
             <span
@@ -203,40 +199,41 @@ export function ConsoleOnboardingGuide(props: ConsoleOnboardingGuideProps) {
             </span>
           </div>
 
-          <div className='onboarding-stage onboarding-stage-actions console-onboarding-stage'>
-            <div className='console-onboarding-balance-box'>
+          <div className='console-onboarding-step-body'>
+            <div className='console-onboarding-balance-block'>
               <span className='console-onboarding-balance-label'>
                 {t('Available balance')}
               </span>
               <strong className='console-onboarding-balance-val tabular-nums'>
                 {formatQuota(props.remainQuota)}
               </strong>
+              <p className='console-onboarding-step-note'>
+                {t(
+                  'Top up on demand (¥1 = $1 credit, never expires). A few yuan is enough to get started.'
+                )}
+              </p>
             </div>
 
-            <Link
-              to='/wallet'
-              className='el-btn el-btn-md el-btn-primary onboarding-action-btn'
-            >
-              <Wallet className='size-4' aria-hidden='true' />
-              <span>{t('Online top-up')}</span>
-            </Link>
-            <Link
-              to='/pricing'
-              className='el-btn el-btn-md el-btn-white onboarding-action-btn'
-            >
-              <span>{t('Browse models & pricing')}</span>
-            </Link>
+            <div className='console-onboarding-stack-actions'>
+              <Link
+                to='/wallet'
+                className='el-btn el-btn-md el-btn-primary console-onboarding-btn-full'
+              >
+                <Wallet className='size-4' aria-hidden='true' />
+                <span>{t('Online top-up')}</span>
+              </Link>
+              <Link
+                to='/pricing'
+                className='el-btn el-btn-md el-btn-white console-onboarding-btn-full'
+              >
+                <span>{t('Browse models & pricing')}</span>
+              </Link>
+            </div>
           </div>
+        </section>
 
-          <p className='onboarding-card-desc'>
-            {t(
-              'Top up on demand (¥1 = $1 credit, never expires). A few yuan is enough to get started.'
-            )}
-          </p>
-        </article>
-
-        <article className='onboarding-card console-onboarding-card'>
-          <div className='onboarding-card-head'>
+        <section className='console-onboarding-step'>
+          <div className='console-onboarding-step-head'>
             <span
               className={cn(
                 'onboarding-step-num tabular-nums',
@@ -245,8 +242,8 @@ export function ConsoleOnboardingGuide(props: ConsoleOnboardingGuideProps) {
             >
               {props.hasActiveKey ? <Check className='size-3.5' /> : 2}
             </span>
-            <h3 className='onboarding-card-title'>
-              {t('Choose models & create key')}
+            <h3 className='console-onboarding-step-title'>
+              {t('Create & manage API keys')}
             </h3>
             <span
               className={cn(
@@ -258,79 +255,86 @@ export function ConsoleOnboardingGuide(props: ConsoleOnboardingGuideProps) {
             </span>
           </div>
 
-          <div className='onboarding-stage onboarding-stage-visual console-onboarding-stage'>
-            <div
-              className='onboarding-model-cloud'
-              aria-label={t('Supported model families')}
-            >
-              {MODEL_BRICK_ROWS.map((row, rowIndex) => (
-                <div
-                  key={row[0].name}
-                  className={`onboarding-model-brick-row${rowIndex === 1 ? ' is-offset' : ''}`}
-                >
-                  {row.map((badge) => (
-                    <span key={badge.name} className='onboarding-model-pill'>
-                      <span className='onboarding-model-pill-icon'>
-                        {getLobeIcon(badge.icon, 15)}
-                      </span>
-                      <span>{badge.name}</span>
-                    </span>
-                  ))}
-                </div>
-              ))}
-            </div>
-
-            <div className='console-onboarding-step-actions'>
-              {props.hasActiveKey && props.keyId ? (
-                <>
-                  <button
-                    type='button'
-                    className='el-btn el-btn-md el-btn-primary'
-                    disabled={copyingKey}
-                    onClick={handleCopyApiKey}
-                  >
-                    {copiedField === 'key' ? (
-                      <Check className='size-3.5' aria-hidden='true' />
-                    ) : (
-                      <Copy className='size-3.5' aria-hidden='true' />
+          <div className='console-onboarding-step-body'>
+            <div className='console-onboarding-key-summary'>
+              <div className='console-onboarding-key-summary-top'>
+                <span className='console-onboarding-key-summary-label'>
+                  <span
+                    className={cn(
+                      'console-onboarding-key-dot',
+                      props.hasActiveKey && 'is-active'
                     )}
-                    <span>
-                      {copiedField === 'key' ? t('Copied') : t('Copy API key')}
-                    </span>
-                  </button>
-                  <Link to='/keys' className='el-btn el-btn-md el-btn-white'>
-                    <KeyRound className='size-3.5' aria-hidden='true' />
-                    <span>{t('Manage Keys')}</span>
-                  </Link>
-                </>
+                    aria-hidden='true'
+                  />
+                  {props.hasActiveKey
+                    ? t('Active API key')
+                    : t('No active API key yet')}
+                </span>
+                {typeof props.keyCount === 'number' && props.keyCount > 0 && (
+                  <span className='console-onboarding-key-count tabular-nums'>
+                    {t('{{count}} keys total', { count: props.keyCount })}
+                  </span>
+                )}
+              </div>
+              {props.hasActiveKey ? (
+                <div className='console-onboarding-key-summary-val'>
+                  <strong className='console-onboarding-key-name'>
+                    {props.keyName}
+                  </strong>
+                  <span className='console-onboarding-key-mask'>
+                    {props.displayKey}
+                  </span>
+                </div>
               ) : (
-                <Link
-                  to='/keys'
-                  search={{ action: 'create' }}
-                  className='el-btn el-btn-md el-btn-white onboarding-stage-cta'
-                >
-                  <KeyRound className='size-3.5' aria-hidden='true' />
-                  <span>{t('Create API Key')}</span>
-                  <span aria-hidden='true'>↗</span>
-                </Link>
+                <p className='console-onboarding-step-note'>
+                  {t(
+                    'Create one key to unlock all major models, then copy it in step 3.'
+                  )}
+                </p>
               )}
             </div>
+
+            <div className='console-onboarding-inline-actions'>
+              <Link
+                to='/keys'
+                search={{ action: 'create' }}
+                className='el-btn el-btn-md el-btn-primary'
+              >
+                <Plus className='size-3.5' aria-hidden='true' />
+                <span>{t('Create API Key')}</span>
+              </Link>
+              <Link to='/keys' className='el-btn el-btn-md el-btn-white'>
+                <KeyRound className='size-3.5' aria-hidden='true' />
+                <span>{t('Manage Keys')}</span>
+              </Link>
+            </div>
+
+            <div className='console-onboarding-models-block'>
+              <span className='console-onboarding-sublabel'>
+                {t('One key works across all major models')}
+              </span>
+              <div
+                className='console-onboarding-model-list'
+                aria-label={t('Supported model families')}
+              >
+                {MODEL_BADGES.map((badge) => (
+                  <span
+                    key={badge.name}
+                    className='console-onboarding-model-chip'
+                  >
+                    <span className='onboarding-model-pill-icon'>
+                      {getLobeIcon(badge.icon, 14)}
+                    </span>
+                    <span>{badge.name}</span>
+                  </span>
+                ))}
+              </div>
+            </div>
           </div>
+        </section>
 
-          <p className='onboarding-card-desc'>
-            {props.hasActiveKey
-              ? t(
-                  'Active key "{{name}}" is ready. Copy it and paste into any AI app in step 3.',
-                  { name: props.keyName }
-                )
-              : t(
-                  'One key unlocks all major models. Create a key and copy it for the next step.'
-                )}
-          </p>
-        </article>
-
-        <article className='onboarding-card console-onboarding-card'>
-          <div className='onboarding-card-head'>
+        <section className='console-onboarding-step console-onboarding-step-connect'>
+          <div className='console-onboarding-step-head'>
             <span
               className={cn(
                 'onboarding-step-num tabular-nums',
@@ -339,7 +343,7 @@ export function ConsoleOnboardingGuide(props: ConsoleOnboardingGuideProps) {
             >
               {props.hasFirstRequest ? <Check className='size-3.5' /> : 3}
             </span>
-            <h3 className='onboarding-card-title'>
+            <h3 className='console-onboarding-step-title'>
               {t('Paste into an app & start')}
             </h3>
             <span
@@ -352,108 +356,148 @@ export function ConsoleOnboardingGuide(props: ConsoleOnboardingGuideProps) {
             </span>
           </div>
 
-          <div className='onboarding-stage onboarding-stage-visual console-onboarding-stage console-onboarding-connect-stage'>
-            <div className='console-onboarding-config-box'>
-              <div className='console-onboarding-config-row'>
-                <span className='console-onboarding-config-label'>
-                  {t('Base URL')}
-                </span>
-                <input
-                  type='text'
-                  readOnly
-                  aria-label={t('API Base URL')}
-                  value={props.apiBaseUrl}
-                  onFocus={(event) => event.currentTarget.select()}
-                  className='console-onboarding-config-input'
-                />
+          <div className='console-onboarding-step-body'>
+            <div className='console-onboarding-credentials'>
+              <div className='console-onboarding-cred-row'>
+                <div className='console-onboarding-cred-main'>
+                  <div className='console-onboarding-cred-meta'>
+                    <span className='console-onboarding-cred-label'>
+                      {t('Base URL')}
+                    </span>
+                    <span className='console-onboarding-cred-hint'>
+                      {t('No /v1 needed')}
+                    </span>
+                  </div>
+                  <input
+                    type='text'
+                    readOnly
+                    aria-label={t('API Base URL')}
+                    value={props.apiBaseUrl}
+                    onFocus={(event) => event.currentTarget.select()}
+                    className='console-onboarding-cred-value'
+                  />
+                </div>
                 <button
                   type='button'
-                  className='console-onboarding-copy-mini'
+                  className='console-onboarding-copy-btn'
                   onClick={handleCopyBaseUrl}
                 >
-                  {copiedField === 'url' ? t('Copied') : t('Copy')}
+                  {copiedField === 'url' ? (
+                    <Check className='size-3.5' aria-hidden='true' />
+                  ) : (
+                    <Copy className='size-3.5' aria-hidden='true' />
+                  )}
+                  <span>
+                    {copiedField === 'url' ? t('Copied') : t('Copy URL')}
+                  </span>
                 </button>
               </div>
-              <div className='console-onboarding-config-row'>
-                <span className='console-onboarding-config-label'>
-                  {t('API Key')}
-                </span>
-                <input
-                  type='text'
-                  readOnly
-                  aria-label={t('Active API key')}
-                  value={
-                    props.hasActiveKey
-                      ? props.displayKey
-                      : t('Create in step 2 first')
-                  }
-                  className='console-onboarding-config-input'
-                />
+
+              <div className='console-onboarding-cred-row'>
+                <div className='console-onboarding-cred-main'>
+                  <div className='console-onboarding-cred-meta'>
+                    <span className='console-onboarding-cred-label'>
+                      {t('API Key')}
+                    </span>
+                    {props.hasActiveKey && (
+                      <span className='console-onboarding-cred-keytag'>
+                        {props.keyName}
+                      </span>
+                    )}
+                  </div>
+                  <input
+                    type='text'
+                    readOnly
+                    aria-label={t('Active API key')}
+                    value={
+                      props.hasActiveKey
+                        ? props.displayKey
+                        : t('Create in step 2 first')
+                    }
+                    className='console-onboarding-cred-value'
+                  />
+                </div>
                 {props.hasActiveKey && props.keyId ? (
                   <button
                     type='button'
-                    className='console-onboarding-copy-mini'
+                    className='console-onboarding-copy-btn'
                     disabled={copyingKey}
                     onClick={handleCopyApiKey}
                   >
-                    {copiedField === 'key' ? t('Copied') : t('Copy')}
+                    {copiedField === 'key' ? (
+                      <Check className='size-3.5' aria-hidden='true' />
+                    ) : (
+                      <Copy className='size-3.5' aria-hidden='true' />
+                    )}
+                    <span>
+                      {copiedField === 'key' ? t('Copied') : t('Copy API key')}
+                    </span>
                   </button>
                 ) : (
                   <Link
                     to='/keys'
                     search={{ action: 'create' }}
-                    className='console-onboarding-copy-mini'
+                    className='console-onboarding-copy-btn'
                   >
+                    <Plus className='size-3.5' aria-hidden='true' />
                     {t('Create')}
                   </Link>
                 )}
               </div>
             </div>
 
-            <div
-              className='console-onboarding-apps'
-              role='group'
-              aria-label={t('Choose an AI app to see setup steps')}
-            >
-              {APP_GUIDE_TILES.map((app) => {
-                const selected = app.id === selectedApp.id
-                return (
-                  <button
-                    key={app.id}
-                    type='button'
-                    className={cn(
-                      'onboarding-app-tile console-onboarding-app-btn',
-                      selected && 'is-selected'
-                    )}
-                    title={app.name}
-                    aria-label={app.name}
-                    aria-pressed={selected}
-                    onClick={() => setSelectedAppId(app.id)}
-                  >
-                    {app.kind === 'lobe' ? (
-                      getLobeIcon(app.icon, 20)
-                    ) : (
-                      <img
-                        src={app.src}
-                        alt=''
-                        width={20}
-                        height={20}
-                        className='onboarding-app-asset'
-                      />
-                    )}
-                  </button>
-                )
-              })}
-            </div>
-
-            <div className='console-onboarding-app-tip'>
-              <span className='console-onboarding-app-tip-name'>
-                {selectedApp.name}
+            <div className='console-onboarding-app-section'>
+              <span className='console-onboarding-sublabel'>
+                {t('Pick your AI app and paste the two fields above')}
               </span>
-              <span>{t(selectedApp.tipKey)}</span>
+              <div
+                className='console-onboarding-apps'
+                role='group'
+                aria-label={t('Choose an AI app to see setup steps')}
+              >
+                {APP_GUIDE_TILES.map((app) => {
+                  const selected = app.id === selectedApp.id
+                  return (
+                    <button
+                      key={app.id}
+                      type='button'
+                      aria-pressed={selected}
+                      className={cn(
+                        'console-onboarding-app-chip',
+                        selected && 'is-selected'
+                      )}
+                      onClick={() => setSelectedAppId(app.id)}
+                    >
+                      <span className='console-onboarding-app-icon'>
+                        {app.kind === 'lobe' ? (
+                          getLobeIcon(app.icon, 16)
+                        ) : (
+                          <img
+                            src={app.src}
+                            alt=''
+                            width={16}
+                            height={16}
+                            className='console-onboarding-app-asset'
+                          />
+                        )}
+                      </span>
+                      <span className='console-onboarding-app-name'>
+                        {app.name}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+
+              <p className='console-onboarding-app-tip'>
+                <span className='console-onboarding-app-tip-name'>
+                  {selectedApp.name}
+                </span>
+                <span>{t(selectedApp.tipKey)}</span>
+              </p>
             </div>
 
-            <div className='console-onboarding-step-actions'>
+            <div className='console-onboarding-inline-actions'>
               <Link
                 to='/playground'
                 className='el-btn el-btn-md el-btn-primary'
@@ -467,13 +511,7 @@ export function ConsoleOnboardingGuide(props: ConsoleOnboardingGuideProps) {
               </Link>
             </div>
           </div>
-
-          <p className='onboarding-card-desc'>
-            {t(
-              'No coding needed: paste Base URL & API Key into your AI app, or click Try in Playground right away.'
-            )}
-          </p>
-        </article>
+        </section>
       </div>
 
       <div className='console-onboarding-dev-bar'>

@@ -413,11 +413,21 @@ describe('overview setup guide', () => {
       screen.getByRole('heading', { name: 'Prepare account balance' })
     ).toBeVisible()
     expect(
-      screen.getByRole('heading', { name: 'Choose models & create key' })
+      screen.getByRole('heading', { name: 'Create & manage API keys' })
     ).toBeVisible()
     expect(
       screen.getByRole('heading', { name: 'Paste into an app & start' })
     ).toBeVisible()
+    expect(screen.getByLabelText('API Base URL')).toHaveValue(
+      'http://localhost:3000'
+    )
+    expect(
+      screen.getByRole('link', { name: 'Create API Key' })
+    ).toHaveAttribute('href', '/keys?action=create')
+    expect(screen.getByRole('link', { name: 'Manage Keys' })).toHaveAttribute(
+      'href',
+      '/keys'
+    )
   })
 
   it('toggles the completed guide with the keyboard and restores focus after hiding it', async () => {
@@ -624,7 +634,13 @@ describe('overview setup guide', () => {
     try {
       await renderOverview()
       const baseUrlInput = await screen.findByLabelText('API Base URL')
-      expect((baseUrlInput as HTMLInputElement).value).toMatch(/\/v1$/)
+      expect((baseUrlInput as HTMLInputElement).value).toBe(
+        'http://localhost:3000'
+      )
+      expect((baseUrlInput as HTMLInputElement).value).not.toMatch(/\/v1\/?$/)
+
+      await user.click(screen.getByRole('button', { name: 'Copy URL' }))
+      expect(await navigator.clipboard.readText()).toBe('http://localhost:3000')
 
       await user.click(screen.getByRole('button', { name: 'Magpie' }))
       expect(screen.getByRole('button', { name: 'Magpie' })).toHaveAttribute(
