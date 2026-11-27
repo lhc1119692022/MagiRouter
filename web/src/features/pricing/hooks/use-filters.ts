@@ -37,7 +37,7 @@ import {
   getCatalogFacets,
   type CatalogFacetsOptions,
 } from '../lib/filters'
-import type { PriceMode, PricingModel, TokenUnit } from '../types'
+import type { ModelOrder, PriceMode, PricingModel, TokenUnit } from '../types'
 
 type FilterState = {
   search?: string
@@ -57,17 +57,22 @@ function normalizeViewMode(value: unknown): ViewMode {
   return VIEW_MODES.CARD
 }
 
+export type UseFiltersOptions = CatalogFacetsOptions & {
+  modelOrder?: ModelOrder
+}
+
 export function useFilters(
   models: PricingModel[],
-  usableGroups: Record<string, unknown>,
-  catalogReady: boolean,
-  facetOptions?: CatalogFacetsOptions
+  usableGroups: Record<string, unknown> = {},
+  catalogReady = false,
+  facetOptions?: UseFiltersOptions
 ) {
   const search = useSearch({ from: '/pricing/' })
   const navigate = useNavigate({ from: '/pricing/' })
   const groupRatio = facetOptions?.groupRatio
   const vendors = facetOptions?.vendors
   const filterOrder = facetOptions?.filterOrder
+  const modelOrder = facetOptions?.modelOrder
   const [filterState, setFilterState] = useState<FilterState>(() => ({
     search: search.search,
     sort: search.sort,
@@ -238,9 +243,11 @@ export function useFilters(
       sortBy,
       priceMode,
       vendors,
+      modelOrder,
     })
   }, [
     models,
+    modelOrder,
     debouncedSearchInput,
     selectedVendors,
     groupFilter,

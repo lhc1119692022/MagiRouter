@@ -25,11 +25,14 @@ import {
   Building2,
   Check,
   ChevronDown,
+  Flame,
   LayoutGrid,
   List,
   LogIn,
   Search,
   SlidersHorizontal,
+  Sparkles,
+  TrendingUp,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -78,6 +81,12 @@ import {
 
 function renderCatalogSortIcon(icon: CatalogSortIconKind, className: string) {
   switch (icon) {
+    case 'recommended':
+      return <Sparkles className={className} />
+    case 'requests':
+      return <Flame className={className} />
+    case 'tokens':
+      return <TrendingUp className={className} />
     case 'vendor':
       return <Building2 className={className} />
     case 'desc':
@@ -155,6 +164,7 @@ export function Pricing() {
     endpointMap,
     autoGroups,
     catalogReady,
+    modelOrder,
     isLoading,
     priceRate,
     usdExchangeRate,
@@ -200,6 +210,7 @@ export function Pricing() {
     groupRatio,
     vendors: sortedVendors,
     filterOrder,
+    modelOrder,
   })
 
   const displayedModels = useMemo(() => {

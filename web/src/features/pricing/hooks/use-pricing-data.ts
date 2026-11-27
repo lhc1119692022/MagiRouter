@@ -75,6 +75,7 @@ export function usePricingData(enabled = true) {
       Array.isArray(data?.data) &&
       Array.isArray(data.vendors) &&
       data.usable_group != null,
+    modelOrder: data?.model_order,
     isLoading,
     error,
     refetch,

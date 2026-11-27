@@ -180,6 +180,11 @@ it('expands filters by default, excludes remark tags from filters, and renders c
       },
     ],
     usable_group: { shared: { desc: 'Shared', ratio: 0.5 } },
+    model_order: {
+      recommended: ['Model B', 'Model A'],
+      requests: [],
+      tokens: [],
+    },
   })
   const root = createRootRoute()
   const pricing = createRoute({
@@ -208,16 +213,13 @@ it('expands filters by default, excludes remark tags from filters, and renders c
 
   // Filters button sits directly after the sort dropdown in the top controls bar
   const sortTrigger = screen.getByRole('button', { name: '排序方式' })
-  expect(sortTrigger).toHaveTextContent('Manufacturer')
-  expect(sortTrigger).toHaveAttribute(
-    'title',
-    'Manufacturer order (Name: Z to A)'
-  )
+  expect(sortTrigger).toHaveTextContent('Recommended')
+  expect(sortTrigger).toHaveAttribute('title', 'Recommended')
   expect(sortTrigger.closest('.sort-dropdown-wrap')?.nextElementSibling).toBe(
     filtersToggle
   )
 
-  // Default sort follows manufacturer order and name descending within each manufacturer
+  // Default sort follows upstream recommended model_order
   const cards = screen.getAllByRole('article')
   expect(cards).toHaveLength(2)
   expect(
@@ -265,10 +267,13 @@ it('expands filters by default, excludes remark tags from filters, and renders c
   expect(within(modelACard).getByText('/1M')).toBeVisible()
   expect(within(modelACard).queryByText('/1M+')).toBeNull()
 
-  // Sort dropdown lists Manufacturer first followed by Time / Price / Name entries
+  // Sort dropdown lists Recommended / usage sorts first followed by Manufacturer / Time / Price / Name entries
   await user.click(sortTrigger)
   const sortMenuItems = screen.getAllByRole('menuitem')
   expect(sortMenuItems.map((node) => node.textContent)).toEqual([
+    'Recommended',
+    'Most requests',
+    'Most tokens',
     'Manufacturer',
     'Time',
     'Time',
@@ -560,7 +565,12 @@ it('honors manual filter order configured via status.pricing_filter_order', asyn
     'Claude 标准 ×0.15',
   ])
 
-  // Default Manufacturer sort follows the exact vendor filter order: OpenAI -> Google -> Anthropic
+  // Switching to Manufacturer sort follows the exact vendor filter order: OpenAI -> Google -> Anthropic
+  const user = userEvent.setup()
+  await user.click(screen.getByRole('button', { name: '排序方式' }))
+  await user.click(
+    screen.getByRole('menuitem', { name: 'Manufacturer order (Name: Z to A)' })
+  )
   const cardHeadings = screen
     .getAllByRole('article')
     .map((card) => within(card).getByRole('heading').textContent)

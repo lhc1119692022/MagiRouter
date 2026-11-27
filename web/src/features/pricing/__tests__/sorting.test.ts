@@ -16,11 +16,24 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { describe, expect, test } from 'vitest'
+import { useSearch } from '@tanstack/react-router'
+import { renderHook } from '@testing-library/react'
+import { afterEach, describe, expect, test, vi } from 'vitest'
 
 import { DEFAULT_CATALOG_SORT, SORT_OPTIONS } from '../constants'
-import { sortModels } from '../lib/filters'
-import type { PricingModel, PricingVendor } from '../types'
+import { useFilters } from '../hooks/use-filters'
+import { compareModelUsage, sortModels } from '../lib/filters'
+import type { ModelOrder, PricingModel, PricingVendor } from '../types'
+
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
+  useSearch: vi.fn(() => ({})),
+  useNavigate: vi.fn(() => vi.fn()),
+}))
+
+afterEach(() => {
+  vi.mocked(useSearch).mockReturnValue({})
+})
 
 function pricingModel(
   modelName: string,
@@ -243,8 +256,8 @@ describe('catalog sorting (time, unified price, name)', () => {
     ).toEqual(['unpriced-model', 'gamma-model', 'beta-model', 'alpha-model'])
   })
 
-  test('uses manufacturer sort as default, following vendor filter order with model names descending per vendor', () => {
-    expect(DEFAULT_CATALOG_SORT).toBe(SORT_OPTIONS.VENDOR)
+  test('uses recommended sort as default and supports manufacturer sort following vendor filter order', () => {
+    expect(DEFAULT_CATALOG_SORT).toBe(SORT_OPTIONS.RECOMMENDED)
 
     const orderedVendors: PricingVendor[] = [
       { id: 10, name: 'Anthropic' },
@@ -266,8 +279,8 @@ describe('catalog sorting (time, unified price, name)', () => {
       pricingModel('gemini-4-neon', { vendor_id: 30, vendor_name: 'Google' }),
       pricingModel('zeta-unlisted', { vendor_name: 'Zeta' }),
       pricingModel('alpha-unlisted', { vendor_name: 'Zeta' }),
-      pricingModel('orphan-a'),
-      pricingModel('orphan-z'),
+      pricingModel('orphan-a', {}),
+      pricingModel('orphan-z', {}),
     ]
 
     expect(
@@ -285,6 +298,80 @@ describe('catalog sorting (time, unified price, name)', () => {
       'alpha-unlisted',
       'orphan-z',
       'orphan-a',
+    ])
+  })
+})
+
+describe('model order sorting', () => {
+  const squareModels = ['beta', 'Alpha', 'delta', 'gamma'].map((name) =>
+    pricingModel(name, {})
+  )
+  const order: ModelOrder = {
+    recommended: ['retired', 'gamma', 'beta'],
+    requests: ['delta', 'gamma'],
+    tokens: [],
+  }
+  const nameOrder = ['Alpha', 'beta', 'delta', 'gamma']
+
+  test.each([
+    [SORT_OPTIONS.RECOMMENDED, order, ['gamma', 'beta', 'Alpha', 'delta']],
+    [SORT_OPTIONS.MOST_REQUESTS, order, ['delta', 'gamma', 'Alpha', 'beta']],
+    [SORT_OPTIONS.MOST_TOKENS, order, nameOrder],
+    [SORT_OPTIONS.RECOMMENDED, undefined, nameOrder],
+  ])(
+    '%s puts listed models first and the rest by name',
+    (sortBy, modelOrder, expected) => {
+      expect(
+        sortModels(squareModels, sortBy, { modelOrder }).map(
+          (m) => m.model_name
+        )
+      ).toEqual(expected)
+    }
+  )
+
+  test('defaults to the recommended order without a sort in the link', () => {
+    const { result } = renderHook(() =>
+      useFilters(squareModels, {}, false, { modelOrder: order })
+    )
+
+    expect(result.current.sortBy).toBe(SORT_OPTIONS.RECOMMENDED)
+    expect(result.current.filteredModels.map((m) => m.model_name)).toEqual([
+      'gamma',
+      'beta',
+      'Alpha',
+      'delta',
+    ])
+  })
+
+  test('keeps name order for old links with sort=name', () => {
+    vi.mocked(useSearch).mockReturnValue({ sort: 'name' })
+
+    const { result } = renderHook(() =>
+      useFilters(squareModels, {}, false, { modelOrder: order })
+    )
+
+    expect(result.current.filteredModels.map((m) => m.model_name)).toEqual(
+      nameOrder
+    )
+  })
+
+  test('breaks usage ties like the server and lists unused models by name', () => {
+    const rows = [
+      { name: 'gamma', usage: 5 },
+      { name: 'Zeta', usage: 0 },
+      { name: 'Kappa', usage: 5 },
+      { name: 'beta', usage: 0 },
+      { name: 'delta', usage: 9 },
+    ]
+
+    // The server lists Kappa before gamma (byte order); unused models
+    // follow the name sort, which puts beta before Zeta.
+    expect(rows.sort(compareModelUsage).map((row) => row.name)).toEqual([
+      'delta',
+      'Kappa',
+      'gamma',
+      'beta',
+      'Zeta',
     ])
   })
 })

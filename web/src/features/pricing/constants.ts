@@ -26,6 +26,9 @@ import type { PriceMode, TokenUnit } from './types'
 
 /** Sort options for pricing models */
 export const SORT_OPTIONS = {
+  RECOMMENDED: 'recommended',
+  MOST_REQUESTS: 'requests',
+  MOST_TOKENS: 'tokens',
   VENDOR: 'vendor',
   TIME_DESC: 'time-desc',
   TIME_ASC: 'time-asc',
@@ -43,7 +46,17 @@ export const SORT_OPTIONS = {
 
 export type SortOption = (typeof SORT_OPTIONS)[keyof typeof SORT_OPTIONS]
 
+/** Sorts that follow the model order sent with the pricing data. */
+export const MODEL_ORDER_SORTS: ReadonlySet<string> = new Set([
+  SORT_OPTIONS.RECOMMENDED,
+  SORT_OPTIONS.MOST_REQUESTS,
+  SORT_OPTIONS.MOST_TOKENS,
+])
+
 export type CatalogSortIconKind =
+  | 'recommended'
+  | 'requests'
+  | 'tokens'
   | 'vendor'
   | 'desc'
   | 'asc'
@@ -52,8 +65,18 @@ export type CatalogSortIconKind =
 
 export type CatalogSortOptionConfig = {
   value: SortOption
-  labelKey: 'Manufacturer' | 'Time' | 'Price' | 'Name'
+  labelKey:
+    | 'Recommended'
+    | 'Most requests'
+    | 'Most tokens'
+    | 'Manufacturer'
+    | 'Time'
+    | 'Price'
+    | 'Name'
   tooltipKey:
+    | 'Recommended'
+    | 'Most requests'
+    | 'Most tokens'
     | 'Manufacturer order (Name: Z to A)'
     | 'Newest first'
     | 'Oldest first'
@@ -64,9 +87,27 @@ export type CatalogSortOptionConfig = {
   icon: CatalogSortIconKind
 }
 
-export const DEFAULT_CATALOG_SORT: SortOption = SORT_OPTIONS.VENDOR
+export const DEFAULT_CATALOG_SORT: SortOption = SORT_OPTIONS.RECOMMENDED
 
 export const CATALOG_SORT_OPTIONS: readonly CatalogSortOptionConfig[] = [
+  {
+    value: SORT_OPTIONS.RECOMMENDED,
+    labelKey: 'Recommended',
+    tooltipKey: 'Recommended',
+    icon: 'recommended',
+  },
+  {
+    value: SORT_OPTIONS.MOST_REQUESTS,
+    labelKey: 'Most requests',
+    tooltipKey: 'Most requests',
+    icon: 'requests',
+  },
+  {
+    value: SORT_OPTIONS.MOST_TOKENS,
+    labelKey: 'Most tokens',
+    tooltipKey: 'Most tokens',
+    icon: 'tokens',
+  },
   {
     value: SORT_OPTIONS.VENDOR,
     labelKey: 'Manufacturer',
@@ -118,6 +159,9 @@ export const PRICE_MODES = {
 
 export function getSortLabels(t: TFunction): Record<SortOption, string> {
   return {
+    [SORT_OPTIONS.RECOMMENDED]: t('Recommended'),
+    [SORT_OPTIONS.MOST_REQUESTS]: t('Most requests'),
+    [SORT_OPTIONS.MOST_TOKENS]: t('Most tokens'),
     [SORT_OPTIONS.VENDOR]: t('Manufacturer order (Name: Z to A)'),
     [SORT_OPTIONS.TIME_DESC]: t('Newest first'),
     [SORT_OPTIONS.TIME_ASC]: t('Oldest first'),

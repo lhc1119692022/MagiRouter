@@ -29,6 +29,7 @@ import {
 import {
   SORT_OPTIONS,
   EXCLUDED_GROUPS,
+  MODEL_ORDER_SORTS,
   FILTER_ALL,
   QUOTA_TYPES,
   QUOTA_TYPE_VALUES,
@@ -36,7 +37,12 @@ import {
   type QuotaTypeOption,
   type SortOption,
 } from '../constants'
-import type { PriceMode, PricingModel, PricingVendor } from '../types'
+import type {
+  ModelOrder,
+  PriceMode,
+  PricingModel,
+  PricingVendor,
+} from '../types'
 import {
   getCurrentTimePricingTiers,
   splitBillingExprAndRequestRules,
@@ -219,6 +225,7 @@ export type SortModelsOptions = {
   selectedGroup?: string
   priceMode?: PriceMode
   vendors?: readonly PricingVendor[]
+  modelOrder?: ModelOrder
 }
 
 function getEffectiveCardPrice(
@@ -319,6 +326,25 @@ function getEffectiveCardPrice(
     : undefined
 }
 
+function compareModelNames(a: PricingModel, b: PricingModel): number {
+  return (a.model_name || '').localeCompare(b.model_name || '')
+}
+
+/**
+ * Orders models for the usage sorts of the model square: most used first,
+ * equal usage in plain string order like the server's list, and models
+ * without usage by name like the rest of the square.
+ */
+export function compareModelUsage(
+  a: { name: string; usage: number },
+  b: { name: string; usage: number }
+): number {
+  if (a.usage !== b.usage) return b.usage - a.usage
+  if (a.usage === 0) return a.name.localeCompare(b.name)
+  if (a.name === b.name) return 0
+  return a.name < b.name ? -1 : 1
+}
+
 /**
  * Sort models by specified option
  */
@@ -364,6 +390,18 @@ export function sortModels(
       }
       return priceSort.dir * (priceA - priceB)
     })
+    return sorted
+  }
+
+  if (MODEL_ORDER_SORTS.has(sortBy)) {
+    // Models missing from the order follow it by name
+    const order = options?.modelOrder?.[sortBy as keyof ModelOrder] ?? []
+    const rank = new Map(order.map((name, index) => [name, index]))
+    sorted.sort(
+      (a, b) =>
+        (rank.get(a.model_name) ?? order.length) -
+          (rank.get(b.model_name) ?? order.length) || compareModelNames(a, b)
+    )
     return sorted
   }
 
@@ -441,9 +479,7 @@ export function sortModels(
       break
     }
     case SORT_OPTIONS.NAME:
-      sorted.sort((a, b) =>
-        (a.model_name || '').localeCompare(b.model_name || '')
-      )
+      sorted.sort(compareModelNames)
       break
     case SORT_OPTIONS.NAME_DESC:
       sorted.sort((a, b) =>
@@ -470,6 +506,7 @@ export function filterAndSortModels(
     sortBy: string
     priceMode?: PriceMode
     vendors?: readonly PricingVendor[]
+    modelOrder?: ModelOrder
   }
 ): PricingModel[] {
   let result = filterBySearch(models, filters.search)
@@ -482,6 +519,7 @@ export function filterAndSortModels(
     selectedGroup: filters.group,
     priceMode: filters.priceMode,
     vendors: filters.vendors,
+    modelOrder: filters.modelOrder,
   })
 
   return result
