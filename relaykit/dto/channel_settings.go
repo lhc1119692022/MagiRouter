@@ -3,10 +3,12 @@ package dto
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/url"
 	"slices"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/MoeForge/moego/regexp"
 	"github.com/QuantumNous/new-api/relaykit/types"
@@ -39,6 +41,11 @@ type ChannelSettings struct {
 	// RequestPlugins lists the request plugin instances the channel binds,
 	// by instance id, in run order.
 	RequestPlugins []string `json:"request_plugins,omitempty"`
+	// UpstreamGroupRatio records the billing ratio charged by the upstream for
+	// this channel, allowing profit analytics to derive cost ratios automatically.
+	UpstreamGroupRatio *float64 `json:"upstream_group_ratio,omitempty"`
+	// UpstreamGroupName optionally records which upstream group the ratio came from.
+	UpstreamGroupName string `json:"upstream_group_name,omitempty"`
 }
 
 // BindsTaskPlugin reports whether the channel is bound to the task plugin,
@@ -70,7 +77,24 @@ const (
 	HTTPProtocolAuto         = "auto"
 	HTTPProtocolHTTP1        = "http1"
 	MaxHTTP2ConnectionShards = 8
+	MaxUpstreamGroupRatio    = 10000.0
 )
+
+func (s *ChannelSettings) ValidateUpstreamGroupRatio() error {
+	if s == nil {
+		return nil
+	}
+	if s.UpstreamGroupRatio != nil {
+		ratio := *s.UpstreamGroupRatio
+		if math.IsNaN(ratio) || math.IsInf(ratio, 0) || ratio < 0 || ratio > MaxUpstreamGroupRatio {
+			return fmt.Errorf("upstream_group_ratio must be between 0 and %.0f", MaxUpstreamGroupRatio)
+		}
+	}
+	if utf8.RuneCountInString(strings.TrimSpace(s.UpstreamGroupName)) > 64 {
+		return fmt.Errorf("upstream_group_name must not exceed 64 characters")
+	}
+	return nil
+}
 
 // ValidateHTTPTransport validates save-time HTTP transport channel settings.
 func (s *ChannelSettings) ValidateHTTPTransport() error {

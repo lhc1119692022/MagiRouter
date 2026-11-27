@@ -233,13 +233,65 @@ func TestSiteOverviewAggregationDatabaseMatrix(t *testing.T) {
 			}
 
 			require.NoError(t, db.Create(&model.TopUp{
-				UserId:       oldUser.Id,
-				TradeNo:      "ov-topup-1-" + dialect.kind,
-				Money:        50,
-				Amount:       10,
-				Status:       common.TopUpStatusSuccess,
-				CreateTime:   now.Add(-1 * time.Hour).Unix(),
-				CompleteTime: now.Add(-1 * time.Hour).Unix(),
+				UserId:        oldUser.Id,
+				TradeNo:       "ov-topup-1-" + dialect.kind,
+				PaymentMethod: "alipay",
+				Money:         50,
+				Amount:        10,
+				Status:        common.TopUpStatusSuccess,
+				CreateTime:    now.Add(-1 * time.Hour).Unix(),
+				CompleteTime:  now.Add(-1 * time.Hour).Unix(),
+			}).Error)
+			require.NoError(t, db.Create(&model.TopUp{
+				UserId:        oldUser.Id,
+				TradeNo:       "ov-topup-prev-" + dialect.kind,
+				PaymentMethod: "alipay",
+				Money:         40,
+				Amount:        8,
+				Status:        common.TopUpStatusSuccess,
+				CreateTime:    prevWindowBucket,
+				CompleteTime:  prevWindowBucket,
+			}).Error)
+			require.NoError(t, db.Create(&model.TopUp{
+				UserId:        admin.Id,
+				TradeNo:       "ov-topup-admin-" + dialect.kind,
+				PaymentMethod: "alipay",
+				Money:         200,
+				Amount:        40,
+				Status:        common.TopUpStatusSuccess,
+				CreateTime:    now.Add(-30 * time.Minute).Unix(),
+				CompleteTime:  now.Add(-30 * time.Minute).Unix(),
+			}).Error)
+			subTradeNo := "ov-sub-1-" + dialect.kind
+			require.NoError(t, db.Create(&model.SubscriptionOrder{
+				UserId:        newUser.Id,
+				PlanId:        1,
+				TradeNo:       subTradeNo,
+				PaymentMethod: "wxpay",
+				Money:         30,
+				Status:        common.TopUpStatusSuccess,
+				CreateTime:    now.Add(-45 * time.Minute).Unix(),
+				CompleteTime:  now.Add(-45 * time.Minute).Unix(),
+			}).Error)
+			require.NoError(t, db.Create(&model.TopUp{
+				UserId:        newUser.Id,
+				TradeNo:       subTradeNo,
+				PaymentMethod: "wxpay",
+				Money:         30,
+				Amount:        0,
+				Status:        common.TopUpStatusSuccess,
+				CreateTime:    now.Add(-45 * time.Minute).Unix(),
+				CompleteTime:  now.Add(-45 * time.Minute).Unix(),
+			}).Error)
+			require.NoError(t, db.Create(&model.SubscriptionOrder{
+				UserId:        oldUser.Id,
+				PlanId:        1,
+				TradeNo:       "ov-sub-bal-" + dialect.kind,
+				PaymentMethod: model.PaymentMethodBalance,
+				Money:         15,
+				Status:        common.TopUpStatusSuccess,
+				CreateTime:    now.Add(-20 * time.Minute).Unix(),
+				CompleteTime:  now.Add(-20 * time.Minute).Unix(),
 			}).Error)
 
 			perfRows := []model.PerfMetric{
@@ -335,10 +387,26 @@ func TestSiteOverviewAggregationDatabaseMatrix(t *testing.T) {
 			assert.Equal(t, int64(2), data.Users.WAU)
 			assert.Equal(t, int64(2), data.Users.MAU)
 			assert.Equal(t, int64(2), data.Users.LoginActiveUsers)
-			assert.Equal(t, int64(1), data.Users.PayingUsers)
+			assert.Equal(t, int64(2), data.Users.PayingUsers)
 			assert.Len(t, data.Trend, 7)
 			assert.Equal(t, int64(1), data.Trend[len(data.Trend)-1].DeletedUsers)
 			assert.Equal(t, int64(3), data.Trend[len(data.Trend)-1].CumulativeUsers)
+			assert.InDelta(t, 80.0, data.Trend[len(data.Trend)-1].CashRevenue, 0.01)
+			assert.Equal(t, int64(2), data.Trend[len(data.Trend)-1].PaidOrders)
+
+			assert.InDelta(t, 80.0, data.Finance.CashRevenue, 0.01)
+			assert.InDelta(t, 40.0, data.Finance.PrevCashRevenue, 0.01)
+			require.NotNil(t, data.Finance.CashRevenueChangePct)
+			assert.InDelta(t, 100.0, *data.Finance.CashRevenueChangePct, 0.1)
+			assert.InDelta(t, 50.0, data.Finance.WalletTopUpMoney, 0.01)
+			assert.Equal(t, int64(1), data.Finance.WalletTopUpOrders)
+			assert.InDelta(t, 30.0, data.Finance.SubscriptionDirectMoney, 0.01)
+			assert.Equal(t, int64(1), data.Finance.SubscriptionDirectOrders)
+			assert.InDelta(t, 15.0, data.Finance.SubscriptionBalanceMoney, 0.01)
+			assert.Equal(t, int64(1), data.Finance.SubscriptionBalanceOrders)
+			assert.Equal(t, int64(2), data.Finance.TotalPaidOrders)
+			assert.InDelta(t, data.Finance.CashRevenue-data.Finance.TotalEstimatedCost, data.Finance.CashNetProfit, 0.02)
+			assert.InDelta(t, data.Usage.BilledLocal-data.Finance.UpstreamVariableCost, data.Finance.BilledGrossProfit, 0.02)
 
 			assert.True(t, data.Performance.HasData)
 			assert.Equal(t, int64(30), data.Performance.TotalRequests)
@@ -378,6 +446,7 @@ func TestSiteOverviewAggregationDatabaseMatrix(t *testing.T) {
 			assert.Len(t, inclBody.Data.Trend, 24)
 			assert.Equal(t, int64(80), inclBody.Data.Usage.TotalRequests)
 			assert.Equal(t, int64(3), inclBody.Data.Users.ActiveUsers)
+			assert.InDelta(t, 280.0, inclBody.Data.Finance.CashRevenue, 0.01)
 		})
 	}
 }

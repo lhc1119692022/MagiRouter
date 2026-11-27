@@ -1,5 +1,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -75,6 +81,31 @@ const MOCK_REPORT: SiteOverviewResponse = {
     avg_rpm: 1.2,
     avg_tpm: 833.3,
   },
+  finance: {
+    cash_revenue: 1250,
+    prev_cash_revenue: 1000,
+    cash_revenue_change_pct: 25,
+    wallet_topup_money: 900,
+    wallet_topup_orders: 12,
+    subscription_direct_money: 350,
+    subscription_direct_orders: 5,
+    subscription_balance_money: 80,
+    subscription_balance_orders: 2,
+    total_paid_orders: 17,
+    payment_fee_cost: 27.5,
+    net_cash_inflow: 1222.5,
+    upstream_variable_cost: 350,
+    channel_fixed_cost: 50,
+    platform_fixed_cost: 30,
+    total_estimated_cost: 457.5,
+    cash_net_profit: 792.5,
+    cash_net_margin: 63.4,
+    billed_gross_profit: 350,
+    billed_gross_margin: 50,
+    billed_net_profit: 270,
+    billed_net_margin: 38.6,
+    default_cost_ratio: 0.5,
+  },
   performance: {
     total_requests: 12450,
     success_requests: 12300,
@@ -142,6 +173,11 @@ const MOCK_REPORT: SiteOverviewResponse = {
       quota: 24_000_000,
       billed_usd: 48,
       billed_local: 336,
+      cash_revenue: 600,
+      estimated_cost: 220,
+      cash_net_profit: 380,
+      billed_gross_profit: 168,
+      paid_orders: 8,
       tokens: 4_000_000,
       cache_read_tokens: 600_000,
       cache_creation_tokens: 100_000,
@@ -162,6 +198,11 @@ const MOCK_REPORT: SiteOverviewResponse = {
       quota: 26_000_000,
       billed_usd: 52,
       billed_local: 364,
+      cash_revenue: 650,
+      estimated_cost: 237.5,
+      cash_net_profit: 412.5,
+      billed_gross_profit: 182,
+      paid_orders: 9,
       tokens: 4_400_000,
       cache_read_tokens: 660_000,
       cache_creation_tokens: 100_000,
@@ -291,10 +332,28 @@ describe('SiteOverview page', () => {
 
     expect(await screen.findByText('Site Overview')).toBeVisible()
     expect(await screen.findByText('98.80%')).toBeVisible()
-    expect(screen.getByText('420')).toBeVisible()
+    expect(screen.getByText('¥1,250.00')).toBeVisible()
+    expect(screen.getByText('+¥792.50')).toBeVisible()
+    expect(screen.getByText('Margin 63.4%')).toBeVisible()
+    expect(
+      screen.getByRole('button', { name: /Profit Analysis/i })
+    ).toHaveAttribute('href', '/profit-analytics')
+    const totalUsersValue = screen.getByText('420')
+    expect(totalUsersValue).toBeVisible()
+    const totalUsersRow = within(totalUsersValue.parentElement as HTMLElement)
+    expect(totalUsersRow.getByText('+28')).toBeVisible()
+    expect(totalUsersRow.getByText('-3')).toBeVisible()
     expect(screen.getByText('claude-backup-jp')).toBeVisible()
     expect(screen.getByText(/Goroutines 128/)).toBeVisible()
     expect(screen.getByText('gpt-4o')).toBeVisible()
+
+    // Switch trend chart to Revenue & Profit mode
+    await user.click(screen.getByRole('button', { name: 'Revenue & Profit' }))
+    expect(
+      screen.getByText(
+        'Cash receipts, estimated total cost, and net cash profit trend'
+      )
+    ).toBeVisible()
 
     // Switch to Performance Watchlist tab
     await user.click(

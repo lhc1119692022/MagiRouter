@@ -116,6 +116,81 @@ test('saves decimal check-in rewards, allowed groups, and cumulative top-up upgr
   ])
 })
 
+test('saves usage-only and combined top-up + usage upgrade rules in tier order', async () => {
+  const user = userEvent.setup()
+  vi.spyOn(api, 'get').mockImplementation(async (url: string) => {
+    if (url === '/api/group') {
+      return {
+        data: { success: true, data: ['default', 'paid', 'vip', 'svip'] },
+      }
+    }
+    throw new Error(`Unexpected GET ${url}`)
+  })
+  const putSpy = vi
+    .spyOn(api, 'put')
+    .mockResolvedValue({ data: { success: true } })
+
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+
+  render(
+    <QueryClientProvider client={client}>
+      <CheckinSettingsSection
+        defaultValues={{
+          enabled: true,
+          minQuota: 1000,
+          maxQuota: 10000,
+          allowedGroups: '[]',
+          topUpUpgradeEnabled: true,
+          topUpUpgradeRules: JSON.stringify([
+            { threshold_amount: 10, target_group: 'paid' },
+          ]),
+        }}
+      />
+    </QueryClientProvider>
+  )
+
+  await user.click(screen.getByRole('button', { name: 'Add upgrade rule' }))
+  const usageInputs = screen.getAllByLabelText(/Cumulative usage ≥/)
+  await user.type(usageInputs[1], '50')
+  const targetSelects = screen.getAllByLabelText('Upgrade to user group')
+  await user.selectOptions(targetSelects[1], 'vip')
+
+  await user.click(screen.getByRole('button', { name: 'Add upgrade rule' }))
+  const allTopUpInputs = screen.getAllByLabelText('Cumulative top-up ≥')
+  const allUsageInputs = screen.getAllByLabelText(/Cumulative usage ≥/)
+  const allTargetSelects = screen.getAllByLabelText('Upgrade to user group')
+  await user.type(allTopUpInputs[2], '200')
+  await user.type(allUsageInputs[2], '100')
+  await user.selectOptions(allTargetSelects[2], 'svip')
+
+  const matchModeSelect = screen.getByLabelText('Condition logic')
+  await user.selectOptions(matchModeSelect, 'any')
+
+  await user.click(
+    screen.getByRole('button', { name: 'Save check-in settings' })
+  )
+
+  await waitFor(() => expect(putSpy).toHaveBeenCalled())
+  const saved = Object.fromEntries(
+    putSpy.mock.calls.map(([, body]) => {
+      const payload = body as { key: string; value: string }
+      return [payload.key, payload.value]
+    })
+  )
+  expect(JSON.parse(saved['checkin_setting.topup_upgrade_rules'])).toEqual([
+    { threshold_amount: 10, target_group: 'paid' },
+    { usage_threshold_quota: 25_000_000, target_group: 'vip' },
+    {
+      threshold_amount: 200,
+      usage_threshold_quota: 50_000_000,
+      match_mode: 'any',
+      target_group: 'svip',
+    },
+  ])
+})
+
 test('displays decimal check-in totals accurately on the profile check-in card', async () => {
   const today = new Date()
   const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`

@@ -20,6 +20,7 @@ import type {
   ProfitAnalyticsSetting,
   ProfitChannelBreakdown,
   ProfitChannelCostConfig,
+  ProfitChannelCostSource,
   ProfitChannelPricingMode,
   ProfitFixedCostItem,
   ProfitPricingReference,
@@ -41,6 +42,9 @@ interface ChannelDraftRow {
   channelId: number
   channelName: string
   group: string
+  costSource?: ProfitChannelCostSource
+  channelUpstreamRatio?: number
+  channelUpstreamGroup: string
   pricingMode: ProfitChannelPricingMode
   costRatioText: string
   upstreamValueText: string
@@ -144,6 +148,9 @@ export function ProfitCostSettingsDialog(props: ProfitCostSettingsDialogProps) {
         channelId: ch.channel_id,
         channelName: ch.channel_name,
         group: ch.group,
+        costSource: ch.cost_source,
+        channelUpstreamRatio: ch.channel_upstream_ratio,
+        channelUpstreamGroup: ch.channel_upstream_group ?? '',
         pricingMode,
         costRatioText:
           existing?.cost_ratio != null
@@ -179,6 +186,9 @@ export function ProfitCostSettingsDialog(props: ProfitCostSettingsDialogProps) {
         channelId: parsed,
         channelName: `#${parsed}`,
         group: '',
+        costSource: 'override',
+        channelUpstreamRatio: undefined,
+        channelUpstreamGroup: '',
         pricingMode,
         costRatioText:
           cfg.cost_ratio != null
@@ -695,9 +705,13 @@ export function ProfitCostSettingsDialog(props: ProfitCostSettingsDialogProps) {
               const platformLabel = isRatioMode
                 ? t('My ratio')
                 : t('My unit price')
-              const upstreamPlaceholder = isRatioMode
-                ? t('e.g. 0.5')
-                : t('e.g. 0.02')
+              let upstreamPlaceholder = t('e.g. 0.02')
+              if (isRatioMode) {
+                upstreamPlaceholder =
+                  row.channelUpstreamRatio != null
+                    ? formatEditableDecimal(row.channelUpstreamRatio)
+                    : t('e.g. 0.5')
+              }
               const platformPlaceholder = isRatioMode
                 ? suggestedGroupText
                 : suggestedUnitText || t('e.g. 0.025')
@@ -728,12 +742,29 @@ export function ProfitCostSettingsDialog(props: ProfitCostSettingsDialogProps) {
                 >
                   <div className='flex flex-wrap items-center justify-between gap-2'>
                     <div className='min-w-0'>
-                      <div className='truncate text-sm font-medium'>
-                        {row.channelName}
+                      <div className='flex flex-wrap items-center gap-1.5'>
+                        <span className='truncate text-sm font-medium'>
+                          {row.channelName}
+                        </span>
+                        {row.costSource === 'channel' && (
+                          <Badge variant='secondary' className='text-[11px]'>
+                            {t('Auto from channel')}
+                          </Badge>
+                        )}
                       </div>
                       <div className='text-muted-foreground flex flex-wrap items-center gap-1.5 text-xs'>
                         <span>#{row.channelId}</span>
                         {row.group && <span>· {row.group}</span>}
+                        {row.channelUpstreamRatio != null && (
+                          <span>
+                            ·{' '}
+                            {t('Channel upstream ratio {{ratio}}', {
+                              ratio: formatEditableDecimal(
+                                row.channelUpstreamRatio
+                              ),
+                            })}
+                          </span>
+                        )}
                         <span>
                           ·{' '}
                           {t('Platform ratio {{ratio}}', {

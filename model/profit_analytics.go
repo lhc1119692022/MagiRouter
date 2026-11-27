@@ -11,10 +11,121 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"gorm.io/gorm"
 )
+
+const (
+	ProfitCostSourceOverride = "override"
+	ProfitCostSourceChannel  = "channel"
+	ProfitCostSourceDefault  = "default"
+)
+
+type channelUpstreamRatioInfo struct {
+	Ratio     *float64
+	GroupName string
+	GroupCSV  string
+}
+
+func parseChannelUpstreamRatio(setting *string, groupCSV string) channelUpstreamRatioInfo {
+	info := channelUpstreamRatioInfo{GroupCSV: groupCSV}
+	if setting == nil || strings.TrimSpace(*setting) == "" {
+		return info
+	}
+	var parsed dto.ChannelSettings
+	if err := common.Unmarshal([]byte(*setting), &parsed); err != nil {
+		return info
+	}
+	if parsed.UpstreamGroupRatio != nil {
+		val := *parsed.UpstreamGroupRatio
+		if !math.IsNaN(val) && !math.IsInf(val, 0) && val >= 0 && val <= dto.MaxUpstreamGroupRatio {
+			copied := roundRatio6(val)
+			info.Ratio = &copied
+		}
+	}
+	info.GroupName = strings.TrimSpace(parsed.UpstreamGroupName)
+	return info
+}
+
+func loadProfitGroupRatios() (map[string]float64, float64) {
+	groupRatios := ratio_setting.GetGroupRatioCopy()
+	defaultGroupRatio := groupRatios[ratio_setting.DefaultGroupName]
+	if defaultGroupRatio <= 0 {
+		defaultGroupRatio = ratio_setting.GetGroupRatio(ratio_setting.DefaultGroupName)
+	}
+	if defaultGroupRatio <= 0 {
+		defaultGroupRatio = 1
+	}
+	return groupRatios, defaultGroupRatio
+}
+
+func resolveGroupRatioForChannel(
+	useGroup string,
+	channelGroupCSV string,
+	groupRatios map[string]float64,
+	defaultGroupRatio float64,
+) float64 {
+	trimmedUse := strings.TrimSpace(useGroup)
+	if trimmedUse != "" {
+		if ratio, ok := groupRatios[trimmedUse]; ok && ratio > 0 {
+			return ratio
+		}
+	}
+	if channelGroupCSV != "" {
+		fallback := 0.0
+		for _, rawGroup := range strings.Split(channelGroupCSV, ",") {
+			gName := strings.TrimSpace(rawGroup)
+			if gName == "" {
+				continue
+			}
+			gRatio, ok := groupRatios[gName]
+			if !ok || gRatio <= 0 {
+				continue
+			}
+			if !ratio_setting.IsUserManagementGroup(gName) {
+				return gRatio
+			}
+			if fallback <= 0 {
+				fallback = gRatio
+			}
+		}
+		if fallback > 0 {
+			return fallback
+		}
+	}
+	return defaultGroupRatio
+}
+
+func resolveEffectiveChannelRowCostRatio(
+	costCfg operation_setting.ProfitAnalyticsSetting,
+	upstreamMap map[int]channelUpstreamRatioInfo,
+	groupRatios map[string]float64,
+	defaultGroupRatio float64,
+	channelID int,
+	useGroup string,
+) (ratio float64, source string) {
+	if overrideRatio, custom := costCfg.EffectiveChannelCostRatio(channelID); custom {
+		return overrideRatio, ProfitCostSourceOverride
+	}
+	if info, ok := upstreamMap[channelID]; ok && info.Ratio != nil {
+		platformRatio := resolveGroupRatioForChannel(useGroup, info.GroupCSV, groupRatios, defaultGroupRatio)
+		if platformRatio > 0 {
+			derived := *info.Ratio / platformRatio
+			if !math.IsNaN(derived) && !math.IsInf(derived, 0) {
+				if derived < 0 {
+					derived = 0
+				}
+				if derived > operation_setting.MaxProfitCostRatio {
+					derived = operation_setting.MaxProfitCostRatio
+				}
+				return roundRatio6(derived), ProfitCostSourceChannel
+			}
+		}
+	}
+	return costCfg.DefaultCostRatio, ProfitCostSourceDefault
+}
 
 type ProfitAnalyticsOptions struct {
 	RecentOrderLimit  int
@@ -121,9 +232,12 @@ type ProfitChannelBreakdown struct {
 	BilledLocal             float64  `json:"billed_local"`
 	CostRatio               float64  `json:"cost_ratio"`
 	CustomCostRatio         bool     `json:"custom_cost_ratio"`
+	CostSource              string   `json:"cost_source,omitempty"`
 	PricingMode             string   `json:"pricing_mode,omitempty"`
 	UpstreamValue           *float64 `json:"upstream_value,omitempty"`
 	PlatformValue           *float64 `json:"platform_value,omitempty"`
+	ChannelUpstreamRatio    *float64 `json:"channel_upstream_ratio,omitempty"`
+	ChannelUpstreamGroup    string   `json:"channel_upstream_group,omitempty"`
 	SuggestedGroupRatio     float64  `json:"suggested_group_ratio"`
 	SuggestedUnitPrice      float64  `json:"suggested_unit_price,omitempty"`
 	SuggestedUnitPriceModel string   `json:"suggested_unit_price_model,omitempty"`
@@ -344,14 +458,7 @@ func GetProfitAnalytics(startTime, endTime int64, opts ProfitAnalyticsOptions) (
 	currency := profitCurrencyMeta()
 	nowUnix := time.Now().Unix()
 
-	groupRatios := ratio_setting.GetGroupRatioCopy()
-	defaultGroupRatio := groupRatios[ratio_setting.DefaultGroupName]
-	if defaultGroupRatio <= 0 {
-		defaultGroupRatio = ratio_setting.GetGroupRatio(ratio_setting.DefaultGroupName)
-	}
-	if defaultGroupRatio <= 0 {
-		defaultGroupRatio = 1
-	}
+	groupRatios, defaultGroupRatio := loadProfitGroupRatios()
 	pricingRef := ProfitPricingReference{
 		DefaultGroupRatio: roundRatio6(defaultGroupRatio),
 		GroupRatios:       groupRatios,
@@ -692,16 +799,19 @@ func GetProfitAnalytics(startTime, endTime int64, opts ProfitAnalyticsOptions) (
 		Tag     *string
 		Status  int
 		Balance float64
+		Setting *string
 	}
 	var channelRows []channelRow
 	if err := DB.Model(&Channel{}).
-		Select("id", "name", "type", "group", "models", "tag", "status", "balance").
+		Select("id", "name", "type", "group", "models", "tag", "status", "balance", "setting").
 		Find(&channelRows).Error; err != nil {
 		return nil, err
 	}
 	channelMeta := make(map[int]channelRow, len(channelRows))
+	channelUpstreamMap := make(map[int]channelUpstreamRatioInfo, len(channelRows))
 	for _, row := range channelRows {
 		channelMeta[row.Id] = row
+		channelUpstreamMap[row.Id] = parseChannelUpstreamRatio(row.Setting, row.Group)
 	}
 
 	// 4. Query aggregated usage from quota_data (hourly granularity, cross-DB portable).
@@ -768,18 +878,23 @@ func GetProfitAnalytics(startTime, endTime int64, opts ProfitAnalyticsOptions) (
 		if entry, ok := channelBreakdownMap[channelID]; ok {
 			return entry
 		}
-		ratio, custom := costCfg.EffectiveChannelCostRatio(channelID)
+		ratio, source := resolveEffectiveChannelRowCostRatio(costCfg, channelUpstreamMap, groupRatios, defaultGroupRatio, channelID, "")
+		custom := source == ProfitCostSourceOverride
 		chCfg := costCfg.ChannelCosts[strconv.Itoa(channelID)]
+		upstreamInfo := channelUpstreamMap[channelID]
 		entry := &ProfitChannelBreakdown{
-			ChannelId:        channelID,
-			ChannelName:      fmt.Sprintf("#%d", channelID),
-			CostRatio:        ratio,
-			CustomCostRatio:  custom,
-			PricingMode:      chCfg.PricingMode,
-			UpstreamValue:    chCfg.UpstreamValue,
-			PlatformValue:    chCfg.PlatformValue,
-			MonthlyFixedCost: chCfg.MonthlyFixedCost,
-			Note:             chCfg.Note,
+			ChannelId:            channelID,
+			ChannelName:          fmt.Sprintf("#%d", channelID),
+			CostRatio:            ratio,
+			CustomCostRatio:      custom,
+			CostSource:           source,
+			PricingMode:          chCfg.PricingMode,
+			UpstreamValue:        chCfg.UpstreamValue,
+			PlatformValue:        chCfg.PlatformValue,
+			ChannelUpstreamRatio: upstreamInfo.Ratio,
+			ChannelUpstreamGroup: upstreamInfo.GroupName,
+			MonthlyFixedCost:     chCfg.MonthlyFixedCost,
+			Note:                 chCfg.Note,
 		}
 		if channelID == 0 {
 			entry.ChannelName = "Unattributed"
@@ -803,7 +918,7 @@ func GetProfitAnalytics(startTime, endTime int64, opts ProfitAnalyticsOptions) (
 
 	for _, row := range quotaRows {
 		billedUSD, billedLocal := quotaToUSDAndLocal(row.Quota, currency)
-		ratio, _ := costCfg.EffectiveChannelCostRatio(row.ChannelID)
+		ratio, _ := resolveEffectiveChannelRowCostRatio(costCfg, channelUpstreamMap, groupRatios, defaultGroupRatio, row.ChannelID, row.UseGroup)
 		varCost := billedLocal * ratio
 
 		summary.BilledQuota += row.Quota
@@ -946,6 +1061,25 @@ func GetProfitAnalytics(startTime, endTime int64, opts ProfitAnalyticsOptions) (
 			suggestedRatio = defaultGroupRatio
 		}
 		entry.SuggestedGroupRatio = roundRatio6(suggestedRatio)
+		if entry.CostSource == ProfitCostSourceChannel && entry.ChannelUpstreamRatio != nil {
+			upstreamVal := *entry.ChannelUpstreamRatio
+			platformVal := entry.SuggestedGroupRatio
+			entry.PricingMode = operation_setting.ProfitPricingModeRatio
+			entry.UpstreamValue = &upstreamVal
+			entry.PlatformValue = &platformVal
+			if entry.BilledLocal > 0 {
+				entry.CostRatio = roundRatio6(entry.VariableCost / entry.BilledLocal)
+			} else if platformVal > 0 {
+				derived := upstreamVal / platformVal
+				if derived < 0 {
+					derived = 0
+				}
+				if derived > operation_setting.MaxProfitCostRatio {
+					derived = operation_setting.MaxProfitCostRatio
+				}
+				entry.CostRatio = roundRatio6(derived)
+			}
+		}
 
 		bestModelName := ""
 		bestModelWeight := 0.0

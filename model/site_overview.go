@@ -51,6 +51,32 @@ type SiteOverviewUsageSummary struct {
 	AvgTPM              float64  `json:"avg_tpm"`
 }
 
+type SiteOverviewFinanceSummary struct {
+	CashRevenue               float64  `json:"cash_revenue"`
+	PrevCashRevenue           float64  `json:"prev_cash_revenue"`
+	CashRevenueChangePct      *float64 `json:"cash_revenue_change_pct,omitempty"`
+	WalletTopUpMoney          float64  `json:"wallet_topup_money"`
+	WalletTopUpOrders         int64    `json:"wallet_topup_orders"`
+	SubscriptionDirectMoney   float64  `json:"subscription_direct_money"`
+	SubscriptionDirectOrders  int64    `json:"subscription_direct_orders"`
+	SubscriptionBalanceMoney  float64  `json:"subscription_balance_money"`
+	SubscriptionBalanceOrders int64    `json:"subscription_balance_orders"`
+	TotalPaidOrders           int64    `json:"total_paid_orders"`
+	PaymentFeeCost            float64  `json:"payment_fee_cost"`
+	NetCashInflow             float64  `json:"net_cash_inflow"`
+	UpstreamVariableCost      float64  `json:"upstream_variable_cost"`
+	ChannelFixedCost          float64  `json:"channel_fixed_cost"`
+	PlatformFixedCost         float64  `json:"platform_fixed_cost"`
+	TotalEstimatedCost        float64  `json:"total_estimated_cost"`
+	CashNetProfit             float64  `json:"cash_net_profit"`
+	CashNetMargin             float64  `json:"cash_net_margin"`
+	BilledGrossProfit         float64  `json:"billed_gross_profit"`
+	BilledGrossMargin         float64  `json:"billed_gross_margin"`
+	BilledNetProfit           float64  `json:"billed_net_profit"`
+	BilledNetMargin           float64  `json:"billed_net_margin"`
+	DefaultCostRatio          float64  `json:"default_cost_ratio"`
+}
+
 type SiteOverviewUsersSummary struct {
 	TotalUsers           int64    `json:"total_users"`
 	EnabledUsers         int64    `json:"enabled_users"`
@@ -102,6 +128,11 @@ type SiteOverviewTrendPoint struct {
 	Quota               int64   `json:"quota"`
 	BilledUSD           float64 `json:"billed_usd"`
 	BilledLocal         float64 `json:"billed_local"`
+	CashRevenue         float64 `json:"cash_revenue"`
+	EstimatedCost       float64 `json:"estimated_cost"`
+	CashNetProfit       float64 `json:"cash_net_profit"`
+	BilledGrossProfit   float64 `json:"billed_gross_profit"`
+	PaidOrders          int64   `json:"paid_orders"`
 	Tokens              int64   `json:"tokens"`
 	CacheReadTokens     int64   `json:"cache_read_tokens"`
 	CacheCreationTokens int64   `json:"cache_creation_tokens"`
@@ -166,6 +197,7 @@ type SiteOverviewUserItem struct {
 type SiteOverviewBaseReport struct {
 	Meta      SiteOverviewMeta            `json:"meta"`
 	Usage     SiteOverviewUsageSummary    `json:"usage"`
+	Finance   SiteOverviewFinanceSummary  `json:"finance"`
 	Users     SiteOverviewUsersSummary    `json:"users"`
 	Channels  SiteOverviewChannelsSummary `json:"channels"`
 	Trend     []SiteOverviewTrendPoint    `json:"trend"`
@@ -219,19 +251,31 @@ func GetSiteOverviewBase(opts SiteOverviewOptions) (*SiteOverviewBaseReport, err
 
 	rangeKey, bucketUnit, rangeDays := normalizeSiteOverviewRange(opts.Range)
 	currency := profitCurrencyMeta()
+	costCfg := operation_setting.GetProfitAnalyticsSettingSnapshot()
 
-	excludeAdmins := operation_setting.GetProfitAnalyticsSettingSnapshot().ExcludeAdminUsers
+	excludeAdmins := costCfg.ExcludeAdminUsers
 	if opts.ExcludeAdminUsers != nil {
 		excludeAdmins = *opts.ExcludeAdminUsers
 	}
 
 	var adminUserIDs []int
+	adminUserIDSet := make(map[int]struct{})
 	if excludeAdmins {
 		if err := DB.Unscoped().Model(&User{}).
 			Where("role >= ?", common.RoleAdminUser).
 			Pluck("id", &adminUserIDs).Error; err != nil {
 			return nil, err
 		}
+		for _, uid := range adminUserIDs {
+			adminUserIDSet[uid] = struct{}{}
+		}
+	}
+	isExcludedAdmin := func(userID int) bool {
+		if !excludeAdmins || userID <= 0 {
+			return false
+		}
+		_, excluded := adminUserIDSet[userID]
+		return excluded
 	}
 	hasExcludedAdmins := excludeAdmins && len(adminUserIDs) > 0
 	adminUserSubQuery := func() *gorm.DB {
@@ -294,8 +338,25 @@ func GetSiteOverviewBase(opts SiteOverviewOptions) (*SiteOverviewBaseReport, err
 	}
 
 	// 1. Quota & usage trend in current range.
+	type overviewChannelSettingRow struct {
+		Id      int
+		Group   string
+		Setting *string
+	}
+	var overviewChannelRows []overviewChannelSettingRow
+	if err := DB.Model(&Channel{}).Select("id", "group", "setting").Find(&overviewChannelRows).Error; err != nil {
+		return nil, err
+	}
+	channelUpstreamMap := make(map[int]channelUpstreamRatioInfo, len(overviewChannelRows))
+	for _, row := range overviewChannelRows {
+		channelUpstreamMap[row.Id] = parseChannelUpstreamRatio(row.Setting, row.Group)
+	}
+	groupRatios, defaultGroupRatio := loadProfitGroupRatios()
+
 	type quotaTrendRow struct {
 		CreatedAt           int64
+		ChannelID           int
+		UseGroup            string
 		Requests            int64
 		Quota               int64
 		Tokens              int64
@@ -304,20 +365,27 @@ func GetSiteOverviewBase(opts SiteOverviewOptions) (*SiteOverviewBaseReport, err
 	}
 	var quotaTrendRows []quotaTrendRow
 	if err := applyQuotaAdminFilter(DB.Model(&QuotaData{})).
-		Select("created_at, COALESCE(SUM(count), 0) AS requests, COALESCE(SUM(quota), 0) AS quota, COALESCE(SUM(token_used), 0) AS tokens, COALESCE(SUM(cache_read_tokens), 0) AS cache_read_tokens, COALESCE(SUM(cache_creation_tokens), 0) AS cache_creation_tokens").
+		Select("created_at, channel_id, use_group, COALESCE(SUM(count), 0) AS requests, COALESCE(SUM(quota), 0) AS quota, COALESCE(SUM(token_used), 0) AS tokens, COALESCE(SUM(cache_read_tokens), 0) AS cache_read_tokens, COALESCE(SUM(cache_creation_tokens), 0) AS cache_creation_tokens").
 		Where("created_at >= ? AND created_at <= ?", startBucket, endTs).
-		Group("created_at").
+		Group("created_at, channel_id, use_group").
 		Scan(&quotaTrendRows).Error; err != nil {
 		return nil, err
 	}
 
 	var usage SiteOverviewUsageSummary
+	var upstreamVariableCost float64
+	bucketUpstreamCost := make(map[string]float64, len(trendOrder))
 	for _, row := range quotaTrendRows {
 		usage.TotalRequests += row.Requests
 		usage.TotalQuota += row.Quota
 		usage.TotalTokens += row.Tokens
 		usage.CacheReadTokens += row.CacheReadTokens
 		usage.CacheCreationTokens += row.CacheCreationTokens
+
+		_, rowLocal := quotaToUSDAndLocal(row.Quota, currency)
+		ratio, _ := resolveEffectiveChannelRowCostRatio(costCfg, channelUpstreamMap, groupRatios, defaultGroupRatio, row.ChannelID, row.UseGroup)
+		rowVarCost := rowLocal * ratio
+		upstreamVariableCost += rowVarCost
 
 		label := siteOverviewBucketLabel(row.CreatedAt, bucketUnit, loc)
 		if point, ok := trendMap[label]; ok {
@@ -326,6 +394,7 @@ func GetSiteOverviewBase(opts SiteOverviewOptions) (*SiteOverviewBaseReport, err
 			point.Tokens += row.Tokens
 			point.CacheReadTokens += row.CacheReadTokens
 			point.CacheCreationTokens += row.CacheCreationTokens
+			bucketUpstreamCost[label] += rowVarCost
 		}
 	}
 
@@ -551,39 +620,174 @@ func GetSiteOverviewBase(opts SiteOverviewOptions) (*SiteOverviewBaseReport, err
 		usersSummary.ActiveRate = roundPercent(float64(usersSummary.ActiveUsers) / float64(usersSummary.TotalUsers) * 100)
 	}
 
-	// Paying users (completed top-ups or direct subscription orders).
+	// Paying users, cash revenue, payment fees, and profit summary (reusing profit analytics rules).
+	finance := SiteOverviewFinanceSummary{
+		DefaultCostRatio: costCfg.DefaultCostRatio,
+	}
 	payingSet := make(map[int]struct{})
-	if DB.Migrator().HasTable(&TopUp{}) {
-		var topUpUserIDs []int
-		topUpQuery := DB.Model(&TopUp{}).
-			Where(
-				"status = ? AND ((complete_time > 0 AND complete_time >= ? AND complete_time <= ?) OR (complete_time = 0 AND create_time >= ? AND create_time <= ?))",
-				common.TopUpStatusSuccess, startTs, endTs, startTs, endTs,
-			)
-		if err := applyQuotaAdminFilter(topUpQuery).Distinct("user_id").Pluck("user_id", &topUpUserIDs).Error; err == nil {
-			for _, uid := range topUpUserIDs {
-				if uid > 0 {
-					payingSet[uid] = struct{}{}
+	bucketPaymentFee := make(map[string]float64, len(trendOrder))
+	hasSubOrdersTable := DB.Migrator().HasTable(&SubscriptionOrder{})
+	hasTopUpTable := DB.Migrator().HasTable(&TopUp{})
+
+	var subOrders []SubscriptionOrder
+	if hasSubOrdersTable {
+		if err := DB.Where(
+			"status = ? AND ((complete_time > 0 AND complete_time >= ? AND complete_time <= ?) OR (complete_time = 0 AND create_time >= ? AND create_time <= ?))",
+			common.TopUpStatusSuccess, prevStartTs, endTs, prevStartTs, endTs,
+		).Find(&subOrders).Error; err != nil {
+			return nil, err
+		}
+	}
+
+	var topUps []TopUp
+	if hasTopUpTable {
+		if err := DB.Where(
+			"status = ? AND ((complete_time > 0 AND complete_time >= ? AND complete_time <= ?) OR (complete_time = 0 AND create_time >= ? AND create_time <= ?))",
+			common.TopUpStatusSuccess, prevStartTs, endTs, prevStartTs, endTs,
+		).Find(&topUps).Error; err != nil {
+			return nil, err
+		}
+	}
+
+	subTradeNos := make(map[string]struct{}, len(subOrders))
+	for _, order := range subOrders {
+		if order.TradeNo != "" {
+			subTradeNos[order.TradeNo] = struct{}{}
+		}
+	}
+	if hasSubOrdersTable && len(topUps) > 0 {
+		candidateTradeNos := make([]string, 0, len(topUps))
+		for _, topUp := range topUps {
+			if topUp.TradeNo != "" {
+				if _, known := subTradeNos[topUp.TradeNo]; !known {
+					candidateTradeNos = append(candidateTradeNos, topUp.TradeNo)
 				}
 			}
 		}
-	}
-	if DB.Migrator().HasTable(&SubscriptionOrder{}) {
-		var subUserIDs []int
-		subQuery := DB.Model(&SubscriptionOrder{}).
-			Where(
-				"status = ? AND payment_method <> ? AND ((complete_time > 0 AND complete_time >= ? AND complete_time <= ?) OR (complete_time = 0 AND create_time >= ? AND create_time <= ?))",
-				common.TopUpStatusSuccess, PaymentMethodBalance, startTs, endTs, startTs, endTs,
-			)
-		if err := applyQuotaAdminFilter(subQuery).Distinct("user_id").Pluck("user_id", &subUserIDs).Error; err == nil {
-			for _, uid := range subUserIDs {
-				if uid > 0 {
-					payingSet[uid] = struct{}{}
-				}
+		if len(candidateTradeNos) > 0 {
+			var mirroredTradeNos []string
+			if err := DB.Model(&SubscriptionOrder{}).
+				Where("trade_no IN ?", candidateTradeNos).
+				Pluck("trade_no", &mirroredTradeNos).Error; err != nil {
+				return nil, err
 			}
+			for _, tradeNo := range mirroredTradeNos {
+				subTradeNos[tradeNo] = struct{}{}
+			}
+		}
+	}
+
+	for _, topUp := range topUps {
+		if _, isSubMirror := subTradeNos[topUp.TradeNo]; isSubMirror {
+			continue
+		}
+		if isExcludedAdmin(topUp.UserId) {
+			continue
+		}
+		ts := topUp.CompleteTime
+		if ts <= 0 {
+			ts = topUp.CreateTime
+		}
+		if ts >= startTs && ts <= endTs {
+			fee := topUp.Money * costCfg.EffectivePaymentFeeRate(topUp.PaymentMethod)
+			finance.WalletTopUpMoney += topUp.Money
+			finance.WalletTopUpOrders++
+			finance.PaymentFeeCost += fee
+			if topUp.UserId > 0 {
+				payingSet[topUp.UserId] = struct{}{}
+			}
+			label := siteOverviewBucketLabel(ts, bucketUnit, loc)
+			if point, ok := trendMap[label]; ok {
+				point.CashRevenue += topUp.Money
+				point.PaidOrders++
+				bucketPaymentFee[label] += fee
+			}
+		} else if ts >= prevStartTs && ts <= prevEndTs {
+			finance.PrevCashRevenue += topUp.Money
+		}
+	}
+
+	for _, order := range subOrders {
+		if isExcludedAdmin(order.UserId) {
+			continue
+		}
+		ts := order.CompleteTime
+		if ts <= 0 {
+			ts = order.CreateTime
+		}
+		isBalance := strings.EqualFold(strings.TrimSpace(order.PaymentMethod), PaymentMethodBalance)
+		if ts >= startTs && ts <= endTs {
+			if isBalance {
+				finance.SubscriptionBalanceMoney += order.Money
+				finance.SubscriptionBalanceOrders++
+				continue
+			}
+			fee := order.Money * costCfg.EffectivePaymentFeeRate(order.PaymentMethod)
+			finance.SubscriptionDirectMoney += order.Money
+			finance.SubscriptionDirectOrders++
+			finance.PaymentFeeCost += fee
+			if order.UserId > 0 {
+				payingSet[order.UserId] = struct{}{}
+			}
+			label := siteOverviewBucketLabel(ts, bucketUnit, loc)
+			if point, ok := trendMap[label]; ok {
+				point.CashRevenue += order.Money
+				point.PaidOrders++
+				bucketPaymentFee[label] += fee
+			}
+		} else if !isBalance && ts >= prevStartTs && ts <= prevEndTs {
+			finance.PrevCashRevenue += order.Money
 		}
 	}
 	usersSummary.PayingUsers = int64(len(payingSet))
+
+	amortizeFactor := float64(rangeDays) / 30.0
+	for _, cfg := range costCfg.ChannelCosts {
+		if cfg.MonthlyFixedCost > 0 {
+			finance.ChannelFixedCost += cfg.MonthlyFixedCost * amortizeFactor
+		}
+	}
+	for _, item := range costCfg.ExtraFixedCosts {
+		if item.Enabled && item.MonthlyCost > 0 {
+			finance.PlatformFixedCost += item.MonthlyCost * amortizeFactor
+		}
+	}
+	totalFixedCost := finance.ChannelFixedCost + finance.PlatformFixedCost
+	bucketFixedCost := totalFixedCost / float64(max(1, len(trendOrder)))
+
+	finance.CashRevenue = finance.WalletTopUpMoney + finance.SubscriptionDirectMoney
+	finance.TotalPaidOrders = finance.WalletTopUpOrders + finance.SubscriptionDirectOrders
+	finance.NetCashInflow = finance.CashRevenue - finance.PaymentFeeCost
+	finance.UpstreamVariableCost = upstreamVariableCost
+	finance.TotalEstimatedCost = upstreamVariableCost + totalFixedCost + finance.PaymentFeeCost
+	finance.CashNetProfit = finance.CashRevenue - finance.TotalEstimatedCost
+	if finance.CashRevenue > 0 {
+		finance.CashNetMargin = roundPercent((finance.CashNetProfit / finance.CashRevenue) * 100)
+	}
+	finance.BilledGrossProfit = billedLocal - upstreamVariableCost
+	if billedLocal > 0 {
+		finance.BilledGrossMargin = roundPercent((finance.BilledGrossProfit / billedLocal) * 100)
+	}
+	finance.BilledNetProfit = billedLocal - upstreamVariableCost - totalFixedCost
+	if billedLocal > 0 {
+		finance.BilledNetMargin = roundPercent((finance.BilledNetProfit / billedLocal) * 100)
+	}
+	finance.CashRevenueChangePct = siteOverviewPctChange(finance.CashRevenue, finance.PrevCashRevenue)
+
+	finance.CashRevenue = roundMoney(finance.CashRevenue)
+	finance.PrevCashRevenue = roundMoney(finance.PrevCashRevenue)
+	finance.WalletTopUpMoney = roundMoney(finance.WalletTopUpMoney)
+	finance.SubscriptionDirectMoney = roundMoney(finance.SubscriptionDirectMoney)
+	finance.SubscriptionBalanceMoney = roundMoney(finance.SubscriptionBalanceMoney)
+	finance.PaymentFeeCost = roundMoney(finance.PaymentFeeCost)
+	finance.NetCashInflow = roundMoney(finance.NetCashInflow)
+	finance.UpstreamVariableCost = roundMoney(finance.UpstreamVariableCost)
+	finance.ChannelFixedCost = roundMoney(finance.ChannelFixedCost)
+	finance.PlatformFixedCost = roundMoney(finance.PlatformFixedCost)
+	finance.TotalEstimatedCost = roundMoney(finance.TotalEstimatedCost)
+	finance.CashNetProfit = roundMoney(finance.CashNetProfit)
+	finance.BilledGrossProfit = roundMoney(finance.BilledGrossProfit)
+	finance.BilledNetProfit = roundMoney(finance.BilledNetProfit)
 
 	// 4. Top models breakdown.
 	type modelBreakdownRow struct {
@@ -829,8 +1033,16 @@ func GetSiteOverviewBase(opts SiteOverviewOptions) (*SiteOverviewBaseReport, err
 	for _, label := range trendOrder {
 		point := trendMap[label]
 		pUSD, pLocal := quotaToUSDAndLocal(point.Quota, currency)
+		pUpstream := bucketUpstreamCost[label]
+		pFee := bucketPaymentFee[label]
+		pTotalCost := pUpstream + bucketFixedCost + pFee
+		pCashRevenue := point.CashRevenue
 		point.BilledUSD = roundMoney(pUSD)
 		point.BilledLocal = roundMoney(pLocal)
+		point.CashRevenue = roundMoney(pCashRevenue)
+		point.EstimatedCost = roundMoney(pTotalCost)
+		point.CashNetProfit = roundMoney(pCashRevenue - pTotalCost)
+		point.BilledGrossProfit = roundMoney(pLocal - pUpstream)
 		trend = append(trend, *point)
 	}
 
@@ -848,6 +1060,7 @@ func GetSiteOverviewBase(opts SiteOverviewOptions) (*SiteOverviewBaseReport, err
 			Currency:           currency,
 		},
 		Usage:     usage,
+		Finance:   finance,
 		Users:     usersSummary,
 		Channels:  channelsSummary,
 		Trend:     trend,

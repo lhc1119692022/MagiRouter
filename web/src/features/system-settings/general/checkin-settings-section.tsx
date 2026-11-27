@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery } from '@tanstack/react-query'
 import i18next from 'i18next'
-import { Plus, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, Plus, Trash2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useForm, type Resolver } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -62,16 +62,24 @@ import { SettingsPageFormActions } from '../components/settings-page-context'
 import { SettingsSection } from '../components/settings-section'
 import { useUpdateOption } from '../hooks/use-update-option'
 
+export type GroupUpgradeMatchMode = 'all' | 'any'
+
 export interface TopUpGroupUpgradeRule {
-  threshold_amount: number
+  threshold_amount?: number
+  usage_threshold_quota?: number
+  match_mode?: GroupUpgradeMatchMode
   target_group: string
 }
 
 type UpgradeRuleDraft = {
   id: string
   thresholdAmount: string
+  usageAmount: string
+  matchMode: GroupUpgradeMatchMode
   targetGroup: string
 }
+
+const MAX_TOPUP_UPGRADE_THRESHOLD = 1_000_000_000
 
 function parseAllowedGroups(raw: string | undefined): string[] {
   if (!raw) return []
@@ -93,30 +101,91 @@ function parseAllowedGroups(raw: string | undefined): string[] {
   }
 }
 
+function normalizeUpgradeRules(
+  rules: TopUpGroupUpgradeRule[]
+): TopUpGroupUpgradeRule[] {
+  const result: TopUpGroupUpgradeRule[] = []
+  let allTopUpOnly = true
+  let allUsageOnly = true
+
+  for (const item of rules) {
+    const targetGroup =
+      typeof item.target_group === 'string' ? item.target_group.trim() : ''
+    if (!targetGroup) continue
+
+    const rawTopUp = Number(item.threshold_amount ?? 0)
+    const topUp =
+      Number.isFinite(rawTopUp) && rawTopUp > 0
+        ? Number(rawTopUp.toFixed(2))
+        : 0
+
+    const rawUsage = Number(item.usage_threshold_quota ?? 0)
+    const usageQuota =
+      Number.isFinite(rawUsage) && rawUsage > 0 ? Math.round(rawUsage) : 0
+
+    if (topUp <= 0 && usageQuota <= 0) continue
+
+    const normalized: TopUpGroupUpgradeRule = {
+      target_group: targetGroup,
+    }
+    if (topUp > 0) {
+      normalized.threshold_amount = topUp
+    }
+    if (usageQuota > 0) {
+      normalized.usage_threshold_quota = usageQuota
+    }
+    if (topUp > 0 && usageQuota > 0) {
+      normalized.match_mode = item.match_mode === 'any' ? 'any' : 'all'
+      allTopUpOnly = false
+      allUsageOnly = false
+    } else if (topUp > 0) {
+      allUsageOnly = false
+    } else {
+      allTopUpOnly = false
+    }
+    result.push(normalized)
+  }
+
+  if (allTopUpOnly) {
+    return result.sort(
+      (a, b) => (a.threshold_amount ?? 0) - (b.threshold_amount ?? 0)
+    )
+  }
+  if (allUsageOnly) {
+    return result.sort(
+      (a, b) => (a.usage_threshold_quota ?? 0) - (b.usage_threshold_quota ?? 0)
+    )
+  }
+  return result
+}
+
 function parseUpgradeRules(raw: string | undefined): TopUpGroupUpgradeRule[] {
   if (!raw) return []
   try {
     const parsed = JSON.parse(raw)
     if (!Array.isArray(parsed)) return []
-    const result: TopUpGroupUpgradeRule[] = []
-    for (const item of parsed) {
-      if (!item || typeof item !== 'object') continue
-      const entry = item as Record<string, unknown>
-      const threshold = Number(entry.threshold_amount)
-      const targetGroup =
-        typeof entry.target_group === 'string' ? entry.target_group.trim() : ''
-      if (!Number.isFinite(threshold) || threshold <= 0 || !targetGroup) {
-        continue
-      }
-      result.push({
-        threshold_amount: Number(threshold.toFixed(2)),
-        target_group: targetGroup,
-      })
-    }
-    return result.sort((a, b) => a.threshold_amount - b.threshold_amount)
+    const rawRules: TopUpGroupUpgradeRule[] = parsed
+      .filter((item): item is Record<string, unknown> =>
+        Boolean(item && typeof item === 'object')
+      )
+      .map((entry) => ({
+        threshold_amount: Number(entry.threshold_amount ?? 0),
+        usage_threshold_quota: Number(entry.usage_threshold_quota ?? 0),
+        match_mode: entry.match_mode === 'any' ? 'any' : 'all',
+        target_group:
+          typeof entry.target_group === 'string' ? entry.target_group : '',
+      }))
+    return normalizeUpgradeRules(rawRules)
   } catch {
     return []
   }
+}
+
+function buildUpgradeRuleConditionKey(rule: TopUpGroupUpgradeRule): string {
+  const topUp = rule.threshold_amount ?? 0
+  const usage = rule.usage_threshold_quota ?? 0
+  const mode = topUp > 0 && usage > 0 ? (rule.match_mode ?? 'all') : ''
+  return `${topUp.toFixed(2)}|${usage}|${mode}`
 }
 
 function formatInitialQuotaInput(rawQuota: number): number {
@@ -179,8 +248,16 @@ export function CheckinSettingsSection({
     UpgradeRuleDraft[]
   >(() =>
     initialUpgradeRules.map((rule, index) => ({
-      id: `rule-${index}-${rule.threshold_amount}-${rule.target_group}`,
-      thresholdAmount: String(rule.threshold_amount),
+      id: `rule-${index}-${rule.threshold_amount ?? 0}-${rule.usage_threshold_quota ?? 0}-${rule.target_group}`,
+      thresholdAmount:
+        rule.threshold_amount && rule.threshold_amount > 0
+          ? String(rule.threshold_amount)
+          : '',
+      usageAmount:
+        rule.usage_threshold_quota && rule.usage_threshold_quota > 0
+          ? String(formatInitialQuotaInput(rule.usage_threshold_quota))
+          : '',
+      matchMode: rule.match_mode === 'any' ? 'any' : 'all',
       targetGroup: rule.target_group,
     }))
   )
@@ -253,17 +330,55 @@ export function CheckinSettingsSection({
   const normalizedDraftRules = useMemo(() => {
     const list: TopUpGroupUpgradeRule[] = []
     for (const draft of upgradeRuleDrafts) {
-      const threshold = Number(draft.thresholdAmount)
+      const rawTopUp = draft.thresholdAmount.trim()
+      const rawUsage = draft.usageAmount.trim()
+      const topUp = rawTopUp === '' ? 0 : Number(rawTopUp)
+      const usageDisplay = rawUsage === '' ? 0 : Number(rawUsage)
       const target = draft.targetGroup.trim()
-      if (!Number.isFinite(threshold) || threshold <= 0 || !target) {
+      if (
+        !Number.isFinite(topUp) ||
+        topUp < 0 ||
+        topUp > MAX_TOPUP_UPGRADE_THRESHOLD ||
+        !Number.isFinite(usageDisplay) ||
+        usageDisplay < 0 ||
+        !target
+      ) {
         return null
       }
-      list.push({
-        threshold_amount: Number(threshold.toFixed(2)),
+      const roundedTopUp = topUp > 0 ? Number(topUp.toFixed(2)) : 0
+      const usageQuota =
+        usageDisplay > 0 ? parseQuotaFromDollars(usageDisplay) : 0
+      if (
+        usageQuota > Number.MAX_SAFE_INTEGER ||
+        (roundedTopUp <= 0 && usageQuota <= 0)
+      ) {
+        return null
+      }
+      const nextRule: TopUpGroupUpgradeRule = {
         target_group: target,
-      })
+      }
+      if (roundedTopUp > 0) {
+        nextRule.threshold_amount = roundedTopUp
+      }
+      if (usageQuota > 0) {
+        nextRule.usage_threshold_quota = usageQuota
+      }
+      if (roundedTopUp > 0 && usageQuota > 0) {
+        nextRule.match_mode = draft.matchMode === 'any' ? 'any' : 'all'
+      }
+      list.push(nextRule)
     }
-    return list.sort((a, b) => a.threshold_amount - b.threshold_amount)
+    return normalizeUpgradeRules(list)
+  }, [upgradeRuleDrafts])
+
+  const isMixedTierOrder = useMemo(() => {
+    let hasTopUp = false
+    let hasUsage = false
+    for (const draft of upgradeRuleDrafts) {
+      if (Number(draft.thresholdAmount.trim() || 0) > 0) hasTopUp = true
+      if (Number(draft.usageAmount.trim() || 0) > 0) hasUsage = true
+    }
+    return hasTopUp && hasUsage
   }, [upgradeRuleDrafts])
 
   const groupsDirty = serializedSelectedGroups !== serializedInitialGroups
@@ -296,22 +411,63 @@ export function CheckinSettingsSection({
       {
         id: `rule-${Date.now()}-${prev.length}`,
         thresholdAmount: '',
+        usageAmount: '',
+        matchMode: 'all',
         targetGroup: defaultTarget,
       },
     ])
   }
 
+  const handleMoveUpgradeRule = (index: number, direction: -1 | 1) => {
+    const nextIndex = index + direction
+    if (nextIndex < 0 || nextIndex >= upgradeRuleDrafts.length) return
+    setRulesError('')
+    setUpgradeRuleDrafts((prev) => {
+      const next = [...prev]
+      const [moved] = next.splice(index, 1)
+      next.splice(nextIndex, 0, moved)
+      return next
+    })
+  }
+
   async function onSubmit(values: Values) {
     setRulesError('')
-    const parsedRules: TopUpGroupUpgradeRule[] = []
-    const seenThresholds = new Set<string>()
+    const rawParsedRules: TopUpGroupUpgradeRule[] = []
+    const seenConditions = new Set<string>()
 
     for (const draft of upgradeRuleDrafts) {
-      const threshold = Number(draft.thresholdAmount)
+      const rawTopUp = draft.thresholdAmount.trim()
+      const rawUsage = draft.usageAmount.trim()
+      const topUp = rawTopUp === '' ? 0 : Number(rawTopUp)
+      const usageDisplay = rawUsage === '' ? 0 : Number(rawUsage)
       const target = draft.targetGroup.trim()
-      if (!Number.isFinite(threshold) || threshold <= 0) {
+
+      if (
+        !Number.isFinite(topUp) ||
+        topUp < 0 ||
+        topUp > MAX_TOPUP_UPGRADE_THRESHOLD
+      ) {
         setRulesError(
-          t('Each upgrade rule must have a top-up threshold greater than 0.')
+          t('Top-up group upgrade threshold must be greater than 0')
+        )
+        return
+      }
+      if (!Number.isFinite(usageDisplay) || usageDisplay < 0) {
+        setRulesError(t('Usage group upgrade threshold is invalid'))
+        return
+      }
+      const roundedTopUp = topUp > 0 ? Number(topUp.toFixed(2)) : 0
+      const usageQuota =
+        usageDisplay > 0 ? parseQuotaFromDollars(usageDisplay) : 0
+      if (usageQuota > Number.MAX_SAFE_INTEGER) {
+        setRulesError(t('Usage group upgrade threshold is invalid'))
+        return
+      }
+      if (roundedTopUp <= 0 && usageQuota <= 0) {
+        setRulesError(
+          t(
+            'Each upgrade rule must set a top-up or usage threshold greater than 0.'
+          )
         )
         return
       }
@@ -319,21 +475,27 @@ export function CheckinSettingsSection({
         setRulesError(t('Each upgrade rule must select a target user group.'))
         return
       }
-      const rounded = Number(threshold.toFixed(2))
-      const key = rounded.toFixed(2)
-      if (seenThresholds.has(key)) {
-        setRulesError(
-          t('Cumulative top-up thresholds must be unique across rules.')
-        )
+      const nextRule: TopUpGroupUpgradeRule = {
+        target_group: target,
+      }
+      if (roundedTopUp > 0) {
+        nextRule.threshold_amount = roundedTopUp
+      }
+      if (usageQuota > 0) {
+        nextRule.usage_threshold_quota = usageQuota
+      }
+      if (roundedTopUp > 0 && usageQuota > 0) {
+        nextRule.match_mode = draft.matchMode === 'any' ? 'any' : 'all'
+      }
+      const key = buildUpgradeRuleConditionKey(nextRule)
+      if (seenConditions.has(key)) {
+        setRulesError(t('Upgrade rule conditions must be unique across rules.'))
         return
       }
-      seenThresholds.add(key)
-      parsedRules.push({
-        threshold_amount: rounded,
-        target_group: target,
-      })
+      seenConditions.add(key)
+      rawParsedRules.push(nextRule)
     }
-    parsedRules.sort((a, b) => a.threshold_amount - b.threshold_amount)
+    const parsedRules = normalizeUpgradeRules(rawParsedRules)
 
     const nextMinQuota = parseQuotaFromDollars(values.minAmount)
     const nextMaxQuota = parseQuotaFromDollars(values.maxAmount)
@@ -582,11 +744,13 @@ export function CheckinSettingsSection({
                 <SettingsSwitchItem>
                   <SettingsSwitchContent>
                     <FormLabel>
-                      {t('Auto-upgrade user group by cumulative top-up')}
+                      {t(
+                        'Auto-upgrade user group by cumulative top-up or usage'
+                      )}
                     </FormLabel>
                     <FormDescription>
                       {t(
-                        'Automatically upgrade a user to a target group when their cumulative completed top-up reaches the threshold. Pair with allowed check-in groups to unlock check-in rewards after recharging.'
+                        'Automatically upgrade a user to a target group when their cumulative completed top-up and/or cumulative usage reaches the threshold. Use top-up to filter non-paying users and usage to identify high-value active users.'
                       )}
                     </FormDescription>
                   </SettingsSwitchContent>
@@ -604,11 +768,20 @@ export function CheckinSettingsSection({
             {topUpUpgradeEnabled && (
               <div className='bg-muted/20 space-y-3 rounded-xl border p-4'>
                 <div className='flex flex-wrap items-center justify-between gap-2'>
-                  <p className='text-muted-foreground text-xs'>
-                    {t(
-                      'Users in default or lower configured tier groups are automatically upgraded to the highest matched tier. Manually assigned special groups are never downgraded.'
+                  <div className='space-y-0.5'>
+                    <p className='text-muted-foreground text-xs'>
+                      {t(
+                        'Users in default or lower configured tier groups are automatically upgraded to the highest matched tier. Manually assigned special groups are never downgraded.'
+                      )}
+                    </p>
+                    {isMixedTierOrder && upgradeRuleDrafts.length > 1 && (
+                      <p className='text-muted-foreground text-[11px]'>
+                        {t(
+                          'Mixed top-up and usage rules apply in top-to-bottom tier order (lowest to highest).'
+                        )}
+                      </p>
                     )}
-                  </p>
+                  </div>
                   <Button
                     type='button'
                     size='sm'
@@ -623,94 +796,259 @@ export function CheckinSettingsSection({
                 {upgradeRuleDrafts.length === 0 ? (
                   <p className='text-muted-foreground rounded-lg border border-dashed py-4 text-center text-xs'>
                     {t(
-                      'No upgrade rules configured yet. Add a cumulative top-up threshold and target group.'
+                      'No upgrade rules configured yet. Add a cumulative top-up or usage threshold and target group.'
                     )}
                   </p>
                 ) : (
                   <div className='space-y-2'>
-                    {upgradeRuleDrafts.map((rule, index) => (
-                      <div
-                        key={rule.id}
-                        className='bg-background grid gap-2 rounded-lg border p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-center'
-                      >
-                        <div className='space-y-1'>
-                          <label
-                            htmlFor={`upgrade-threshold-${rule.id}`}
-                            className='text-muted-foreground text-[11px] font-medium'
-                          >
-                            {t('Cumulative top-up ≥')}
-                          </label>
-                          <Input
-                            id={`upgrade-threshold-${rule.id}`}
-                            type='number'
-                            min={0.01}
-                            step='any'
-                            placeholder='50'
-                            value={rule.thresholdAmount}
-                            onChange={(event) => {
-                              setRulesError('')
-                              const value = event.target.value
-                              setUpgradeRuleDrafts((prev) =>
-                                prev.map((item, idx) =>
-                                  idx === index
-                                    ? { ...item, thresholdAmount: value }
-                                    : item
-                                )
-                              )
-                            }}
-                          />
-                        </div>
+                    {upgradeRuleDrafts.map((rule, index) => {
+                      const parsedTopUp = Number(
+                        rule.thresholdAmount.trim() || 0
+                      )
+                      const parsedUsageDisplay = Number(
+                        rule.usageAmount.trim() || 0
+                      )
+                      const hasTopUp =
+                        Number.isFinite(parsedTopUp) && parsedTopUp > 0
+                      const hasUsage =
+                        Number.isFinite(parsedUsageDisplay) &&
+                        parsedUsageDisplay > 0
+                      const previewUsageQuota = hasUsage
+                        ? parseQuotaFromDollars(parsedUsageDisplay)
+                        : 0
+                      const bothConfigured = hasTopUp && hasUsage
+                      let conditionBadgeLabel = ''
+                      if (bothConfigured) {
+                        conditionBadgeLabel =
+                          rule.matchMode === 'any'
+                            ? t('Top-up or usage')
+                            : t('Top-up and usage')
+                      } else if (hasUsage) {
+                        conditionBadgeLabel = t('Usage only')
+                      } else if (hasTopUp) {
+                        conditionBadgeLabel = t('Top-up only')
+                      }
 
-                        <div className='space-y-1'>
-                          <label
-                            htmlFor={`upgrade-group-${rule.id}`}
-                            className='text-muted-foreground text-[11px] font-medium'
-                          >
-                            {t('Upgrade to user group')}
-                          </label>
-                          <NativeSelect
-                            id={`upgrade-group-${rule.id}`}
-                            value={rule.targetGroup}
-                            onChange={(event) => {
-                              setRulesError('')
-                              const value = event.target.value
-                              setUpgradeRuleDrafts((prev) =>
-                                prev.map((item, idx) =>
-                                  idx === index
-                                    ? { ...item, targetGroup: value }
-                                    : item
-                                )
-                              )
-                            }}
-                          >
-                            <NativeSelectOption value=''>
-                              {t('Select user group')}
-                            </NativeSelectOption>
-                            {allGroupOptions.map((group) => (
-                              <NativeSelectOption key={group} value={group}>
-                                {group}
-                              </NativeSelectOption>
-                            ))}
-                          </NativeSelect>
-                        </div>
-
-                        <Button
-                          type='button'
-                          size='icon'
-                          variant='ghost'
-                          className='text-destructive self-end'
-                          aria-label={t('Remove upgrade rule')}
-                          onClick={() => {
-                            setRulesError('')
-                            setUpgradeRuleDrafts((prev) =>
-                              prev.filter((_, idx) => idx !== index)
-                            )
-                          }}
+                      return (
+                        <div
+                          key={rule.id}
+                          className='bg-background space-y-3 rounded-lg border p-3'
                         >
-                          <Trash2 className='h-4 w-4' />
-                        </Button>
-                      </div>
-                    ))}
+                          <div className='flex flex-wrap items-center justify-between gap-2'>
+                            <div className='flex flex-wrap items-center gap-1.5'>
+                              <Badge
+                                variant='secondary'
+                                className='text-[11px]'
+                              >
+                                {t('Tier {{index}}', { index: index + 1 })}
+                              </Badge>
+                              {conditionBadgeLabel && (
+                                <Badge
+                                  variant='outline'
+                                  className='text-[11px]'
+                                >
+                                  {conditionBadgeLabel}
+                                </Badge>
+                              )}
+                            </div>
+
+                            <div className='flex items-center gap-1'>
+                              {isMixedTierOrder &&
+                                upgradeRuleDrafts.length > 1 && (
+                                  <>
+                                    <Button
+                                      type='button'
+                                      size='icon'
+                                      variant='ghost'
+                                      className='h-7 w-7'
+                                      disabled={index === 0}
+                                      aria-label={t('Move tier up')}
+                                      onClick={() =>
+                                        handleMoveUpgradeRule(index, -1)
+                                      }
+                                    >
+                                      <ArrowUp className='h-3.5 w-3.5' />
+                                    </Button>
+                                    <Button
+                                      type='button'
+                                      size='icon'
+                                      variant='ghost'
+                                      className='h-7 w-7'
+                                      disabled={
+                                        index === upgradeRuleDrafts.length - 1
+                                      }
+                                      aria-label={t('Move tier down')}
+                                      onClick={() =>
+                                        handleMoveUpgradeRule(index, 1)
+                                      }
+                                    >
+                                      <ArrowDown className='h-3.5 w-3.5' />
+                                    </Button>
+                                  </>
+                                )}
+                              <Button
+                                type='button'
+                                size='icon'
+                                variant='ghost'
+                                className='text-destructive h-7 w-7'
+                                aria-label={t('Remove upgrade rule')}
+                                onClick={() => {
+                                  setRulesError('')
+                                  setUpgradeRuleDrafts((prev) =>
+                                    prev.filter((_, idx) => idx !== index)
+                                  )
+                                }}
+                              >
+                                <Trash2 className='h-4 w-4' />
+                              </Button>
+                            </div>
+                          </div>
+
+                          <div className='grid gap-2.5 sm:grid-cols-3'>
+                            <div className='space-y-1'>
+                              <label
+                                htmlFor={`upgrade-threshold-${rule.id}`}
+                                className='text-muted-foreground text-[11px] font-medium'
+                              >
+                                {t('Cumulative top-up ≥')}
+                              </label>
+                              <Input
+                                id={`upgrade-threshold-${rule.id}`}
+                                type='number'
+                                min={0}
+                                step='any'
+                                placeholder={t('Optional, e.g. 50')}
+                                value={rule.thresholdAmount}
+                                onChange={(event) => {
+                                  setRulesError('')
+                                  const value = event.target.value
+                                  setUpgradeRuleDrafts((prev) =>
+                                    prev.map((item, idx) =>
+                                      idx === index
+                                        ? { ...item, thresholdAmount: value }
+                                        : item
+                                    )
+                                  )
+                                }}
+                              />
+                            </div>
+
+                            <div className='space-y-1'>
+                              <label
+                                htmlFor={`upgrade-usage-${rule.id}`}
+                                className='text-muted-foreground text-[11px] font-medium'
+                              >
+                                {t('Cumulative usage ≥ ({{unit}})', {
+                                  unit: currencyLabel,
+                                })}
+                              </label>
+                              <Input
+                                id={`upgrade-usage-${rule.id}`}
+                                type='number'
+                                min={0}
+                                step={isTokensMode ? 1 : 'any'}
+                                placeholder={
+                                  isTokensMode
+                                    ? t('Optional, e.g. 5000000')
+                                    : t('Optional, e.g. 50')
+                                }
+                                value={rule.usageAmount}
+                                onChange={(event) => {
+                                  setRulesError('')
+                                  const value = event.target.value
+                                  setUpgradeRuleDrafts((prev) =>
+                                    prev.map((item, idx) =>
+                                      idx === index
+                                        ? { ...item, usageAmount: value }
+                                        : item
+                                    )
+                                  )
+                                }}
+                              />
+                              {previewUsageQuota > 0 && (
+                                <p className='text-muted-foreground text-[11px]'>
+                                  {t('≈ {{formatted}} ({{raw}} raw quota)', {
+                                    formatted: formatQuotaWithCurrency(
+                                      previewUsageQuota,
+                                      { digitsLarge: 2, digitsSmall: 4 }
+                                    ),
+                                    raw: formatNumber(previewUsageQuota),
+                                  })}
+                                </p>
+                              )}
+                            </div>
+
+                            <div className='space-y-1'>
+                              <label
+                                htmlFor={`upgrade-group-${rule.id}`}
+                                className='text-muted-foreground text-[11px] font-medium'
+                              >
+                                {t('Upgrade to user group')}
+                              </label>
+                              <NativeSelect
+                                id={`upgrade-group-${rule.id}`}
+                                value={rule.targetGroup}
+                                onChange={(event) => {
+                                  setRulesError('')
+                                  const value = event.target.value
+                                  setUpgradeRuleDrafts((prev) =>
+                                    prev.map((item, idx) =>
+                                      idx === index
+                                        ? { ...item, targetGroup: value }
+                                        : item
+                                    )
+                                  )
+                                }}
+                              >
+                                <NativeSelectOption value=''>
+                                  {t('Select user group')}
+                                </NativeSelectOption>
+                                {allGroupOptions.map((group) => (
+                                  <NativeSelectOption key={group} value={group}>
+                                    {group}
+                                  </NativeSelectOption>
+                                ))}
+                              </NativeSelect>
+                            </div>
+                          </div>
+
+                          {bothConfigured && (
+                            <div className='flex flex-wrap items-center gap-2 border-t pt-2.5'>
+                              <label
+                                htmlFor={`upgrade-match-mode-${rule.id}`}
+                                className='text-muted-foreground text-[11px] font-medium'
+                              >
+                                {t('Condition logic')}
+                              </label>
+                              <NativeSelect
+                                id={`upgrade-match-mode-${rule.id}`}
+                                className='w-auto min-w-52'
+                                value={rule.matchMode}
+                                onChange={(event) => {
+                                  setRulesError('')
+                                  const value: GroupUpgradeMatchMode =
+                                    event.target.value === 'any' ? 'any' : 'all'
+                                  setUpgradeRuleDrafts((prev) =>
+                                    prev.map((item, idx) =>
+                                      idx === index
+                                        ? { ...item, matchMode: value }
+                                        : item
+                                    )
+                                  )
+                                }}
+                              >
+                                <NativeSelectOption value='all'>
+                                  {t('Match both top-up and usage (AND)')}
+                                </NativeSelectOption>
+                                <NativeSelectOption value='any'>
+                                  {t('Match either top-up or usage (OR)')}
+                                </NativeSelectOption>
+                              </NativeSelect>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
                   </div>
                 )}
 

@@ -19,10 +19,14 @@ import {
 import { toIntlLocale } from '@/i18n/languages'
 import { formatCompactNumber, formatNumber } from '@/lib/format'
 
-import { formatBucketAxisLabel, formatOverviewMoney } from '../lib/format'
+import {
+  formatAxisMoney,
+  formatBucketAxisLabel,
+  formatOverviewMoney,
+} from '../lib/format'
 import type { SiteOverviewTrendPoint } from '../types'
 
-type TrafficChartMode = 'usage' | 'latency'
+type TrafficChartMode = 'usage' | 'finance' | 'latency'
 type UserChartMode = 'activity' | 'cumulative'
 
 let themeManagerPromise: Promise<
@@ -82,6 +86,17 @@ export function SiteOverviewCharts(props: SiteOverviewChartsProps) {
     () =>
       props.trend.some(
         (point) => point.perf_requests > 0 || point.avg_latency_ms > 0
+      ),
+    [props.trend]
+  )
+
+  const hasFinanceData = useMemo(
+    () =>
+      props.trend.some(
+        (point) =>
+          point.cash_revenue > 0 ||
+          point.estimated_cost > 0 ||
+          point.billed_local > 0
       ),
     [props.trend]
   )
@@ -163,7 +178,7 @@ export function SiteOverviewCharts(props: SiteOverviewChartsProps) {
             grid: { visible: false },
             label: {
               formatMethod: (val: string | number) =>
-                `${props.currencySymbol}${formatCompactNumber(Number(val), locale)}`,
+                formatAxisMoney(Number(val), props.currencySymbol, locale),
             },
           },
         ],
@@ -189,6 +204,95 @@ export function SiteOverviewCharts(props: SiteOverviewChartsProps) {
                   }
                   return formatNumber(num, locale)
                 },
+              },
+            ],
+          },
+        },
+      }
+    }
+
+    if (trafficMode === 'finance') {
+      const revenueLabel = t('Cash revenue')
+      const costLabel = t('Estimated total cost')
+      const profitLabel = t('Net cash profit')
+      const barValues = props.trend.flatMap((point) => [
+        {
+          bucket: formatBucketAxisLabel(point.label, props.bucketUnit),
+          fullLabel: point.label,
+          series: revenueLabel,
+          value: point.cash_revenue,
+        },
+        {
+          bucket: formatBucketAxisLabel(point.label, props.bucketUnit),
+          fullLabel: point.label,
+          series: costLabel,
+          value: point.estimated_cost,
+        },
+      ])
+      const profitValues = props.trend.map((point) => ({
+        bucket: formatBucketAxisLabel(point.label, props.bucketUnit),
+        fullLabel: point.label,
+        series: profitLabel,
+        value: point.cash_net_profit,
+      }))
+      return {
+        type: 'common',
+        background: 'transparent',
+        padding: { top: 14, right: 12, bottom: 8, left: 8 },
+        data: [
+          { id: 'finance-bars', values: barValues },
+          { id: 'finance-profit', values: profitValues },
+        ],
+        series: [
+          {
+            type: 'bar',
+            dataIndex: 0,
+            xField: ['bucket', 'series'],
+            yField: 'value',
+            seriesField: 'series',
+            barMaxWidth: 16,
+            bar: { style: { cornerRadius: [4, 4, 0, 0] } },
+          },
+          {
+            type: 'line',
+            dataIndex: 1,
+            xField: 'bucket',
+            yField: 'value',
+            seriesField: 'series',
+            line: { style: { lineWidth: 2.2 } },
+            point: { style: { size: 3.5 } },
+          },
+        ],
+        color: ['#2563eb', '#f59e0b', '#10b981'],
+        axes: [
+          { orient: 'bottom', type: 'band', label: { autoHide: true } },
+          {
+            orient: 'left',
+            type: 'linear',
+            label: {
+              formatMethod: (val: string | number) =>
+                formatAxisMoney(Number(val), props.currencySymbol, locale),
+            },
+          },
+        ],
+        legends: { visible: true, orient: 'top', position: 'start' },
+        tooltip: {
+          dimension: {
+            title: {
+              value: (datum?: Record<string, unknown>) =>
+                String(datum?.fullLabel ?? datum?.bucket ?? ''),
+            },
+            content: [
+              {
+                key: (datum?: Record<string, unknown>) =>
+                  String(datum?.series ?? ''),
+                value: (datum?: Record<string, unknown>) =>
+                  formatOverviewMoney(
+                    Number(datum?.value ?? 0),
+                    props.currencySymbol,
+                    locale,
+                    datum?.series === profitLabel
+                  ),
               },
             ],
           },
@@ -447,7 +551,24 @@ export function SiteOverviewCharts(props: SiteOverviewChartsProps) {
     }
   }, [locale, props.bucketUnit, props.trend, t, userMode])
 
-  const trafficHasData = trafficMode === 'usage' ? hasUsageData : hasPerfData
+  let trafficHasData = hasUsageData
+  let trafficEmptyTitle = t('No request traffic in this period')
+  let trafficDescription = t(
+    'Site-wide request volume and billed consumption over time'
+  )
+  if (trafficMode === 'finance') {
+    trafficHasData = hasFinanceData
+    trafficEmptyTitle = t('No revenue or cost records in this period')
+    trafficDescription = t(
+      'Cash receipts, estimated total cost, and net cash profit trend'
+    )
+  } else if (trafficMode === 'latency') {
+    trafficHasData = hasPerfData
+    trafficEmptyTitle = t('No performance telemetry in this period')
+    trafficDescription = t(
+      'Response latency, TTFT, and request success rate trend'
+    )
+  }
 
   let trafficChartContent = (
     <div className='h-[280px] w-full'>
@@ -462,11 +583,7 @@ export function SiteOverviewCharts(props: SiteOverviewChartsProps) {
     trafficChartContent = (
       <EmptyState
         className='min-h-[260px]'
-        title={
-          trafficMode === 'usage'
-            ? t('No request traffic in this period')
-            : t('No performance telemetry in this period')
-        }
+        title={trafficEmptyTitle}
         description={t(
           'Try switching to a wider time range or check back after requests are processed.'
         )}
@@ -511,11 +628,7 @@ export function SiteOverviewCharts(props: SiteOverviewChartsProps) {
             <CardTitle className='text-base'>
               {t('Traffic & Performance Trend')}
             </CardTitle>
-            <CardDescription>
-              {trafficMode === 'usage'
-                ? t('Site-wide request volume and billed consumption over time')
-                : t('Response latency, TTFT, and request success rate trend')}
-            </CardDescription>
+            <CardDescription>{trafficDescription}</CardDescription>
           </div>
           <div className='bg-muted/60 inline-flex items-center rounded-md border p-0.5'>
             <Button
@@ -526,6 +639,15 @@ export function SiteOverviewCharts(props: SiteOverviewChartsProps) {
               onClick={() => setTrafficMode('usage')}
             >
               {t('Traffic')}
+            </Button>
+            <Button
+              type='button'
+              size='sm'
+              variant={trafficMode === 'finance' ? 'secondary' : 'ghost'}
+              className='h-7 px-2.5 text-xs'
+              onClick={() => setTrafficMode('finance')}
+            >
+              {t('Revenue & Profit')}
             </Button>
             <Button
               type='button'

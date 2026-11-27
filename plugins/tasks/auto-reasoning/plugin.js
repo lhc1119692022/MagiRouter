@@ -19,7 +19,7 @@ export const meta = {
     en: "Sets the reasoning effort from the size of each request; under Where it runs, choose models that support reasoning, as other models may refuse the request",
     zh: "根据每个请求的规模设置推理强度；请在“用在哪里”指定支持推理的模型，其他模型可能拒绝请求",
   },
-  version: "1.0.0",
+  version: "1.1.0",
   author: { name: "QuantumNous" },
   // A failure keeps the effort the request has, which is safe.
   optional: true,
@@ -82,6 +82,31 @@ export const meta = {
               type: "boolean",
               title: { en: "Images only", zh: "仅限含图片" },
               description: { en: "Whether only requests with images match", zh: "是否仅在请求含图片时命中" },
+            },
+            maxTools: {
+              type: "integer",
+              title: { en: "Maximum tools", zh: "最多工具数" },
+              description: { en: "Matches requests with at most this many tools", zh: "工具数不超过此值时命中" },
+              minimum: 0,
+            },
+            maxTotalChars: {
+              type: "integer",
+              title: { en: "Maximum total text length", zh: "最大文本总长度" },
+              description: {
+                en: "Matches when all text together has at most this many characters",
+                zh: "全部文本字数不超过此值时命中",
+              },
+              unit: "character",
+              minimum: 0,
+            },
+            maxOutputTokens: {
+              type: "integer",
+              title: { en: "Maximum requested output tokens", zh: "最大输出令牌预算上限" },
+              description: {
+                en: "Matches only when the request explicitly sets max_tokens/max_completion_tokens/max_output_tokens at or below this value",
+                zh: "仅当请求显式设置了不超过此值的 max_tokens/max_completion_tokens/max_output_tokens 时命中",
+              },
+              minimum: 1,
             },
             effort: {
               type: "string",
@@ -190,12 +215,30 @@ export const meta = {
 
 // Every condition a rule sets must hold; a rule without conditions always
 // matches. hasImages only narrows: false and absent both match any request.
-function ruleMatches(rule, summary) {
+function requestedMaxOutputTokens(body) {
+  if (!body || typeof body !== "object") return 0;
+  const candidates = [
+    body.max_completion_tokens,
+    body.max_tokens,
+    body.max_output_tokens,
+    body.generationConfig && body.generationConfig.maxOutputTokens,
+    body.generation_config && body.generation_config.max_output_tokens,
+  ];
+  for (const value of candidates) {
+    if (typeof value === "number" && Number.isFinite(value) && value > 0) return value;
+  }
+  return 0;
+}
+
+function ruleMatches(rule, summary, maxOut) {
   if (rule.minMessages !== undefined && (summary.messageCount || 0) < rule.minMessages) return false;
   if (rule.minTools !== undefined && (summary.toolCount || 0) < rule.minTools) return false;
   if (rule.minLastUserChars !== undefined && (summary.lastUserTextLength || 0) < rule.minLastUserChars) return false;
   if (rule.minTotalChars !== undefined && (summary.totalTextLength || 0) < rule.minTotalChars) return false;
   if (rule.hasImages === true && summary.hasImages !== true) return false;
+  if (rule.maxTools !== undefined && (summary.toolCount || 0) > rule.maxTools) return false;
+  if (rule.maxTotalChars !== undefined && (summary.totalTextLength || 0) > rule.maxTotalChars) return false;
+  if (rule.maxOutputTokens !== undefined && (maxOut <= 0 || maxOut > rule.maxOutputTokens)) return false;
   return true;
 }
 
@@ -204,10 +247,11 @@ export function request(ctx, req) {
   const summary = req.summary || {};
   const overrideClient = config.overrideClient === true;
   if (summary.reasoningEffort && !overrideClient) return { action: "continue" };
+  const maxOut = requestedMaxOutputTokens(req.body);
 
   let effort = config.defaultEffort || "";
   for (const rule of config.rules || []) {
-    if (rule && ruleMatches(rule, summary)) {
+    if (rule && ruleMatches(rule, summary, maxOut)) {
       effort = rule.effort;
       break;
     }

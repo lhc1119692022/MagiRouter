@@ -857,7 +857,8 @@ export function ProfitAnalytics() {
                                 <TableCell className='text-right tabular-nums'>
                                   <Badge
                                     variant={
-                                      item.custom_cost_ratio
+                                      item.custom_cost_ratio ||
+                                      item.cost_source === 'channel'
                                         ? 'secondary'
                                         : 'outline'
                                     }
@@ -882,6 +883,11 @@ export function ProfitAnalytics() {
                                         )}
                                       </div>
                                     )}
+                                  {item.cost_source === 'channel' && (
+                                    <div className='text-muted-foreground mt-0.5 text-[11px]'>
+                                      {t('Auto from channel')}
+                                    </div>
+                                  )}
                                 </TableCell>
                                 <TableCell className='text-right tabular-nums'>
                                   {formatMoney(

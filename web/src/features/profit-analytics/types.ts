@@ -1,4 +1,5 @@
 export type ProfitChannelPricingMode = 'percent' | 'ratio' | 'unit_price'
+export type ProfitChannelCostSource = 'override' | 'channel' | 'default'
 
 export interface ProfitCurrencyMeta {
   quota_per_unit: number
@@ -127,9 +128,12 @@ export interface ProfitChannelBreakdown {
   billed_local: number
   cost_ratio: number
   custom_cost_ratio: boolean
+  cost_source?: ProfitChannelCostSource
   pricing_mode?: ProfitChannelPricingMode | ''
   upstream_value?: number
   platform_value?: number
+  channel_upstream_ratio?: number
+  channel_upstream_group?: string
   suggested_group_ratio: number
   suggested_unit_price?: number
   suggested_unit_price_model?: string

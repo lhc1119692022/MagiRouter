@@ -41,6 +41,32 @@ export interface SiteOverviewUsageSummary {
   avg_tpm: number
 }
 
+export interface SiteOverviewFinanceSummary {
+  cash_revenue: number
+  prev_cash_revenue: number
+  cash_revenue_change_pct?: number | null
+  wallet_topup_money: number
+  wallet_topup_orders: number
+  subscription_direct_money: number
+  subscription_direct_orders: number
+  subscription_balance_money: number
+  subscription_balance_orders: number
+  total_paid_orders: number
+  payment_fee_cost: number
+  net_cash_inflow: number
+  upstream_variable_cost: number
+  channel_fixed_cost: number
+  platform_fixed_cost: number
+  total_estimated_cost: number
+  cash_net_profit: number
+  cash_net_margin: number
+  billed_gross_profit: number
+  billed_gross_margin: number
+  billed_net_profit: number
+  billed_net_margin: number
+  default_cost_ratio: number
+}
+
 export interface SiteOverviewPerfSummary {
   total_requests: number
   success_requests: number
@@ -112,6 +138,11 @@ export interface SiteOverviewTrendPoint {
   quota: number
   billed_usd: number
   billed_local: number
+  cash_revenue: number
+  estimated_cost: number
+  cash_net_profit: number
+  billed_gross_profit: number
+  paid_orders: number
   tokens: number
   cache_read_tokens: number
   cache_creation_tokens: number
@@ -203,6 +234,7 @@ export interface SiteOverviewRuntimeSnapshot {
 export interface SiteOverviewResponse {
   meta: SiteOverviewMeta
   usage: SiteOverviewUsageSummary
+  finance: SiteOverviewFinanceSummary
   performance: SiteOverviewPerfSummary
   users: SiteOverviewUsersSummary
   channels: SiteOverviewChannelsSummary

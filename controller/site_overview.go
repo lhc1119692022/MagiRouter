@@ -29,6 +29,7 @@ type SiteOverviewRuntimeSnapshot struct {
 type SiteOverviewResponse struct {
 	Meta        model.SiteOverviewMeta              `json:"meta"`
 	Usage       model.SiteOverviewUsageSummary      `json:"usage"`
+	Finance     model.SiteOverviewFinanceSummary    `json:"finance"`
 	Performance perfmetrics.SiteOverviewPerfSummary `json:"performance"`
 	Users       model.SiteOverviewUsersSummary      `json:"users"`
 	Channels    model.SiteOverviewChannelsSummary   `json:"channels"`
@@ -157,6 +158,7 @@ func GetSiteOverview(c *gin.Context) {
 	resp := SiteOverviewResponse{
 		Meta:        base.Meta,
 		Usage:       base.Usage,
+		Finance:     base.Finance,
 		Performance: perfResult.Summary,
 		Users:       base.Users,
 		Channels:    base.Channels,

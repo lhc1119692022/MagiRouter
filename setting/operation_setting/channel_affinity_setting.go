@@ -86,6 +86,12 @@ var claudeCliPassThroughHeaders = []string{
 	"Anthropic-Version",
 }
 
+var globalSessionPassThroughHeaders = []string{
+	"X-Prompt-Cache-Key",
+	"X-Session-Id",
+	"Session-Id",
+}
+
 func buildPassHeaderTemplate(headers []string) map[string]any {
 	clonedHeaders := make([]string, 0, len(headers))
 	clonedHeaders = append(clonedHeaders, headers...)
@@ -116,6 +122,7 @@ func buildCodexPassHeaderTemplate() map[string]any {
 
 var channelAffinitySetting = ChannelAffinitySetting{
 	Enabled:               true,
+	SessionMode:           "prefer",
 	SwitchOnSuccess:       true,
 	KeepOnChannelDisabled: false,
 	MaxEntries:            100_000,
@@ -127,6 +134,7 @@ var channelAffinitySetting = ChannelAffinitySetting{
 			PathRegex:  []string{"/v1/responses"},
 			KeySources: []ChannelAffinityKeySource{
 				{Type: "gjson", Path: "prompt_cache_key"},
+				{Type: "request_header", Key: "X-Prompt-Cache-Key"},
 			},
 			ValueRegex:            "",
 			TTLSeconds:            0,
@@ -150,6 +158,91 @@ var channelAffinitySetting = ChannelAffinitySetting{
 			IncludeUsingGroup:     true,
 			IncludeRuleName:       true,
 			UserAgentInclude:      nil,
+		},
+		{
+			Name:       "responses global session affinity",
+			ModelRegex: []string{".*"},
+			PathRegex:  []string{"^/v1/responses(/compact)?$"},
+			KeySources: []ChannelAffinityKeySource{
+				{Type: "request_header", Key: "X-Prompt-Cache-Key"},
+				{Type: "gjson", Path: "previous_response_id"},
+				{Type: "gjson", Path: "conversation"},
+				{Type: "gjson", Path: "prompt_cache_key"},
+				{Type: "request_header", Key: "X-Session-Id"},
+				{Type: "request_header", Key: "Session-Id"},
+				{Type: "request_header", Key: "Thread-Id"},
+				{Type: "gjson", Path: "user"},
+				{Type: "context_int", Key: "token_id"},
+			},
+			ValueRegex:         "",
+			TTLSeconds:         3600,
+			ParamOverrideTemplate: buildPassHeaderTemplate(globalSessionPassThroughHeaders),
+			SessionMode:        "prefer",
+			SkipRetryOnFailure: false,
+			IncludeUsingGroup:  true,
+			IncludeModelName:   true,
+			IncludeRuleName:    true,
+		},
+		{
+			Name:       "anthropic messages global session affinity",
+			ModelRegex: []string{".*"},
+			PathRegex:  []string{"^/v1/messages$"},
+			KeySources: []ChannelAffinityKeySource{
+				{Type: "request_header", Key: "X-Prompt-Cache-Key"},
+				{Type: "gjson", Path: "metadata.user_id"},
+				{Type: "request_header", Key: "X-Session-Id"},
+				{Type: "request_header", Key: "Session-Id"},
+				{Type: "context_int", Key: "token_id"},
+			},
+			ValueRegex:         "",
+			TTLSeconds:         3600,
+			ParamOverrideTemplate: buildPassHeaderTemplate(globalSessionPassThroughHeaders),
+			SessionMode:        "prefer",
+			SkipRetryOnFailure: false,
+			IncludeUsingGroup:  true,
+			IncludeModelName:   true,
+			IncludeRuleName:    true,
+		},
+		{
+			Name:       "chat completions global session affinity",
+			ModelRegex: []string{".*"},
+			PathRegex:  []string{"^/v1/(chat/)?completions$"},
+			KeySources: []ChannelAffinityKeySource{
+				{Type: "request_header", Key: "X-Prompt-Cache-Key"},
+				{Type: "gjson", Path: "prompt_cache_key"},
+				{Type: "request_header", Key: "X-Session-Id"},
+				{Type: "request_header", Key: "Session-Id"},
+				{Type: "gjson", Path: "user"},
+				{Type: "context_int", Key: "token_id"},
+			},
+			ValueRegex:         "",
+			TTLSeconds:         3600,
+			ParamOverrideTemplate: buildPassHeaderTemplate(globalSessionPassThroughHeaders),
+			SessionMode:        "prefer",
+			SkipRetryOnFailure: false,
+			IncludeUsingGroup:  true,
+			IncludeModelName:   true,
+			IncludeRuleName:    true,
+		},
+		{
+			Name:       "gemini global session affinity",
+			ModelRegex: []string{".*"},
+			PathRegex:  []string{"^/v1(beta)?/models/.*"},
+			KeySources: []ChannelAffinityKeySource{
+				{Type: "gjson", Path: "cachedContent"},
+				{Type: "request_header", Key: "X-Prompt-Cache-Key"},
+				{Type: "request_header", Key: "X-Session-Id"},
+				{Type: "request_header", Key: "Session-Id"},
+				{Type: "context_int", Key: "token_id"},
+			},
+			ValueRegex:         "",
+			TTLSeconds:         3600,
+			ParamOverrideTemplate: buildPassHeaderTemplate(globalSessionPassThroughHeaders),
+			SessionMode:        "prefer",
+			SkipRetryOnFailure: false,
+			IncludeUsingGroup:  true,
+			IncludeModelName:   true,
+			IncludeRuleName:    true,
 		},
 	},
 }

@@ -1,7 +1,10 @@
+import { formatCompactNumber } from '@/lib/format'
+
 export function formatOverviewMoney(
   value: number,
   symbol: string,
-  locale: string | undefined
+  locale: string | undefined,
+  signed = false
 ): string {
   const safeVal = Number.isFinite(value) ? value : 0
   const absVal = Math.abs(safeVal)
@@ -9,7 +12,30 @@ export function formatOverviewMoney(
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(absVal)
-  return safeVal < 0 ? `-${symbol}${formatted}` : `${symbol}${formatted}`
+  if (safeVal < 0) return `-${symbol}${formatted}`
+  if (signed && safeVal > 0) return `+${symbol}${formatted}`
+  return `${symbol}${formatted}`
+}
+
+export function formatAxisMoney(
+  value: number,
+  symbol: string,
+  locale: string | undefined
+): string {
+  const safeVal = Number.isFinite(value) ? value : 0
+  const absVal = Math.abs(safeVal)
+  const prefix = safeVal < 0 ? `-${symbol}` : symbol
+  if (absVal >= 1000) {
+    return `${prefix}${formatCompactNumber(absVal, locale)}`
+  }
+  if (absVal === 0 || absVal >= 1) {
+    return `${prefix}${new Intl.NumberFormat(locale, {
+      maximumFractionDigits: 2,
+    }).format(absVal)}`
+  }
+  return `${prefix}${new Intl.NumberFormat(locale, {
+    maximumFractionDigits: 4,
+  }).format(absVal)}`
 }
 
 export function formatDeltaPercent(

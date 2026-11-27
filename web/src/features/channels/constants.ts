@@ -356,6 +356,9 @@ export const ERROR_MESSAGES = {
   REQUIRED_KEY: 'API key is required',
   REQUIRED_MODELS: 'Models are required',
   REQUIRED_GROUP: 'Group is required',
+  REQUIRED_UPSTREAM_GROUP_RATIO: 'Upstream group ratio is required',
+  INVALID_UPSTREAM_GROUP_RATIO:
+    'Upstream group ratio must be a number between 0 and 10000',
   INVALID_JSON: 'Invalid JSON format',
   INVALID_MODEL_MAPPING: 'Invalid model mapping format',
   INVALID_PROXY:

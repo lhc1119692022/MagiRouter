@@ -1108,4 +1108,156 @@ describe('MediaTraffic page', () => {
     await user.click(screen.getByRole('tab', { name: 'Uploaded objects' }))
     expect(await screen.findByText('hero.png')).toBeInTheDocument()
   })
+
+  it('displays auto-derived channel upstream ratio in profit analytics and preserves auto mode in cost settings', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(api, 'get').mockResolvedValue({
+      data: {
+        success: true,
+        message: '',
+        data: {
+          currency: {
+            quota_per_unit: 500000,
+            display_type: 'USD',
+            symbol: '$',
+            usd_exchange_rate: 1,
+            usd_to_currency_rate: 1,
+            topup_price: 1,
+          },
+          pricing_ref: {
+            default_group_ratio: 1.5,
+            group_ratios: { default: 1.5 },
+          },
+          cost_settings: {
+            exclude_admin_users: true,
+            default_cost_ratio: 0.5,
+            payment_fee_rate: 0,
+            payment_fee_rates: {},
+            channel_costs: {},
+            extra_fixed_costs: [],
+          },
+          summary: {
+            range_days: 30,
+            start_time: 1793000000,
+            end_time: 1795600000,
+            exclude_admin_users: true,
+            excluded_admin_count: 1,
+            wallet_topup_money: 100,
+            wallet_topup_orders: 1,
+            subscription_direct_money: 0,
+            subscription_direct_orders: 0,
+            subscription_balance_money: 0,
+            subscription_balance_count: 0,
+            cash_revenue: 100,
+            payment_fee_cost: 0,
+            net_cash_inflow: 100,
+            billed_quota: 7500000,
+            billed_usd: 15,
+            billed_local: 15,
+            upstream_variable_cost: 6,
+            channel_fixed_cost: 0,
+            platform_fixed_cost: 0,
+            total_fixed_cost: 0,
+            total_cost: 6,
+            billed_gross_profit: 9,
+            billed_net_profit: 9,
+            billed_margin_rate: 60,
+            cash_net_profit: 94,
+            cash_margin_rate: 94,
+            outstanding_wallet_quota: 0,
+            outstanding_wallet_local: 0,
+            outstanding_sub_quota: 0,
+            outstanding_sub_local: 0,
+            total_requests: 10,
+            total_tokens: 1000,
+            active_users: 1,
+            paying_users: 1,
+            redemption_quota: 0,
+            redemption_local: 0,
+            redemption_count: 0,
+            checkin_quota: 0,
+            checkin_local: 0,
+            checkin_count: 0,
+          },
+          orphaned_deleted_users: {
+            user_count: 0,
+            topup_orders: 0,
+            completed_topup_orders: 0,
+            completed_topup_money: 0,
+            subscription_orders: 0,
+            completed_subscription_orders: 0,
+            completed_subscription_money: 0,
+            quota_data_records: 0,
+            quota_data_requests: 0,
+            billed_quota: 0,
+            billed_usd: 0,
+            billed_local: 0,
+            user_subscriptions: 0,
+            used_redemptions: 0,
+            checkins: 0,
+            total_records: 0,
+          },
+          daily_trend: [],
+          channels: [
+            {
+              channel_id: 9,
+              channel_name: 'Auto Channel',
+              channel_type: 1,
+              group: 'default',
+              tag: '',
+              status: 1,
+              balance: 0,
+              requests: 10,
+              tokens: 1000,
+              billed_quota: 7500000,
+              billed_usd: 15,
+              billed_local: 15,
+              cost_ratio: 0.4,
+              custom_cost_ratio: false,
+              cost_source: 'channel',
+              pricing_mode: 'ratio',
+              upstream_value: 0.6,
+              platform_value: 1.5,
+              channel_upstream_ratio: 0.6,
+              channel_upstream_group: 'vip',
+              suggested_group_ratio: 1.5,
+              variable_cost: 6,
+              monthly_fixed_cost: 0,
+              amortized_fixed_cost: 0,
+              gross_profit: 9,
+              net_profit: 9,
+              margin_rate: 60,
+              note: '',
+            },
+          ],
+          models: [],
+          groups: [],
+          payment_methods: [],
+          recent_orders: [],
+        },
+      },
+    })
+
+    const putSpy = vi.spyOn(api, 'put').mockResolvedValue({
+      data: { success: true, message: '', data: {} },
+    })
+
+    renderWithQuery(<ProfitAnalytics />)
+
+    expect(await screen.findByText('Auto Channel')).toBeInTheDocument()
+    expect(screen.getByText('Auto from channel')).toBeInTheDocument()
+    expect(screen.getByText('0.6 / 1.5')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Cost model' }))
+    expect(
+      await screen.findByText(/Channel upstream ratio 0\.6/)
+    ).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Save settings' }))
+    await waitFor(() => expect(putSpy).toHaveBeenCalled())
+    const savedPayload = putSpy.mock.calls[0][1] as {
+      channel_costs: Record<string, unknown>
+    }
+    expect(savedPayload.channel_costs).toEqual({})
+  })
 })

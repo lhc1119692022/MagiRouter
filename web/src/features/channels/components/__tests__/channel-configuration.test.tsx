@@ -148,6 +148,7 @@ beforeEach(() => {
     models: 'custom-model',
     group: 'default',
     base_url: 'https://saved.example',
+    setting: JSON.stringify({ upstream_group_ratio: 1 }),
   })
   client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -451,6 +452,9 @@ test('selecting a plugin opens a prefilled channel and creates its explicit bind
   fireEvent.change(screen.getByLabelText('API Key *'), {
     target: { value: 'channel-secret' },
   })
+  fireEvent.change(screen.getByLabelText('Upstream Group Ratio *'), {
+    target: { value: '1' },
+  })
   await user.click(screen.getByRole('button', { name: 'Create Channel' }))
   await waitFor(() => expect(post).toHaveBeenCalled())
   const [url, payload] = post.mock.calls[0]
@@ -689,6 +693,9 @@ test('creating a migrated provider uses its plugin binding instead of the legacy
   fireEvent.change(screen.getByLabelText('API Key *'), {
     target: { value: 'test-key' },
   })
+  fireEvent.change(screen.getByLabelText('Upstream Group Ratio *'), {
+    target: { value: '1' },
+  })
   await user.click(screen.getByRole('button', { name: 'Create Channel' }))
   await waitFor(() =>
     expect(post).toHaveBeenCalledWith(
@@ -746,6 +753,9 @@ test.each(['create', 'edit'])(
       )
       fireEvent.change(screen.getByLabelText('Name *'), {
         target: { value: 'Combined channel' },
+      })
+      fireEvent.change(screen.getByLabelText('Upstream Group Ratio *'), {
+        target: { value: '1' },
       })
       fireEvent.change(screen.getByLabelText('API Key *'), {
         target: { value: 'channel-key' },
@@ -1002,6 +1012,9 @@ test('loading a replacement plugin preserves an already selected legacy creation
   expect(screen.getByLabelText('API Key *')).toHaveValue('draft-key')
   expect(screen.getByLabelText(/Base URL/)).toHaveValue('https://draft.example')
   expect(screen.getByRole('button', { name: 'draft-model' })).toBeVisible()
+  fireEvent.change(screen.getByLabelText('Upstream Group Ratio *'), {
+    target: { value: '1' },
+  })
   await user.click(screen.getByRole('button', { name: 'Create Channel' }))
   await waitFor(() =>
     expect(post).toHaveBeenCalledWith(
@@ -1059,6 +1072,9 @@ test.each([
   fireEvent.change(screen.getByLabelText('API Key *'), {
     target: { value: 'first-key\nsecond-key' },
   })
+  fireEvent.change(screen.getByLabelText('Upstream Group Ratio *'), {
+    target: { value: '1' },
+  })
   await user.click(screen.getByRole('button', { name: 'Create Channel' }))
   await waitFor(() =>
     expect(post).toHaveBeenCalledWith(
@@ -1085,6 +1101,9 @@ test('a failed creation keeps its draft and prevents duplicate submission while 
   await user.click(await screen.findByRole('option', { name: /Video A/ }))
   fireEvent.change(screen.getByLabelText('API Key *'), {
     target: { value: 'keep-secret' },
+  })
+  fireEvent.change(screen.getByLabelText('Upstream Group Ratio *'), {
+    target: { value: '1' },
   })
   await user.click(screen.getByRole('button', { name: 'Create Channel' }))
   expect(screen.getByRole('button', { name: 'Create Channel' })).toBeDisabled()
@@ -1173,6 +1192,7 @@ test('quick options and detailed settings share changes across tabs and save the
   editingChannel.setting = JSON.stringify({
     pass_through_body_enabled: true,
     responses_websocket_enabled: true,
+    upstream_group_ratio: 1,
   })
   editingChannel.settings = JSON.stringify({
     upstream_model_update_check_enabled: true,
@@ -1408,6 +1428,7 @@ test('editing opens the shared configuration and omits an unchanged key on updat
     balance_updated_time: 0,
     models: 'custom-model',
     group: 'default',
+    setting: JSON.stringify({ upstream_group_ratio: 1 }),
   })
   const originalGet = vi.mocked(api.get).getMockImplementation()
   vi.mocked(api.get).mockImplementation(async (url, config) => {
@@ -1528,7 +1549,7 @@ test('an unavailable plugin keeps its identifier and binding when other fields a
   editingChannel = {
     ...editingChannel,
     type: 61,
-    setting: '{"task_plugin_key":"removed-plugin"}',
+    setting: '{"task_plugin_key":"removed-plugin","upstream_group_ratio":1}',
   }
   const put = vi
     .spyOn(api, 'put')
@@ -1616,6 +1637,7 @@ test('channel request processing plugins save in their order and a deleted insta
     ...editingChannel,
     setting: JSON.stringify({
       request_plugins: ['rp_gone0000', 'rp_aaaa1111'],
+      upstream_group_ratio: 1,
     }),
   }
   const put = vi
@@ -1809,7 +1831,7 @@ test('an Ollama channel marks a saved OpenAI-compatible chat setting in Request 
 test('a saved upstream TLS verification skip marks Other Settings and turning it off saves the setting without it', async () => {
   editingChannel = {
     ...editingChannel,
-    setting: '{"tls_insecure_skip_verify":true}',
+    setting: '{"tls_insecure_skip_verify":true,"upstream_group_ratio":1}',
   }
   const put = vi
     .spyOn(api, 'put')
@@ -3085,7 +3107,10 @@ test('a New API channel binds upstream task plugins and publishes their models',
     type: 60,
     base_url: 'https://gateway.example',
     models: 'gpt-5',
-    setting: JSON.stringify({ task_extend_plugin_keys: ['video-a'] }),
+    setting: JSON.stringify({
+      task_extend_plugin_keys: ['video-a'],
+      upstream_group_ratio: 1,
+    }),
   })
   const originalGet = vi.mocked(api.get).getMockImplementation()
   vi.mocked(api.get).mockImplementation(async (url, config) => {
@@ -3652,7 +3677,7 @@ test('a plugin channel edits the settings its plugin declares, shows its key for
   editingChannel = {
     ...editingChannel,
     type: 61,
-    setting: '{"task_plugin_key":"cloud-x"}',
+    setting: '{"task_plugin_key":"cloud-x","upstream_group_ratio":1}',
     settings: '{"plugin_config":{"upload_url":"https://saved-upload.example"}}',
   }
   const put = vi

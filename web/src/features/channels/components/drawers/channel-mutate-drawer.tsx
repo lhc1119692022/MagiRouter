@@ -132,6 +132,7 @@ import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
 
 import {
+  fetchChannelUpstreamRatios,
   getAllModels,
   getChannel,
   getChannelDefaultBaseURLs,
@@ -139,6 +140,7 @@ import {
   getPrefillGroups,
   getTaskPluginOptions,
   refreshCodexCredential,
+  type UpstreamGroupRatioOption,
 } from '../../api'
 import {
   ADD_MODE_OPTIONS,
@@ -174,6 +176,7 @@ import {
   channelFormSchema,
   channelsQueryKeys,
   getAdvancedCustomStats,
+  MAX_UPSTREAM_GROUP_RATIO,
   transformChannelToFormDefaults,
   type ChannelFormValues,
   deduplicateKeys,
@@ -344,6 +347,8 @@ const SENSITIVE_FORM_FIELDS = [
   'responses_websocket_enabled',
   'system_prompt',
   'system_prompt_override',
+  'upstream_group_ratio',
+  'upstream_group_name',
   'allow_service_tier',
   'disable_store',
   'allow_safety_identifier',
@@ -524,6 +529,14 @@ export function ChannelMutateDrawer({
   const [pendingErrorFocus, setPendingErrorFocus] = useState<string | null>(
     null
   )
+  const [isFetchingUpstreamRatios, setIsFetchingUpstreamRatios] =
+    useState(false)
+  const [upstreamRatioOptions, setUpstreamRatioOptions] = useState<
+    UpstreamGroupRatioOption[]
+  >([])
+  const [upstreamRatioFetchState, setUpstreamRatioFetchState] = useState<
+    'idle' | 'supported' | 'unsupported'
+  >('idle')
   const [mappingDraftRequest, setMappingDraftRequest] =
     useState<ModelMappingDraftRequest | null>(null)
   const mappingDraftTokenRef = useRef(0)
@@ -1135,6 +1148,8 @@ export function ChannelMutateDrawer({
       setChoosingProvider(true)
       setConfigurationSection('connection')
       setPendingErrorFocus(null)
+      setUpstreamRatioOptions([])
+      setUpstreamRatioFetchState('idle')
       resetModelMappingSync()
       return
     }
@@ -1165,6 +1180,8 @@ export function ChannelMutateDrawer({
         setChoosingProvider(false)
         setConfigurationSection('connection')
         setPendingErrorFocus(null)
+        setUpstreamRatioOptions([])
+        setUpstreamRatioFetchState('idle')
       }
       // Store initial values for comparison
       initialModelsRef.current = parseModelsString(
@@ -1175,6 +1192,8 @@ export function ChannelMutateDrawer({
         channelData.data.status_code_mapping || ''
     } else if (!isEditing) {
       form.reset(CHANNEL_FORM_DEFAULT_VALUES)
+      setUpstreamRatioOptions([])
+      setUpstreamRatioFetchState('idle')
       resetModelMappingSync()
       initialModelsRef.current = []
       initialModelMappingRef.current = ''
@@ -1745,6 +1764,33 @@ export function ChannelMutateDrawer({
         setConfigurationSection('connection')
         setPendingErrorFocus('key')
         return
+      }
+
+      if (!sensitiveLocked && !pluginLogin) {
+        const rawUpstreamRatio = data.upstream_group_ratio?.trim() ?? ''
+        if (!rawUpstreamRatio) {
+          form.setError('upstream_group_ratio', {
+            type: 'manual',
+            message: ERROR_MESSAGES.REQUIRED_UPSTREAM_GROUP_RATIO,
+          })
+          setConfigurationSection('connection')
+          setPendingErrorFocus('upstream_group_ratio')
+          return
+        }
+        const parsedUpstreamRatio = Number(rawUpstreamRatio)
+        if (
+          !Number.isFinite(parsedUpstreamRatio) ||
+          parsedUpstreamRatio < 0 ||
+          parsedUpstreamRatio > MAX_UPSTREAM_GROUP_RATIO
+        ) {
+          form.setError('upstream_group_ratio', {
+            type: 'manual',
+            message: ERROR_MESSAGES.INVALID_UPSTREAM_GROUP_RATIO,
+          })
+          setConfigurationSection('connection')
+          setPendingErrorFocus('upstream_group_ratio')
+          return
+        }
       }
 
       if (sensitiveLocked) {
@@ -3313,6 +3359,80 @@ export function ChannelMutateDrawer({
     </div>
   )
 
+  const currentUpstreamGroupName = form.watch('upstream_group_name') || ''
+
+  const handleApplyUpstreamRatioOption = useCallback(
+    (option: UpstreamGroupRatioOption) => {
+      form.setValue('upstream_group_ratio', String(option.ratio), {
+        shouldDirty: true,
+        shouldValidate: true,
+      })
+      form.setValue('upstream_group_name', option.group, {
+        shouldDirty: true,
+        shouldValidate: true,
+      })
+      form.clearErrors('upstream_group_ratio')
+    },
+    [form]
+  )
+
+  const handleFetchUpstreamRatios = useCallback(async () => {
+    setIsFetchingUpstreamRatios(true)
+    try {
+      const res = await fetchChannelUpstreamRatios({
+        channel_id: isEditing ? currentRow?.id : undefined,
+        type: form.getValues('type'),
+        base_url: form.getValues('base_url')?.trim() || undefined,
+        proxy: form.getValues('proxy')?.trim() || undefined,
+      })
+      if (!res.success) {
+        throw createServerError(res, t('Failed to fetch upstream group ratios'))
+      }
+      const groups = res.data?.groups ?? []
+      if (!res.data?.supported || groups.length === 0) {
+        setUpstreamRatioOptions([])
+        setUpstreamRatioFetchState('unsupported')
+        toast.info(
+          t(
+            'This upstream does not expose group ratios. Enter the upstream billing ratio manually.'
+          )
+        )
+        return
+      }
+      setUpstreamRatioOptions(groups)
+      setUpstreamRatioFetchState('supported')
+      const currentRatioValue = form.getValues('upstream_group_ratio')?.trim()
+      if (!currentRatioValue) {
+        const selectedLocalGroups = form.getValues('group') ?? []
+        const matched =
+          groups.find((item) => selectedLocalGroups.includes(item.group)) ??
+          (groups.length === 1 ? groups[0] : undefined)
+        if (matched) {
+          handleApplyUpstreamRatioOption(matched)
+          toast.success(
+            t('Applied upstream group {{group}} ratio ({{ratio}})', {
+              group: matched.group,
+              ratio: matched.ratio,
+            })
+          )
+          return
+        }
+      }
+      toast.success(
+        t(
+          'Fetched {{count}} upstream group ratios. Click one below to apply.',
+          {
+            count: groups.length,
+          }
+        )
+      )
+    } catch (error) {
+      handleServerError(error, t('Failed to fetch upstream group ratios'))
+    } finally {
+      setIsFetchingUpstreamRatios(false)
+    }
+  }, [currentRow?.id, form, handleApplyUpstreamRatioOption, isEditing, t])
+
   const modelsSection = (
     <div className='scroll-mt-4'>
       <ChannelModelsSection>
@@ -3733,6 +3853,143 @@ export function ChannelMutateDrawer({
                       />
                     )}
                   </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </div>
+
+          <div className='border-border/60 space-y-3 rounded-lg border p-4'>
+            <FormField
+              control={form.control}
+              name='upstream_group_ratio'
+              render={({ field }) => (
+                <FormItem className='space-y-3'>
+                  <div className='flex flex-wrap items-start justify-between gap-2'>
+                    <div className='space-y-1'>
+                      <FormLabel required={!pluginLogin && !sensitiveLocked}>
+                        {t('Upstream Group Ratio')}
+                      </FormLabel>
+                      <FormDescription>
+                        {t(
+                          'Fetch the upstream billing ratio for this channel or enter it manually. Profit Analytics automatically computes channel cost from this value and your platform group ratio.'
+                        )}
+                      </FormDescription>
+                    </div>
+                    <Button
+                      type='button'
+                      variant='outline'
+                      size='sm'
+                      disabled={
+                        sensitiveLocked ||
+                        isSubmitting ||
+                        isFetchingUpstreamRatios
+                      }
+                      onClick={() => void handleFetchUpstreamRatios()}
+                    >
+                      {isFetchingUpstreamRatios ? (
+                        <Loader2 className='mr-1.5 h-3.5 w-3.5 animate-spin' />
+                      ) : (
+                        <RefreshCw className='mr-1.5 h-3.5 w-3.5' />
+                      )}
+                      {t('Fetch upstream group ratios')}
+                    </Button>
+                  </div>
+
+                  <div className='flex flex-wrap items-center gap-2'>
+                    <FormControl>
+                      <Input
+                        type='number'
+                        min={0}
+                        max={MAX_UPSTREAM_GROUP_RATIO}
+                        step='any'
+                        className='max-w-xs'
+                        placeholder={t('Required, e.g. 1 or 0.7')}
+                        disabled={sensitiveLocked || isSubmitting}
+                        {...field}
+                        value={field.value ?? ''}
+                        onChange={(event) => {
+                          field.onChange(event.target.value)
+                          if (currentUpstreamGroupName) {
+                            form.setValue('upstream_group_name', '', {
+                              shouldDirty: true,
+                            })
+                          }
+                        }}
+                      />
+                    </FormControl>
+                    <Button
+                      type='button'
+                      variant='ghost'
+                      size='sm'
+                      disabled={sensitiveLocked || isSubmitting}
+                      onClick={() => {
+                        form.setValue('upstream_group_ratio', '1', {
+                          shouldDirty: true,
+                          shouldValidate: true,
+                        })
+                        form.setValue('upstream_group_name', '', {
+                          shouldDirty: true,
+                        })
+                        form.clearErrors('upstream_group_ratio')
+                      }}
+                    >
+                      <Sparkles className='mr-1 h-3.5 w-3.5' />
+                      {t('Official 1x')}
+                    </Button>
+                    {currentUpstreamGroupName && (
+                      <Badge variant='secondary' className='text-xs'>
+                        {t('Upstream group: {{group}}', {
+                          group: currentUpstreamGroupName,
+                        })}
+                      </Badge>
+                    )}
+                  </div>
+
+                  {upstreamRatioFetchState === 'supported' &&
+                    upstreamRatioOptions.length > 0 && (
+                      <div className='bg-muted/30 space-y-2 rounded-md border p-2.5'>
+                        <p className='text-muted-foreground text-xs'>
+                          {t(
+                            'Select the upstream group used by this channel key:'
+                          )}
+                        </p>
+                        <div className='flex flex-wrap gap-1.5'>
+                          {upstreamRatioOptions.map((option) => {
+                            const selected =
+                              currentUpstreamGroupName === option.group &&
+                              Number(field.value) === option.ratio
+                            return (
+                              <Button
+                                key={option.group}
+                                type='button'
+                                size='sm'
+                                variant={selected ? 'default' : 'outline'}
+                                className='h-7 text-xs'
+                                disabled={sensitiveLocked || isSubmitting}
+                                onClick={() =>
+                                  handleApplyUpstreamRatioOption(option)
+                                }
+                              >
+                                <span>{option.group}</span>
+                                <span className='ml-1 opacity-80'>
+                                  · {option.ratio}x
+                                </span>
+                              </Button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                  {upstreamRatioFetchState === 'unsupported' && (
+                    <p className='text-muted-foreground text-xs'>
+                      {t(
+                        'Upstream did not return public group ratios (common for official APIs or private relays). Enter the actual upstream billing ratio manually (e.g. 1 for official direct pricing, or your discounted relay ratio).'
+                      )}
+                    </p>
+                  )}
+
                   <FormMessage />
                 </FormItem>
               )}

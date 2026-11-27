@@ -6,7 +6,7 @@ export const meta = {
     en: "Rejects requests whose text matches a keyword or regular expression",
     zh: "拒绝文本命中关键词或正则表达式的请求",
   },
-  version: "1.0.0",
+  version: "1.1.0",
   author: { name: "QuantumNous" },
   configSchema: {
     type: "object",
@@ -94,6 +94,15 @@ export const meta = {
         description: {
           en: "Also stop model replies that match a rule",
           zh: "同时中止命中规则的模型回复",
+        },
+        default: false,
+      },
+      skipSystemAndTools: {
+        type: "boolean",
+        title: { en: "Skip system prompt and tools", zh: "跳过系统提示词与工具定义" },
+        description: {
+          en: "Ignore system/developer instructions and tool declarations to avoid false positives on coding agents",
+          zh: "忽略 system/developer 指令与 tools 工具定义，避免误杀 Agent 系统提示词",
         },
         default: false,
       },
@@ -187,13 +196,18 @@ function collectContent(texts, content, inToolResult) {
 // input, and tool outputs.
 const OUTPUT_ITEM_TYPES = ["function_call_output", "custom_tool_call_output", "local_shell_call_output"];
 
-function collectInputItems(texts, items) {
+function isSystemRole(role) {
+  return role === "system" || role === "developer";
+}
+
+function collectInputItems(texts, items, skipSystemAndTools) {
   for (const item of items) {
     if (typeof item === "string") {
       pushText(texts, item);
       continue;
     }
     if (!isObject(item)) continue;
+    if (skipSystemAndTools && isSystemRole(item.role)) continue;
     pushText(texts, item.name);
     if (item.content !== undefined) collectContent(texts, item.content);
     else if (item.type === "function_call") pushJSON(texts, item.arguments);
@@ -219,7 +233,7 @@ const WHOLE_BODY_FORMATS = ["openai_alpha_search", "deepseek_tools"];
 // documents. A Responses compaction is checked as the JSON of its
 // instructions and input. Task submissions add their prompts: at the top
 // level, under input or parameters, in instances and in content parts.
-function collectTexts(body, format) {
+function collectTexts(body, format, skipSystemAndTools) {
   const texts = [];
   if (!isObject(body)) return texts;
   if (WHOLE_BODY_FORMATS.includes(format)) {
@@ -227,17 +241,18 @@ function collectTexts(body, format) {
     return texts;
   }
   if (format === "openai_responses_compaction") {
-    pushJSON(texts, body.instructions);
+    if (!skipSystemAndTools) pushJSON(texts, body.instructions);
     pushJSON(texts, body.input);
     return texts;
   }
   if (Array.isArray(body.messages)) {
     for (const message of body.messages) {
       if (!isObject(message)) continue;
+      if (skipSystemAndTools && isSystemRole(message.role)) continue;
       collectContent(texts, message.content);
       pushText(texts, message.name);
       // Tools a message declares count as top-level tools do.
-      pushJSON(texts, message.tools);
+      if (!skipSystemAndTools) pushJSON(texts, message.tools);
       if (!Array.isArray(message.tool_calls)) continue;
       for (const call of message.tool_calls) {
         if (!isObject(call)) continue;
@@ -250,23 +265,27 @@ function collectTexts(body, format) {
       }
     }
   }
-  collectContent(texts, body.system);
-  if (Array.isArray(body.instructions)) collectInputItems(texts, body.instructions);
-  else pushText(texts, body.instructions);
+  if (!skipSystemAndTools) {
+    collectContent(texts, body.system);
+    if (Array.isArray(body.instructions)) collectInputItems(texts, body.instructions, false);
+    else pushText(texts, body.instructions);
+  }
   if (isObject(body.prompt)) pushJSON(texts, body.prompt);
   else collectContent(texts, body.prompt);
   if (typeof body.input === "string") pushText(texts, body.input);
-  else if (Array.isArray(body.input)) collectInputItems(texts, body.input);
+  else if (Array.isArray(body.input)) collectInputItems(texts, body.input, skipSystemAndTools);
   if (Array.isArray(body.contents)) {
     for (const content of body.contents) {
       if (isObject(content)) collectContent(texts, content.parts);
     }
   }
-  for (const instruction of [body.systemInstruction, body.system_instruction]) {
-    if (isObject(instruction)) collectContent(texts, instruction.parts);
+  if (!skipSystemAndTools) {
+    for (const instruction of [body.systemInstruction, body.system_instruction]) {
+      if (isObject(instruction)) collectContent(texts, instruction.parts);
+    }
+    // Tool names, descriptions and parameter schemas, in every format.
+    pushJSON(texts, body.tools);
   }
-  // Tool names, descriptions and parameter schemas, in every format.
-  pushJSON(texts, body.tools);
   if (format === "openai_responses") {
     for (const key of RESPONSES_JSON_KEYS) pushJSON(texts, body[key]);
   }
@@ -287,7 +306,7 @@ function collectTexts(body, format) {
     pushText(texts, body.input.negative_prompt);
     if (Array.isArray(body.input.messages)) {
       for (const message of body.input.messages) {
-        if (isObject(message)) collectContent(texts, message.content);
+        if (isObject(message) && !(skipSystemAndTools && isSystemRole(message.role))) collectContent(texts, message.content);
       }
     }
   }
@@ -385,7 +404,8 @@ function check(ctx, req, attachments) {
   const config = ctx.config || {};
   const rules = compileRules(config);
   if (rules.length === 0 && !hasKeywords(config)) return { action: "continue" };
-  let ruleId = firstMatch(config, rules, collectTexts(req.body, ctx.format));
+  const skipSystemAndTools = config.skipSystemAndTools === true;
+  let ruleId = firstMatch(config, rules, collectTexts(req.body, ctx.format, skipSystemAndTools));
   if (ruleId === "" && attachments) ruleId = firstMatch(config, rules, attachmentTexts());
   if (ruleId === "") return { action: "continue" };
   const result = { action: "reject", code: "request_filtered", ruleId: ruleId };

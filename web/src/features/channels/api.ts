@@ -728,6 +728,36 @@ export async function fetchModels(data: {
   return res.data
 }
 
+export interface UpstreamGroupRatioOption {
+  group: string
+  ratio: number
+  description?: string
+}
+
+export interface FetchChannelUpstreamRatiosResponse {
+  success: boolean
+  message?: string
+  data?: {
+    supported: boolean
+    source?: string
+    groups: UpstreamGroupRatioOption[]
+  }
+}
+
+export async function fetchChannelUpstreamRatios(data: {
+  channel_id?: number
+  type: number
+  base_url?: string
+  proxy?: string
+}): Promise<FetchChannelUpstreamRatiosResponse> {
+  const res = await api.post(
+    '/api/channel/fetch_upstream_ratios',
+    data,
+    channelActionConfig()
+  )
+  return res.data
+}
+
 /**
  * Delete an Ollama model from a channel
  */

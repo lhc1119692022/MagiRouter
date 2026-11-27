@@ -1,6 +1,7 @@
 package operation_setting
 
 import (
+	"fmt"
 	"math"
 	"sort"
 	"strconv"
@@ -21,12 +22,52 @@ const (
 	MaxCheckinAllowedGroups     = 100
 	MaxCheckinTopUpUpgradeRules = 50
 	MaxTopUpUpgradeThreshold    = 1_000_000_000.0
+
+	GroupUpgradeMatchModeAll = "all"
+	GroupUpgradeMatchModeAny = "any"
 )
 
 // TopUpGroupUpgradeRule 累计充值自动升级用户分组规则
 type TopUpGroupUpgradeRule struct {
-	ThresholdAmount float64 `json:"threshold_amount"` // 累计充值金额阈值
-	TargetGroup     string  `json:"target_group"`     // 达标后目标用户分组
+	ThresholdAmount     float64 `json:"threshold_amount,omitempty"`
+	UsageThresholdQuota int64   `json:"usage_threshold_quota,omitempty"`
+	MatchMode           string  `json:"match_mode,omitempty"`
+	TargetGroup         string  `json:"target_group"`
+}
+
+func (r TopUpGroupUpgradeRule) HasTopUpCondition() bool {
+	return r.ThresholdAmount > 0
+}
+
+func (r TopUpGroupUpgradeRule) HasUsageCondition() bool {
+	return r.UsageThresholdQuota > 0
+}
+
+func (r TopUpGroupUpgradeRule) EffectiveMatchMode() string {
+	if strings.EqualFold(strings.TrimSpace(r.MatchMode), GroupUpgradeMatchModeAny) {
+		return GroupUpgradeMatchModeAny
+	}
+	return GroupUpgradeMatchModeAll
+}
+
+func (r TopUpGroupUpgradeRule) Matches(totalPaid decimal.Decimal, usedQuota int64) bool {
+	hasTopUp := r.HasTopUpCondition()
+	hasUsage := r.HasUsageCondition()
+	if !hasTopUp && !hasUsage {
+		return false
+	}
+	topUpMatched := hasTopUp && totalPaid.Cmp(decimal.NewFromFloat(r.ThresholdAmount).Round(2)) >= 0
+	usageMatched := hasUsage && usedQuota >= r.UsageThresholdQuota
+	if hasTopUp && hasUsage {
+		if r.EffectiveMatchMode() == GroupUpgradeMatchModeAny {
+			return topUpMatched || usageMatched
+		}
+		return topUpMatched && usageMatched
+	}
+	if hasTopUp {
+		return topUpMatched
+	}
+	return usageMatched
 }
 
 // CheckinSetting 签到功能配置
@@ -114,24 +155,66 @@ func (s *CheckinSetting) NormalizedTopUpUpgradeRules() []TopUpGroupUpgradeRule {
 		return []TopUpGroupUpgradeRule{}
 	}
 	result := make([]TopUpGroupUpgradeRule, 0, len(s.TopUpUpgradeRules))
+	allTopUpOnly := true
+	allUsageOnly := true
 	for _, rule := range s.TopUpUpgradeRules {
 		target := strings.TrimSpace(rule.TargetGroup)
-		if target == "" || math.IsNaN(rule.ThresholdAmount) || math.IsInf(rule.ThresholdAmount, 0) || rule.ThresholdAmount <= 0 {
+		if target == "" {
 			continue
 		}
-		rounded := decimal.NewFromFloat(rule.ThresholdAmount).Round(2).InexactFloat64()
-		if rounded <= 0 {
+		var roundedTopUp float64
+		if !math.IsNaN(rule.ThresholdAmount) && !math.IsInf(rule.ThresholdAmount, 0) && rule.ThresholdAmount > 0 {
+			roundedTopUp = decimal.NewFromFloat(rule.ThresholdAmount).Round(2).InexactFloat64()
+			if roundedTopUp < 0 {
+				roundedTopUp = 0
+			}
+		}
+		usageQuota := rule.UsageThresholdQuota
+		if usageQuota < 0 {
+			usageQuota = 0
+		}
+		if roundedTopUp <= 0 && usageQuota <= 0 {
 			continue
+		}
+		matchMode := ""
+		if roundedTopUp > 0 && usageQuota > 0 {
+			matchMode = rule.EffectiveMatchMode()
+			allTopUpOnly = false
+			allUsageOnly = false
+		} else if roundedTopUp > 0 {
+			allUsageOnly = false
+		} else {
+			allTopUpOnly = false
 		}
 		result = append(result, TopUpGroupUpgradeRule{
-			ThresholdAmount: rounded,
-			TargetGroup:     target,
+			ThresholdAmount:     roundedTopUp,
+			UsageThresholdQuota: usageQuota,
+			MatchMode:           matchMode,
+			TargetGroup:         target,
 		})
 	}
-	sort.SliceStable(result, func(i, j int) bool {
-		return result[i].ThresholdAmount < result[j].ThresholdAmount
-	})
+	if allTopUpOnly {
+		sort.SliceStable(result, func(i, j int) bool {
+			return result[i].ThresholdAmount < result[j].ThresholdAmount
+		})
+	} else if allUsageOnly {
+		sort.SliceStable(result, func(i, j int) bool {
+			return result[i].UsageThresholdQuota < result[j].UsageThresholdQuota
+		})
+	}
 	return result
+}
+
+func (s *CheckinSetting) HasUsageUpgradeRules() bool {
+	if s == nil || !s.TopUpUpgradeEnabled || len(s.TopUpUpgradeRules) == 0 {
+		return false
+	}
+	for _, rule := range s.TopUpUpgradeRules {
+		if strings.TrimSpace(rule.TargetGroup) != "" && rule.UsageThresholdQuota > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // ValidateCheckinOption 校验签到与累计充值分组升级配置项
@@ -165,20 +248,38 @@ func ValidateCheckinOption(key, value string) error {
 		if len(rules) > MaxCheckinTopUpUpgradeRules {
 			return common.NewMessage("Top-up group upgrade rules cannot exceed {{max}} entries", map[string]any{"max": MaxCheckinTopUpUpgradeRules})
 		}
-		seenThresholds := make(map[string]struct{}, len(rules))
+		seenConditions := make(map[string]struct{}, len(rules))
 		for _, rule := range rules {
-			if math.IsNaN(rule.ThresholdAmount) || math.IsInf(rule.ThresholdAmount, 0) || rule.ThresholdAmount <= 0 || rule.ThresholdAmount > MaxTopUpUpgradeThreshold {
+			if math.IsNaN(rule.ThresholdAmount) || math.IsInf(rule.ThresholdAmount, 0) || rule.ThresholdAmount < 0 || rule.ThresholdAmount > MaxTopUpUpgradeThreshold {
 				return common.NewMessage("Top-up group upgrade threshold must be greater than 0")
+			}
+			if rule.UsageThresholdQuota < 0 || rule.UsageThresholdQuota > int64(common.MaxWalletQuota) {
+				return common.NewMessage("Usage group upgrade threshold is invalid")
+			}
+			var roundedTopUp float64
+			if rule.ThresholdAmount > 0 {
+				roundedTopUp = decimal.NewFromFloat(rule.ThresholdAmount).Round(2).InexactFloat64()
+			}
+			if roundedTopUp <= 0 && rule.UsageThresholdQuota <= 0 {
+				return common.NewMessage("Each group upgrade rule must set a top-up or usage threshold greater than 0")
+			}
+			trimmedMode := strings.ToLower(strings.TrimSpace(rule.MatchMode))
+			if trimmedMode != "" && trimmedMode != GroupUpgradeMatchModeAll && trimmedMode != GroupUpgradeMatchModeAny {
+				return common.NewMessage("Group upgrade rule match mode is invalid")
 			}
 			target := strings.TrimSpace(rule.TargetGroup)
 			if target == "" || utf8.RuneCountInString(target) > 64 {
 				return common.NewMessage("Top-up group upgrade target group is invalid")
 			}
-			thresholdKey := decimal.NewFromFloat(rule.ThresholdAmount).Round(2).StringFixed(2)
-			if _, exists := seenThresholds[thresholdKey]; exists {
-				return common.NewMessage("Top-up group upgrade thresholds must be unique")
+			effectiveMode := ""
+			if roundedTopUp > 0 && rule.UsageThresholdQuota > 0 {
+				effectiveMode = rule.EffectiveMatchMode()
 			}
-			seenThresholds[thresholdKey] = struct{}{}
+			conditionKey := fmt.Sprintf("%s|%d|%s", decimal.NewFromFloat(roundedTopUp).Round(2).StringFixed(2), rule.UsageThresholdQuota, effectiveMode)
+			if _, exists := seenConditions[conditionKey]; exists {
+				return common.NewMessage("Group upgrade rule conditions must be unique")
+			}
+			seenConditions[conditionKey] = struct{}{}
 		}
 	}
 	return nil

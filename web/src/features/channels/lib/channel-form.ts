@@ -128,6 +128,17 @@ function isOptionalJsonObject(value: string | undefined): boolean {
   }
 }
 
+export const MAX_UPSTREAM_GROUP_RATIO = 10000
+
+function isOptionalUpstreamGroupRatio(value: string | undefined): boolean {
+  const trimmed = value?.trim() ?? ''
+  if (!trimmed) return true
+  const parsed = Number(trimmed)
+  return (
+    Number.isFinite(parsed) && parsed >= 0 && parsed <= MAX_UPSTREAM_GROUP_RATIO
+  )
+}
+
 function isOptionalModelMapping(value: string | undefined): boolean {
   try {
     const parsed = parseOptionalJson(value)
@@ -275,6 +286,14 @@ export const channelFormSchema = z
     responses_websocket_enabled: z.boolean().optional(),
     system_prompt: z.string().optional(),
     system_prompt_override: z.boolean().optional(),
+    upstream_group_ratio: z
+      .string()
+      .optional()
+      .refine(
+        isOptionalUpstreamGroupRatio,
+        ERROR_MESSAGES.INVALID_UPSTREAM_GROUP_RATIO
+      ),
+    upstream_group_name: z.string().max(64).optional(),
     // Type-specific settings (stored in settings JSON)
     is_enterprise_account: z.boolean().optional(), // OpenRouter specific
     vertex_key_type: z.enum(['json', 'api_key']).optional(), // Vertex AI specific
@@ -478,6 +497,8 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   responses_websocket_enabled: false,
   system_prompt: '',
   system_prompt_override: false,
+  upstream_group_ratio: '',
+  upstream_group_name: '',
   // Type-specific settings
   is_enterprise_account: false,
   vertex_key_type: 'json',
@@ -529,6 +550,8 @@ export function transformChannelToFormDefaults(
     responses_websocket_enabled: false,
     system_prompt: '',
     system_prompt_override: false,
+    upstream_group_ratio: '',
+    upstream_group_name: '',
   }
 
   if (channel.setting) {
@@ -557,6 +580,16 @@ export function transformChannelToFormDefaults(
           parsed.responses_websocket_enabled === true,
         system_prompt: parsed.system_prompt || '',
         system_prompt_override: parsed.system_prompt_override || false,
+        upstream_group_ratio:
+          typeof parsed.upstream_group_ratio === 'number' &&
+          Number.isFinite(parsed.upstream_group_ratio) &&
+          parsed.upstream_group_ratio >= 0
+            ? String(parsed.upstream_group_ratio)
+            : '',
+        upstream_group_name:
+          typeof parsed.upstream_group_name === 'string'
+            ? parsed.upstream_group_name.trim()
+            : '',
       }
     } catch (error) {
       // eslint-disable-next-line no-console
@@ -726,6 +759,21 @@ export function buildSettingJSON(formData: ChannelFormValues): string {
   }
   if (formData.tls_insecure_skip_verify === true) {
     settingObj.tls_insecure_skip_verify = true
+  }
+  const trimmedUpstreamRatio = formData.upstream_group_ratio?.trim() ?? ''
+  if (trimmedUpstreamRatio !== '') {
+    const parsedUpstreamRatio = Number(trimmedUpstreamRatio)
+    if (
+      Number.isFinite(parsedUpstreamRatio) &&
+      parsedUpstreamRatio >= 0 &&
+      parsedUpstreamRatio <= MAX_UPSTREAM_GROUP_RATIO
+    ) {
+      settingObj.upstream_group_ratio = parsedUpstreamRatio
+    }
+  }
+  const trimmedUpstreamGroup = formData.upstream_group_name?.trim() ?? ''
+  if (trimmedUpstreamGroup) {
+    settingObj.upstream_group_name = trimmedUpstreamGroup
   }
 
   return JSON.stringify(settingObj)

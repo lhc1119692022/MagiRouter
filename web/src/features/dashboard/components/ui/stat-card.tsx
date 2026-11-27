@@ -41,6 +41,8 @@ export interface StatCardDetail {
 interface StatCardProps {
   title: string
   value: string | number
+  valueAddon?: ReactNode
+  valueClassName?: string
   description: string
   icon: LucideIcon
   sparkline?: number[]
@@ -280,8 +282,16 @@ export function StatCard(props: StatCardProps) {
   } else {
     valueContent = (
       <div className='flex flex-col gap-1'>
-        <div className='text-foreground font-mono text-base font-semibold tracking-tight break-all tabular-nums sm:text-2xl'>
-          {props.value}
+        <div className='flex flex-wrap items-baseline gap-2'>
+          <div
+            className={cn(
+              'text-foreground font-mono text-base font-semibold tracking-tight break-all tabular-nums sm:text-2xl',
+              props.valueClassName
+            )}
+          >
+            {props.value}
+          </div>
+          {props.valueAddon}
         </div>
         <p
           className={cn(
