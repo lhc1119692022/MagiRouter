@@ -448,6 +448,36 @@ it.each([true, false])(
   }
 )
 
+it('never reveals full API keys and copies when clicking anywhere on the key box', async () => {
+  const user = userEvent.setup()
+  const { post } = await renderKeysPage()
+  post.mockResolvedValue({
+    data: { success: true, data: { key: 'fake-key-for-test-only' } },
+  })
+  const copy = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue()
+
+  expect(
+    screen.queryByRole('button', { name: /reveal full api key/i })
+  ).not.toBeInTheDocument()
+
+  const maskedText = screen.getByText(`sk-${key.key}`)
+  const keyButton = maskedText.closest('button')
+  expect(keyButton).not.toBeNull()
+  expect(keyButton).toHaveAccessibleName('Copy API key')
+
+  await user.click(maskedText)
+
+  await waitFor(() => expect(post).toHaveBeenCalledWith('/api/token/7/key'))
+  await waitFor(() =>
+    expect(copy).toHaveBeenCalledWith('sk-fake-key-for-test-only')
+  )
+  expect(screen.queryByText('Full API Key')).not.toBeInTheDocument()
+  expect(
+    screen.queryByDisplayValue('sk-fake-key-for-test-only')
+  ).not.toBeInTheDocument()
+  expect(keyButton).toHaveAccessibleName('Copied!')
+})
+
 it('keeps full mobile information without group or quota section headings', async () => {
   const matchMedia = window.matchMedia
   vi.spyOn(window, 'matchMedia').mockImplementation((query) => ({

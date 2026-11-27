@@ -5,7 +5,11 @@ import { PageFooterPortal } from '../page-footer'
 import { SectionPageLayout } from '../section-page-layout'
 
 function renderPage(
-  props: { fixedContent?: boolean; scrollWithDocument?: boolean } = {}
+  props: {
+    fixedContent?: boolean
+    scrollWithDocument?: boolean
+    wideContent?: boolean
+  } = {}
 ) {
   render(
     <SectionPageLayout {...props}>
@@ -32,6 +36,15 @@ describe('console page scrolling', () => {
       screen.getByRole('navigation', { name: 'Pagination' })
     )
     expect(content.closest('.overflow-auto, .overflow-hidden')).toBeNull()
+    expect(documentPage).not.toHaveClass('console-page-wide')
+  })
+
+  it('adds the wide page modifier class when wideContent is enabled', () => {
+    renderPage({ wideContent: true })
+    const documentPage = screen
+      .getByRole('heading')
+      .closest('.console-document-page')
+    expect(documentPage).toHaveClass('console-page-wide')
   })
 
   it('keeps the fixed table viewport separate from its pagination', () => {

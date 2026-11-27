@@ -338,6 +338,7 @@ export type BillingSettings = {
   'payment_setting.daily_topup_exempt_users': string
   'payment_setting.daily_topup_contact_wechat_qrcode': string
   'payment_setting.daily_topup_contact_note': string
+  'payment_setting.order_expire_minutes': number
   'payment_setting.compliance_confirmed': boolean
   'payment_setting.compliance_terms_version': string
   'payment_setting.compliance_confirmed_at': number

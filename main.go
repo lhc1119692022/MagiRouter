@@ -172,6 +172,9 @@ func main() {
 	// Subscription quota reset task (daily/weekly/monthly/custom)
 	service.StartSubscriptionQuotaResetTask()
 
+	// Pending payment order expiration task
+	service.StartOrderExpireTask()
+
 	// Asynchronous capture of rejected request plugin violations for screening
 	if err := service.StartViolationAuditRecorder(); err != nil {
 		common.SysError(common.LogText("failed to start violation audit recorder: %s", err.Error()))

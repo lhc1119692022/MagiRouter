@@ -77,6 +77,7 @@ const defaultBillingSettings: BillingSettings = {
   'payment_setting.daily_topup_exempt_users': '[]',
   'payment_setting.daily_topup_contact_wechat_qrcode': '',
   'payment_setting.daily_topup_contact_note': '',
+  'payment_setting.order_expire_minutes': 20,
   'payment_setting.compliance_confirmed': false,
   'payment_setting.compliance_terms_version': '',
   'payment_setting.compliance_confirmed_at': 0,

@@ -158,6 +158,8 @@ const BILLING_SECTIONS = [
             settings['payment_setting.daily_topup_contact_wechat_qrcode'] ?? '',
           DailyTopUpContactNote:
             settings['payment_setting.daily_topup_contact_note'] ?? '',
+          OrderExpireMinutes:
+            settings['payment_setting.order_expire_minutes'] ?? 20,
           StripeApiSecret: settings.StripeApiSecret,
           StripeWebhookSecret: settings.StripeWebhookSecret,
           StripePriceId: settings.StripePriceId,

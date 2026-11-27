@@ -638,23 +638,25 @@ html[data-theme='dark'] .channel-status-pill[data-tone='error'] {
 
 .gm-probe-track {
   display: flex;
-  align-items: flex-end;
-  gap: 2.5px;
-  height: 28px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 3.5px;
+  height: 22px;
 }
 
 @media (max-width: 520px) {
   .gm-probe-track {
-    gap: 1.5px;
+    gap: 2px;
   }
 }
 
 .gm-probe-bar {
-  flex: 1;
+  flex: 1 1 0;
   min-width: 2px;
-  border-radius: 9999px;
+  max-width: 4.5px;
+  border-radius: 2px;
   background: #10b981;
-  height: 26px;
+  height: 22px;
   transition:
     transform 120ms ease,
     filter 120ms ease;
@@ -667,22 +669,22 @@ html[data-theme='dark'] .channel-status-pill[data-tone='error'] {
 
 .gm-probe-bar.is-good {
   background: #6ee7b7;
-  height: 22px;
 }
 
 .gm-probe-bar.is-warn {
   background: #f59e0b;
-  height: 16px;
 }
 
 .gm-probe-bar.is-err {
   background: #ef4444;
-  height: 8px;
 }
 
 .gm-probe-bar.is-idle {
-  background: color-mix(in srgb, var(--ink-muted) 22%, transparent);
-  height: 8px;
+  background: color-mix(in srgb, var(--ink-strong) 8%, transparent);
+}
+
+:is(.dark, html[data-theme='dark']) .gm-probe-bar.is-idle {
+  background: rgba(255, 255, 255, 0.11);
 }
 
 .gm-probe-axis {

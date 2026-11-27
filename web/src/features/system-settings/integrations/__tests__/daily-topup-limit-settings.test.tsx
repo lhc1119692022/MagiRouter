@@ -29,6 +29,7 @@ const defaults: PaymentValues = {
   DailyTopUpExemptUsers: '[]',
   DailyTopUpContactWeChatQRCode: '',
   DailyTopUpContactNote: '',
+  OrderExpireMinutes: 20,
   StripeApiSecret: '',
   StripeWebhookSecret: '',
   StripePriceId: '',
@@ -148,6 +149,12 @@ describe('PaymentSettingsSection daily top-up limit settings', () => {
 
     await user.type(whitelistInput, 'manual_vip{Enter}')
 
+    const expireInput = screen.getByLabelText(
+      'Order expiration timeout (minutes)'
+    )
+    expect(expireInput).toHaveValue(20)
+    fireEvent.change(expireInput, { target: { value: '30' } })
+
     await user.click(screen.getByRole('button', { name: 'Save all settings' }))
 
     await waitFor(() => {
@@ -166,6 +173,10 @@ describe('PaymentSettingsSection daily top-up limit settings', () => {
       expect(putSpy).toHaveBeenCalledWith('/api/option/', {
         key: 'payment_setting.daily_topup_contact_note',
         value: 'Scan WeChat to arrange large top-up',
+      })
+      expect(putSpy).toHaveBeenCalledWith('/api/option/', {
+        key: 'payment_setting.order_expire_minutes',
+        value: 30,
       })
     })
   })

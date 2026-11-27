@@ -1,9 +1,12 @@
 package operation_setting
 
 import (
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -52,4 +55,44 @@ func TestValidateDailyTopUpOption(t *testing.T) {
 
 	require.NoError(t, ValidateDailyTopUpOption(DailyTopUpContactNoteOptionKey, "Scan WeChat QR code for large top-ups"))
 	require.Error(t, ValidateDailyTopUpOption(DailyTopUpContactNoteOptionKey, strings.Repeat("a", MaxDailyTopUpContactNoteRunes+1)))
+}
+
+func TestOrderExpireMinutesSetting(t *testing.T) {
+	assert.Equal(t, 20, DefaultOrderExpireMinutes)
+	assert.Equal(t, 20, GetOrderExpireMinutes())
+	assert.Equal(t, 20*time.Minute, GetOrderExpireDuration())
+
+	require.NoError(t, ValidateOrderExpireOption(OrderExpireMinutesOptionKey, "0"))
+	require.NoError(t, ValidateOrderExpireOption(OrderExpireMinutesOptionKey, "20"))
+	require.NoError(t, ValidateOrderExpireOption(OrderExpireMinutesOptionKey, strconv.Itoa(MaxOrderExpireMinutes)))
+	require.Error(t, ValidateOrderExpireOption(OrderExpireMinutesOptionKey, "-1"))
+	require.Error(t, ValidateOrderExpireOption(OrderExpireMinutesOptionKey, strconv.Itoa(MaxOrderExpireMinutes+1)))
+	require.Error(t, ValidateOrderExpireOption(OrderExpireMinutesOptionKey, "20.5"))
+	require.Error(t, ValidateOrderExpireOption(OrderExpireMinutesOptionKey, "invalid"))
+	require.NoError(t, ValidateOrderExpireOption("unrelated.key", "invalid"))
+
+	ps := GetPaymentSetting()
+	oldMinutes := ps.OrderExpireMinutes
+	t.Cleanup(func() {
+		common.OptionMapRWMutex.Lock()
+		ps.OrderExpireMinutes = oldMinutes
+		common.OptionMapRWMutex.Unlock()
+	})
+
+	common.OptionMapRWMutex.Lock()
+	ps.OrderExpireMinutes = 0
+	common.OptionMapRWMutex.Unlock()
+	assert.Equal(t, 0, GetOrderExpireMinutes())
+	assert.Equal(t, time.Duration(0), GetOrderExpireDuration())
+
+	common.OptionMapRWMutex.Lock()
+	ps.OrderExpireMinutes = -5
+	common.OptionMapRWMutex.Unlock()
+	assert.Equal(t, 0, GetOrderExpireMinutes())
+
+	common.OptionMapRWMutex.Lock()
+	ps.OrderExpireMinutes = MaxOrderExpireMinutes + 10
+	common.OptionMapRWMutex.Unlock()
+	assert.Equal(t, MaxOrderExpireMinutes, GetOrderExpireMinutes())
+	assert.Equal(t, time.Duration(MaxOrderExpireMinutes)*time.Minute, GetOrderExpireDuration())
 }

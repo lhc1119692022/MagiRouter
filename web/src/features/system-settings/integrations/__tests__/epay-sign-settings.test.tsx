@@ -47,6 +47,7 @@ const defaults: PaymentValues = {
   DailyTopUpExemptUsers: '[]',
   DailyTopUpContactWeChatQRCode: '',
   DailyTopUpContactNote: '',
+  OrderExpireMinutes: 20,
   StripeApiSecret: '',
   StripeWebhookSecret: '',
   StripePriceId: '',

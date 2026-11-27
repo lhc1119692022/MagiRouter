@@ -97,7 +97,7 @@ export function AuditLogs() {
     }
   }, [queryClient, userId])
   return (
-    <SectionPageLayout>
+    <SectionPageLayout wideContent>
       <SectionPageLayout.Title>{t('Audit Logs')}</SectionPageLayout.Title>
       <SectionPageLayout.Subtitle>
         {effectiveScope === 'all'

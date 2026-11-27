@@ -6,6 +6,7 @@ const routes: Record<string, SidebarModuleRef> = {
   '/dashboard/overview': ['console', 'detail'],
   '/dashboard/models': ['console', 'boards'],
   '/dashboard/users': ['console', 'detail'],
+  '/site-overview': ['admin', 'site_overview'],
   '/pricing': ['console', 'model_square'],
   '/keys': ['console', 'token'],
   '/channel-status': ['console', 'channel_status'],

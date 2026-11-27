@@ -262,6 +262,9 @@ func validateOptionValue(key string, value string) error {
 	if err := operation_setting.ValidateDailyTopUpOption(key, value); err != nil {
 		return err
 	}
+	if err := operation_setting.ValidateOrderExpireOption(key, value); err != nil {
+		return err
+	}
 	if err := operation_setting.ValidateCheckinOption(key, value); err != nil {
 		return err
 	}

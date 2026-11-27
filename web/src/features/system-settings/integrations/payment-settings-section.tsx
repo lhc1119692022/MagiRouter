@@ -180,6 +180,7 @@ const paymentSchema = z.object({
       'WeChat QR code must be a valid HTTP(S) URL, site path, or PNG/JPEG/WebP/GIF image'
     ),
   DailyTopUpContactNote: z.string().max(500),
+  OrderExpireMinutes: z.coerce.number().int().min(0).max(43200),
   StripeApiSecret: z.string(),
   StripeWebhookSecret: z.string(),
   StripePriceId: z.string(),
@@ -474,6 +475,7 @@ export function PaymentSettingsSection({
       DailyTopUpContactWeChatQRCode:
         values.DailyTopUpContactWeChatQRCode.trim(),
       DailyTopUpContactNote: values.DailyTopUpContactNote.trim(),
+      OrderExpireMinutes: values.OrderExpireMinutes,
       StripeApiSecret: values.StripeApiSecret.trim(),
       StripeWebhookSecret: values.StripeWebhookSecret.trim(),
       StripePriceId: values.StripePriceId.trim(),
@@ -527,6 +529,7 @@ export function PaymentSettingsSection({
       DailyTopUpContactWeChatQRCode:
         initialRef.current.DailyTopUpContactWeChatQRCode.trim(),
       DailyTopUpContactNote: initialRef.current.DailyTopUpContactNote.trim(),
+      OrderExpireMinutes: initialRef.current.OrderExpireMinutes,
       StripeApiSecret: initialRef.current.StripeApiSecret.trim(),
       StripeWebhookSecret: initialRef.current.StripeWebhookSecret.trim(),
       StripePriceId: initialRef.current.StripePriceId.trim(),
@@ -674,6 +677,13 @@ export function PaymentSettingsSection({
       updates.push({
         key: 'payment_setting.daily_topup_contact_note',
         value: sanitized.DailyTopUpContactNote,
+      })
+    }
+
+    if (sanitized.OrderExpireMinutes !== initial.OrderExpireMinutes) {
+      updates.push({
+        key: 'payment_setting.order_expire_minutes',
+        value: sanitized.OrderExpireMinutes,
       })
     }
 
@@ -1016,7 +1026,7 @@ export function PaymentSettingsSection({
                   </p>
                 </div>
 
-                <div className='grid gap-6 md:grid-cols-2'>
+                <div className='grid gap-6 md:grid-cols-3'>
                   <FormField
                     control={form.control}
                     name='Price'
@@ -1059,6 +1069,33 @@ export function PaymentSettingsSection({
                         </FormControl>
                         <FormDescription>
                           {t('Smallest USD amount users can recharge (Epay)')}
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name='OrderExpireMinutes'
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          {t('Order expiration timeout (minutes)')}
+                        </FormLabel>
+                        <FormControl>
+                          <Input
+                            type='number'
+                            step='1'
+                            min={0}
+                            max={43200}
+                            {...safeNumberFieldProps(field)}
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          {t(
+                            'Automatically mark unpaid pending orders as expired after this many minutes. Set to 0 to disable automatic expiration.'
+                          )}
                         </FormDescription>
                         <FormMessage />
                       </FormItem>

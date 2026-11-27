@@ -15,14 +15,15 @@ import (
 const DailyTopUpPendingHoldDuration = 15 * time.Minute
 
 type DailyTopUpLimitStatus struct {
-	Enabled         bool    `json:"enabled"`
-	Limit           float64 `json:"limit"`
-	Used            float64 `json:"used"`
-	Pending         float64 `json:"pending"`
-	Remaining       float64 `json:"remaining"`
-	Exempt          bool    `json:"exempt"`
-	ContactWeChatQR string  `json:"contact_wechat_qrcode"`
-	ContactNote     string  `json:"contact_note"`
+	Enabled            bool    `json:"enabled"`
+	Limit              float64 `json:"limit"`
+	Used               float64 `json:"used"`
+	Pending            float64 `json:"pending"`
+	Remaining          float64 `json:"remaining"`
+	Exempt             bool    `json:"exempt"`
+	PendingHoldMinutes int     `json:"pending_hold_minutes,omitempty"`
+	ContactWeChatQR    string  `json:"contact_wechat_qrcode"`
+	ContactNote        string  `json:"contact_note"`
 }
 
 type DailyTopUpLimitExceededError struct {
@@ -43,9 +44,16 @@ func lockUserDailyTopUp(userId int) func() {
 	return mu.Unlock
 }
 
+func dailyTopUpPendingHoldDuration() time.Duration {
+	if expireDuration := operation_setting.GetOrderExpireDuration(); expireDuration > 0 {
+		return expireDuration
+	}
+	return DailyTopUpPendingHoldDuration
+}
+
 func dailyTopUpWindow(now time.Time) (dayStart int64, pendingCutoff int64) {
 	dayStart = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).Unix()
-	pendingCutoff = max(dayStart, now.Unix()-int64(DailyTopUpPendingHoldDuration.Seconds()))
+	pendingCutoff = max(dayStart, now.Unix()-int64(dailyTopUpPendingHoldDuration().Seconds()))
 	return dayStart, pendingCutoff
 }
 
@@ -108,14 +116,15 @@ func buildDailyTopUpLimitStatus(cfg operation_setting.DailyTopUpLimitConfig, exe
 		}
 	}
 	return DailyTopUpLimitStatus{
-		Enabled:         enabled,
-		Limit:           limitDec.InexactFloat64(),
-		Used:            used.Round(2).InexactFloat64(),
-		Pending:         pending.Round(2).InexactFloat64(),
-		Remaining:       remainingDec.Round(2).InexactFloat64(),
-		Exempt:          exempt,
-		ContactWeChatQR: cfg.ContactWeChatQR,
-		ContactNote:     cfg.ContactNote,
+		Enabled:            enabled,
+		Limit:              limitDec.InexactFloat64(),
+		Used:               used.Round(2).InexactFloat64(),
+		Pending:            pending.Round(2).InexactFloat64(),
+		Remaining:          remainingDec.Round(2).InexactFloat64(),
+		Exempt:             exempt,
+		PendingHoldMinutes: int(dailyTopUpPendingHoldDuration() / time.Minute),
+		ContactWeChatQR:    cfg.ContactWeChatQR,
+		ContactNote:        cfg.ContactNote,
 	}
 }
 

@@ -89,8 +89,11 @@ export function DailyLimitContactDialog(props: DailyLimitContactDialogProps) {
             {dailyLimit.pending > 0 ? (
               <p className='text-muted-foreground text-xs'>
                 {t(
-                  'Includes {{amount}} temporarily held by unpaid orders within the last 15 minutes.',
-                  { amount: formatCurrency(dailyLimit.pending) }
+                  'Includes {{amount}} temporarily held by unpaid orders within the last {{minutes}} minutes.',
+                  {
+                    amount: formatCurrency(dailyLimit.pending),
+                    minutes: dailyLimit.pending_hold_minutes || 20,
+                  }
                 )}
               </p>
             ) : null}

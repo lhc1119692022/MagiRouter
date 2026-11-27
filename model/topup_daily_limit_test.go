@@ -55,7 +55,7 @@ func TestCreateTopUpWithDailyLimit_EnforcesMoneyCapAndStatusFiltering(t *testing
 
 	now := time.Date(2026, 11, 25, 14, 0, 0, 0, time.Local)
 	yesterday := now.Add(-24 * time.Hour)
-	stalePending := now.Add(-DailyTopUpPendingHoldDuration - time.Minute)
+	stalePending := now.Add(-dailyTopUpPendingHoldDuration() - time.Minute)
 	recentPending := now.Add(-5 * time.Minute)
 
 	seedOrders := []TopUp{
@@ -64,7 +64,7 @@ func TestCreateTopUpWithDailyLimit_EnforcesMoneyCapAndStatusFiltering(t *testing
 		// Failed / expired orders today should not count.
 		{UserId: user.Id, Amount: 50, Money: 150, TradeNo: "dl-failed", PaymentMethod: "alipay", PaymentProvider: PaymentProviderEpay, CreateTime: now.Unix(), Status: common.TopUpStatusFailed},
 		{UserId: user.Id, Amount: 50, Money: 150, TradeNo: "dl-expired", PaymentMethod: "alipay", PaymentProvider: PaymentProviderEpay, CreateTime: now.Unix(), Status: common.TopUpStatusExpired},
-		// Stale pending order older than 15m should not block today's limit.
+		// Stale pending order past the configured order expiration window should not block today's limit.
 		{UserId: user.Id, Amount: 50, Money: 150, TradeNo: "dl-stale-pending", PaymentMethod: "alipay", PaymentProvider: PaymentProviderEpay, CreateTime: stalePending.Unix(), Status: common.TopUpStatusPending},
 		// Subscription mirror row (Amount == 0) should not count as top-up.
 		{UserId: user.Id, Amount: 0, Money: 199, TradeNo: "dl-sub-mirror", PaymentMethod: "alipay", PaymentProvider: PaymentProviderEpay, CreateTime: now.Unix(), CompleteTime: now.Unix(), Status: common.TopUpStatusSuccess},

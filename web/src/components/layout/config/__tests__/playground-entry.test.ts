@@ -51,3 +51,27 @@ it('places Profit Analysis and Media Traffic inside the admin management sidebar
     expect(urls).toContain('/upstream-balance')
   }
 })
+
+it('places Site Overview directly below Console in the top shell group only for administrators', () => {
+  for (const nonAdminRole of [0, 1]) {
+    const shellItems =
+      buildConsoleNavigation(language.t, nonAdminRole).find(
+        (group) => group.id === 'shell'
+      )?.items ?? []
+    expect(shellItems.some((item) => item.url === '/site-overview')).toBe(false)
+  }
+
+  for (const adminRole of [10, 100]) {
+    const shellItems =
+      buildConsoleNavigation(language.t, adminRole).find(
+        (group) => group.id === 'shell'
+      )?.items ?? []
+    expect(shellItems.map((item) => item.sidebarKey)).toEqual([
+      'home-console',
+      'site-overview',
+      'models',
+    ])
+    expect(shellItems[1]?.url).toBe('/site-overview')
+    expect(shellItems[1]?.title).toBe('Site Overview')
+  }
+})

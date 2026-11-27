@@ -51,6 +51,9 @@ export function buildConsoleNavigation(
           url: signedIn ? '/dashboard/overview' : '/',
           icon: signedIn ? sidebarIcons.console : sidebarIcons.home,
         },
+        ...(admin
+          ? [entry('site-overview', t('Site Overview'), '/site-overview')]
+          : []),
         entry('models', t('Model Square'), '/pricing'),
       ],
     },

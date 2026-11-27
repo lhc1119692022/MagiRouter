@@ -88,6 +88,11 @@ describe('RechargeFormCard daily top-up limit UI', () => {
     expect(
       screen.getByText('Daily online top-up remaining: 50 / 200')
     ).toBeInTheDocument()
+    expect(
+      screen.getByRole('note', { name: 'Daily top-up limit notice' })
+    ).toHaveTextContent(
+      'During our early launch stage, online top-ups are capped daily to protect payment channel stability and cashflow security. For larger top-ups or whitelist access, please contact us via WeChat.'
+    )
     expect(screen.getByText('Daily Top-up Limit Exceeded')).toBeInTheDocument()
     expect(screen.getByAltText('WeChat Contact QR Code')).toHaveAttribute(
       'src',
@@ -126,7 +131,37 @@ describe('RechargeFormCard daily top-up limit UI', () => {
       screen.getByText('Daily top-up limit: Exempt (whitelisted)')
     ).toBeInTheDocument()
     expect(
+      screen.queryByRole('note', { name: 'Daily top-up limit notice' })
+    ).not.toBeInTheDocument()
+    expect(
       screen.queryByText('Daily Top-up Limit Exceeded')
+    ).not.toBeInTheDocument()
+  })
+
+  it('hides daily top-up limit notice when daily limit is disabled', () => {
+    render(
+      <RechargeFormCard
+        topupInfo={baseTopupInfo}
+        presetAmounts={[{ value: 100 }]}
+        selectedPreset={100}
+        onSelectPreset={vi.fn()}
+        topupAmount={100}
+        onTopupAmountChange={vi.fn()}
+        paymentAmount={100}
+        calculating={false}
+        onPaymentMethodSelect={vi.fn()}
+        paymentLoading={null}
+        redemptionCode=''
+        onRedemptionCodeChange={vi.fn()}
+        onRedeem={vi.fn()}
+        redeeming={false}
+        dailyLimit={{ ...activeDailyLimit, enabled: false }}
+        onOpenDailyLimitContact={vi.fn()}
+      />
+    )
+
+    expect(
+      screen.queryByRole('note', { name: 'Daily top-up limit notice' })
     ).not.toBeInTheDocument()
   })
 })

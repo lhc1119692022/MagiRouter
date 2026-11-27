@@ -126,6 +126,7 @@ export interface DailyTopUpLimitStatus {
   pending: number
   remaining: number
   exempt: boolean
+  pending_hold_minutes?: number
   contact_wechat_qrcode: string
   contact_note: string
 }

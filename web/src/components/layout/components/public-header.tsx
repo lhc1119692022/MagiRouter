@@ -605,6 +605,7 @@ export function PublicHeader(props: PublicHeaderProps) {
                   displayName={displayName}
                   secondaryText={secondaryText}
                   formattedBalance={formattedBalance}
+                  showSiteOverview={(user?.role ?? 0) >= ROLE.ADMIN}
                   showSystemSettings={user?.role === ROLE.SUPER_ADMIN}
                   onSignOut={() => setSignOutOpen(true)}
                 />

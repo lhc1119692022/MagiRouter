@@ -4,9 +4,11 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
@@ -170,6 +172,43 @@ func UpdatePendingTopUpStatus(tradeNo string, expectedPaymentProvider string, ta
 	})
 }
 
+func pendingOrderExpireCutoff(now time.Time) (int64, bool) {
+	timeout := operation_setting.GetOrderExpireDuration()
+	if timeout <= 0 {
+		return 0, false
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	return now.Unix() - int64(timeout.Seconds()), true
+}
+
+func isTopUpOverdue(topUp *TopUp, now time.Time) bool {
+	if topUp == nil || topUp.Status != common.TopUpStatusPending || topUp.CreateTime <= 0 {
+		return false
+	}
+	cutoff, enabled := pendingOrderExpireCutoff(now)
+	return enabled && topUp.CreateTime <= cutoff
+}
+
+func expireOverduePendingTopUpsTx(tx *gorm.DB, userId int, now time.Time) (int64, error) {
+	cutoff, enabled := pendingOrderExpireCutoff(now)
+	if !enabled {
+		return 0, nil
+	}
+	query := tx.Model(&TopUp{}).Where("status = ? AND create_time > 0 AND create_time <= ?", common.TopUpStatusPending, cutoff)
+	if userId > 0 {
+		query = query.Where("user_id = ?", userId)
+	}
+	res := query.Update("status", common.TopUpStatusExpired)
+	return res.RowsAffected, res.Error
+}
+
+// ExpireOverduePendingTopUps marks unpaid pending top-up orders past the configured timeout as expired.
+func ExpireOverduePendingTopUps(now time.Time) (int64, error) {
+	return expireOverduePendingTopUpsTx(DB, 0, now)
+}
+
 // RechargeEpay 原子完成易支付订单：订单行锁、状态校验、成功更新与用户额度增加
 // 在同一个事务内完成，因此同一订单的并发/重复回调（包括多实例部署下）最多充值一次。
 // alreadyDone=true 表示订单此前已完成，本次为幂等重复回调。
@@ -300,6 +339,10 @@ func topUpQueryCutoff() int64 {
 }
 
 func GetUserTopUps(userId int, pageInfo *common.PageInfo) (topups []*TopUp, total int64, err error) {
+	if _, err = expireOverduePendingTopUpsTx(DB, userId, time.Now()); err != nil {
+		return nil, 0, err
+	}
+
 	// Start transaction
 	tx := DB.Begin()
 	if tx.Error != nil {
@@ -337,6 +380,10 @@ func GetUserTopUps(userId int, pageInfo *common.PageInfo) (topups []*TopUp, tota
 
 // GetAllTopUps 获取全平台的充值记录（管理员使用，不限制时间窗口）
 func GetAllTopUps(pageInfo *common.PageInfo) (topups []*TopUp, total int64, err error) {
+	if _, err = expireOverduePendingTopUpsTx(DB, 0, time.Now()); err != nil {
+		return nil, 0, err
+	}
+
 	tx := DB.Begin()
 	if tx.Error != nil {
 		return nil, 0, tx.Error
@@ -370,6 +417,11 @@ const searchTopUpCountHardLimit = 10000
 
 // SearchUserTopUps 按订单号搜索某用户的充值记录
 func SearchUserTopUps(userId int, keyword string, pageInfo *common.PageInfo) (topups []*TopUp, total int64, err error) {
+	if _, err = expireOverduePendingTopUpsTx(DB, userId, time.Now()); err != nil {
+		common.SysError(common.LogText("failed to expire overdue topups: %s", err.Error()))
+		return nil, 0, common.NewMessage("Failed to search top-up records")
+	}
+
 	tx := DB.Begin()
 	if tx.Error != nil {
 		return nil, 0, tx.Error
@@ -410,6 +462,11 @@ func SearchUserTopUps(userId int, keyword string, pageInfo *common.PageInfo) (to
 
 // SearchAllTopUps 按订单号搜索全平台充值记录（管理员使用，不限制时间窗口）
 func SearchAllTopUps(keyword string, pageInfo *common.PageInfo) (topups []*TopUp, total int64, err error) {
+	if _, err = expireOverduePendingTopUpsTx(DB, 0, time.Now()); err != nil {
+		common.SysError(common.LogText("failed to expire overdue topups: %s", err.Error()))
+		return nil, 0, common.NewMessage("Failed to search top-up records")
+	}
+
 	tx := DB.Begin()
 	if tx.Error != nil {
 		return nil, 0, tx.Error
@@ -463,6 +520,7 @@ func ManualCompleteTopUp(tradeNo string, callerIp string) error {
 	var quotaToAdd int
 	var payMoney float64
 	var paymentMethod string
+	var expired bool
 
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		topUp := &TopUp{}
@@ -478,6 +536,14 @@ func ManualCompleteTopUp(tradeNo string, callerIp string) error {
 
 		if topUp.Status != common.TopUpStatusPending {
 			return common.NewMessage("Order is not pending payment and cannot be completed")
+		}
+		if isTopUpOverdue(topUp, time.Now()) {
+			topUp.Status = common.TopUpStatusExpired
+			if err := tx.Save(topUp).Error; err != nil {
+				return err
+			}
+			expired = true
+			return nil
 		}
 
 		// 计算应充值额度：
@@ -517,6 +583,9 @@ func ManualCompleteTopUp(tradeNo string, callerIp string) error {
 
 	if err != nil {
 		return err
+	}
+	if expired {
+		return common.NewMessage("Order has expired and cannot be completed")
 	}
 
 	// 事务外记录日志，避免阻塞

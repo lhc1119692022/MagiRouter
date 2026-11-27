@@ -19,6 +19,12 @@
   padding-inline: clamp(36px, 4.2vw, 72px);
 }
 
+.console-page-wide .console-page-inner,
+.console-document-page.console-page-wide .console-page-inner {
+  max-width: none;
+  padding-inline: clamp(16px, 1.5vw, 24px);
+}
+
 @media (min-width: 1024px) {
   .console-shell:has(.console-document-page)
     .console-workspace-shell
@@ -51,5 +57,16 @@
   }
   .console-document-page .console-page-inner {
     padding-inline: 24px;
+  }
+  .console-page-wide .console-page-inner,
+  .console-document-page.console-page-wide .console-page-inner {
+    padding-inline: 16px;
+  }
+}
+
+@media (max-width: 640px) {
+  .console-page-wide .console-page-inner,
+  .console-document-page.console-page-wide .console-page-inner {
+    padding-inline: 12px;
   }
 }

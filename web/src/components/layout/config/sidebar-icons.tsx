@@ -41,6 +41,15 @@ export const sidebarIcons = {
     </>
   ),
   console: glyph(<path d='M22 12h-4l-3 9L9 3l-3 9H2' />),
+  'site-overview': glyph(
+    <>
+      <circle cx='12' cy='12' r='9' />
+      <path d='M3.6 9h16.8' />
+      <path d='M3.6 15h16.8' />
+      <path d='M12 3a14.5 14.5 0 0 0 0 18' />
+      <path d='M12 3a14.5 14.5 0 0 1 0 18' />
+    </>
+  ),
   models: glyph(
     <>
       <rect x='3' y='3' width='7' height='7' rx='1.5' />

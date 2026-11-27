@@ -423,6 +423,7 @@ func SetApiRouter(router *gin.Engine) {
 
 		dataRoute := apiRouter.Group("/data")
 		dataRoute.GET("/perf-metrics/summary", middleware.DisableCache(), middleware.AdminAuth(), controller.GetDashboardPerfMetricsSummary)
+		dataRoute.GET("/site-overview", middleware.DisableCache(), middleware.AdminAuth(), controller.GetSiteOverview)
 		dataRoute.GET("/profit", middleware.DisableCache(), middleware.AdminAuth(), controller.GetProfitAnalytics)
 		dataRoute.GET("/profit/deleted-user-records", middleware.DisableCache(), middleware.RootAuth(), controller.GetProfitDeletedUserRecords)
 		dataRoute.POST("/profit/deleted-user-records/cleanup", middleware.DisableCache(), middleware.RootAuth(), controller.CleanupProfitDeletedUserRecords)

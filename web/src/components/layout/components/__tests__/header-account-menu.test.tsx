@@ -166,24 +166,44 @@ test('sign out still opens the confirmation dialog and can be cancelled without 
   expect(useAuthStore.getState().auth.user?.username).toBe('menu-fixture')
 })
 
-test('root administrators see a quick System Settings shortcut in the account menu while regular users do not', async () => {
+test('administrators see Site Overview and root administrators also see System Settings in the account menu', async () => {
   const regular = await renderHeader(1_000_000, 1)
   await regular.user.click(regular.trigger)
   const regularMenu = within(
     await screen.findByRole('menu', { name: 'Account menu' })
   )
   expect(
+    regularMenu.queryByRole('menuitem', { name: 'Site Overview' })
+  ).toBeNull()
+  expect(
     regularMenu.queryByRole('menuitem', { name: 'System Settings' })
   ).toBeNull()
   await regular.user.keyboard('{Escape}')
 
   cleanup()
-  const admin = await renderHeader(1_000_000, 100)
+  const admin = await renderHeader(1_000_000, 10)
   await admin.user.click(admin.trigger)
   const adminMenu = within(
     await screen.findByRole('menu', { name: 'Account menu' })
   )
   expect(
-    adminMenu.getByRole('menuitem', { name: 'System Settings' })
+    adminMenu.getByRole('menuitem', { name: 'Site Overview' })
+  ).toHaveAttribute('href', '/site-overview')
+  expect(
+    adminMenu.queryByRole('menuitem', { name: 'System Settings' })
+  ).toBeNull()
+  await admin.user.keyboard('{Escape}')
+
+  cleanup()
+  const root = await renderHeader(1_000_000, 100)
+  await root.user.click(root.trigger)
+  const rootMenu = within(
+    await screen.findByRole('menu', { name: 'Account menu' })
+  )
+  expect(
+    rootMenu.getByRole('menuitem', { name: 'Site Overview' })
+  ).toHaveAttribute('href', '/site-overview')
+  expect(
+    rootMenu.getByRole('menuitem', { name: 'System Settings' })
   ).toHaveAttribute('href', '/system-settings/site')
 })

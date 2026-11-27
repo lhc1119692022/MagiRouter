@@ -18,6 +18,7 @@ interface HeaderAccountMenuProps {
   displayName: string
   secondaryText?: string
   formattedBalance: string
+  showSiteOverview?: boolean
   showSystemSettings?: boolean
   onSignOut: () => void
 }
@@ -103,6 +104,31 @@ export function HeaderAccountMenu(props: HeaderAccountMenuProps) {
               {t('Console')}
             </span>
           </DropdownMenuItem>
+          {props.showSiteOverview && (
+            <DropdownMenuItem
+              className='nav-menu-item'
+              render={<Link to='/site-overview' />}
+            >
+              <span className='nav-menu-item-left'>
+                <svg
+                  viewBox='0 0 24 24'
+                  fill='none'
+                  stroke='currentColor'
+                  strokeWidth='1.8'
+                  strokeLinecap='round'
+                  strokeLinejoin='round'
+                  aria-hidden='true'
+                >
+                  <circle cx='12' cy='12' r='9' />
+                  <path d='M3.6 9h16.8' />
+                  <path d='M3.6 15h16.8' />
+                  <path d='M12 3a14.5 14.5 0 0 0 0 18' />
+                  <path d='M12 3a14.5 14.5 0 0 1 0 18' />
+                </svg>
+                {t('Site Overview')}
+              </span>
+            </DropdownMenuItem>
+          )}
           {props.showSystemSettings && (
             <DropdownMenuItem
               className='nav-menu-item'

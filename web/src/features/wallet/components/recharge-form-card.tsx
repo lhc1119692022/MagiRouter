@@ -20,6 +20,7 @@ import {
   AlertCircle,
   ExternalLink,
   FileText,
+  Info,
   Loader2,
   QrCode,
   Receipt,
@@ -226,45 +227,62 @@ export function RechargeFormCard({
       {hasAnyTopup ? (
         <div className='space-y-4 sm:space-y-6'>
           {showDailyLimit && dailyLimit && (
-            <div className='bg-muted/30 flex flex-col gap-2 rounded-lg border px-3.5 py-2.5 sm:flex-row sm:items-center sm:justify-between'>
+            <div className='bg-muted/30 rounded-lg border px-3.5 py-2.5'>
               {dailyLimit.exempt ? (
                 <div className='flex items-center gap-2 text-xs font-medium text-green-600 dark:text-green-400'>
                   <ShieldCheck className='h-4 w-4 shrink-0' />
                   <span>{t('Daily top-up limit: Exempt (whitelisted)')}</span>
                 </div>
               ) : (
-                <>
-                  <div className='space-y-0.5'>
-                    <div className='text-xs font-medium'>
-                      {t(
-                        'Daily online top-up remaining: {{remaining}} / {{limit}}',
-                        {
-                          remaining: formatCurrency(dailyLimit.remaining),
-                          limit: formatCurrency(dailyLimit.limit),
-                        }
+                <div className='space-y-2.5'>
+                  <div className='flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between'>
+                    <div className='space-y-0.5'>
+                      <div className='text-xs font-medium'>
+                        {t(
+                          'Daily online top-up remaining: {{remaining}} / {{limit}}',
+                          {
+                            remaining: formatCurrency(dailyLimit.remaining),
+                            limit: formatCurrency(dailyLimit.limit),
+                          }
+                        )}
+                      </div>
+                      {dailyLimit.pending > 0 && (
+                        <div className='text-muted-foreground text-[11px]'>
+                          {t('Pending orders hold: {{pending}}', {
+                            pending: formatCurrency(dailyLimit.pending),
+                          })}
+                        </div>
                       )}
                     </div>
-                    {dailyLimit.pending > 0 && (
-                      <div className='text-muted-foreground text-[11px]'>
-                        {t('Pending orders hold: {{pending}}', {
-                          pending: formatCurrency(dailyLimit.pending),
-                        })}
-                      </div>
+                    {onOpenDailyLimitContact && (
+                      <Button
+                        type='button'
+                        variant='outline'
+                        size='sm'
+                        onClick={() => onOpenDailyLimitContact()}
+                        className='h-7 shrink-0 gap-1.5 self-start text-xs sm:self-auto'
+                      >
+                        <QrCode className='h-3.5 w-3.5' />
+                        {t('Large top-up? WeChat QR')}
+                      </Button>
                     )}
                   </div>
-                  {onOpenDailyLimitContact && (
-                    <Button
-                      type='button'
-                      variant='outline'
-                      size='sm'
-                      onClick={() => onOpenDailyLimitContact()}
-                      className='h-7 shrink-0 gap-1.5 self-start text-xs sm:self-auto'
-                    >
-                      <QrCode className='h-3.5 w-3.5' />
-                      {t('Large top-up? WeChat QR')}
-                    </Button>
-                  )}
-                </>
+                  <div
+                    role='note'
+                    aria-label={t('Daily top-up limit notice')}
+                    className='border-border/60 text-muted-foreground flex items-start gap-1.5 border-t pt-2 text-xs leading-relaxed'
+                  >
+                    <Info
+                      className='mt-0.5 h-3.5 w-3.5 shrink-0'
+                      aria-hidden='true'
+                    />
+                    <span className='min-w-0'>
+                      {t(
+                        'During our early launch stage, online top-ups are capped daily to protect payment channel stability and cashflow security. For larger top-ups or whitelist access, please contact us via WeChat.'
+                      )}
+                    </span>
+                  </div>
+                </div>
               )}
             </div>
           )}

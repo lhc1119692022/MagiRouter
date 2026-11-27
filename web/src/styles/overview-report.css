@@ -150,10 +150,19 @@ html[data-theme='dark'] .overview-report-chart .overview-report-tooltip {
   text-align: center;
   font-size: 13px;
 }
+.overview-report-distributions {
+  --overview-dist-body-max-h: 320px;
+}
+.overview-report-distributions .dash-panel {
+  min-height: 0;
+}
 .overview-report-distributions .dash-panel-head {
   flex-wrap: wrap;
+  flex-shrink: 0;
 }
 .overview-report-distributions .dash-pie-layout {
+  flex: 1;
+  min-height: 0;
   display: flex;
   align-items: center;
   gap: 18px;
@@ -209,17 +218,24 @@ html[data-theme='dark'] .overview-report-chart .overview-report-tooltip {
 .overview-report-distributions .dash-pie-legend {
   flex: 1;
   min-width: 0;
+  max-height: var(--overview-dist-body-max-h);
+  overflow-y: auto;
+  overflow-x: hidden;
   display: flex;
   flex-direction: column;
   gap: 7px;
+  padding: 4px 6px 4px 4px;
+  margin: -4px -6px -4px -4px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ring-strong) transparent;
 }
 .overview-report-distributions .dash-pie-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  flex-shrink: 0;
   padding: 4px 6px;
-  margin: 0 -6px;
   border-radius: 8px;
   font-size: 12px;
   line-height: normal;
@@ -261,9 +277,31 @@ html[data-theme='dark'] .overview-report-chart .overview-report-tooltip {
 }
 .overview-report-distributions .dash-vendor-list {
   gap: 11px;
+  list-style: none;
+  max-height: var(--overview-dist-body-max-h);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 2px 6px 2px 0;
+  margin: -2px -6px -2px 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ring-strong) transparent;
+}
+.overview-report-distributions .dash-pie-legend::-webkit-scrollbar,
+.overview-report-distributions .dash-vendor-list::-webkit-scrollbar {
+  width: 5px;
+}
+.overview-report-distributions .dash-pie-legend::-webkit-scrollbar-thumb,
+.overview-report-distributions .dash-vendor-list::-webkit-scrollbar-thumb {
+  background: var(--ring-strong);
+  border-radius: 9999px;
+}
+.overview-report-distributions .dash-pie-legend::-webkit-scrollbar-track,
+.overview-report-distributions .dash-vendor-list::-webkit-scrollbar-track {
+  background: transparent;
 }
 .overview-report-distributions .dash-vendor-row {
   gap: 5px;
+  flex-shrink: 0;
 }
 .overview-report-distributions .dash-vendor-top,
 .overview-report-distributions .dash-vendor-sub {
@@ -305,6 +343,10 @@ html[data-theme='dark'] .overview-report-chart .overview-report-tooltip {
   .overview-report-distributions .dash-pie-layout {
     flex-direction: column;
     align-items: stretch;
+  }
+  .overview-report-distributions .dash-pie-legend {
+    flex: none;
+    max-height: 240px;
   }
 }
 @media (prefers-reduced-motion: reduce) {

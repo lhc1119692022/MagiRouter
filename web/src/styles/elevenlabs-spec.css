@@ -5928,11 +5928,9 @@ html[data-theme='dark'] .dash-gs-status.is-warn {
 }
 .gm-probe-bar.is-good {
   background: #6ee7b7;
-  height: 22px;
 }
 .gm-probe-bar.is-warn {
   background: #f59e0b;
-  height: 16px;
 }
 .channel-status-pill {
   display: inline-flex;

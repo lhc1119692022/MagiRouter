@@ -172,7 +172,7 @@ function UsageLogsContent() {
 
   return (
     <>
-      <SectionPageLayout>
+      <SectionPageLayout wideContent>
         <SectionPageLayout.Title>
           {t(pageMeta.titleKey)}
         </SectionPageLayout.Title>

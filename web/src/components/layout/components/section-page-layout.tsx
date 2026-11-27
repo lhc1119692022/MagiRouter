@@ -6,6 +6,8 @@ import {
   type ReactNode,
 } from 'react'
 
+import { cn } from '@/lib/utils'
+
 import { Main } from './main'
 import { PageFooterProvider } from './page-footer'
 
@@ -41,6 +43,7 @@ export type SectionPageLayoutProps = {
   fixedContent?: boolean
   scrollWithDocument?: boolean
   stackActionsOnMobile?: boolean
+  wideContent?: boolean
 }
 
 export function SectionPageLayout(props: SectionPageLayoutProps) {
@@ -82,11 +85,10 @@ export function SectionPageLayout(props: SectionPageLayoutProps) {
   return (
     <PageFooterProvider container={footerContainer}>
       <Main
-        className={
-          scrollWithDocument
-            ? 'console-document-page overflow-visible'
-            : undefined
-        }
+        className={cn(
+          scrollWithDocument && 'console-document-page overflow-visible',
+          props.wideContent && 'console-page-wide'
+        )}
       >
         <div
           className={

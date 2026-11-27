@@ -16,8 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Check, Copy, Eye, EyeOff, Loader2 } from 'lucide-react'
-import { useState, useCallback } from 'react'
+import { Check, Copy, Loader2 } from 'lucide-react'
+import { useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { BadgeCell } from '@/components/data-table'
@@ -47,22 +47,11 @@ export function ApiKeyCell({ apiKey }: { apiKey: ApiKey }) {
     copiedKeyId,
     markKeyCopied,
   } = useApiKeys()
-  const [popoverOpen, setPopoverOpen] = useState(false)
 
   const isLoading = !!loadingKeys[apiKey.id]
   const resolvedFullKey = resolvedKeys[apiKey.id]
   const isCopied = copiedKeyId === apiKey.id
   const maskedKey = `sk-${apiKey.key}`
-
-  const handlePopoverOpen = useCallback(
-    (open: boolean) => {
-      setPopoverOpen(open)
-      if (open && !resolvedFullKey) {
-        resolveRealKey(apiKey.id)
-      }
-    },
-    [resolvedFullKey, resolveRealKey, apiKey.id]
-  )
 
   const handleCopy = useCallback(async () => {
     const realKey = resolvedFullKey || (await resolveRealKey(apiKey.id))
@@ -83,68 +72,25 @@ export function ApiKeyCell({ apiKey }: { apiKey: ApiKey }) {
   }
 
   return (
-    <div className='key-secret-cell'>
-      <Popover open={popoverOpen} onOpenChange={handlePopoverOpen}>
-        <PopoverTrigger
-          render={
-            <button
-              type='button'
-              className='key-secret-trigger'
-              title={t('Reveal full API key')}
-            />
-          }
-        >
-          <span className='key-secret-code'>{maskedKey}</span>
-          <span className='key-icon-btn' aria-hidden='true'>
-            {popoverOpen ? (
-              <EyeOff className='size-3.5' />
-            ) : (
-              <Eye className='size-3.5' />
-            )}
-          </span>
-        </PopoverTrigger>
-        <PopoverContent
-          className='w-auto max-w-[min(90vw,28rem)]'
-          align='start'
-        >
-          <div className='space-y-2'>
-            <p className='text-muted-foreground text-xs'>{t('Full API Key')}</p>
-            {isLoading ? (
-              <div className='flex items-center gap-2 py-2'>
-                <Loader2 className='size-3.5 animate-spin' />
-                <span className='text-muted-foreground text-xs'>
-                  {t('Loading...')}
-                </span>
-              </div>
-            ) : (
-              <input
-                readOnly
-                value={resolvedFullKey || maskedKey}
-                autoFocus
-                onFocus={(e) => e.target.select()}
-                className='bg-muted/50 w-full min-w-[280px] rounded-md border px-3 py-2 font-mono text-xs outline-none'
-              />
-            )}
-          </div>
-        </PopoverContent>
-      </Popover>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <button
-              type='button'
-              className='key-icon-btn'
-              onClick={handleCopy}
-              disabled={isLoading}
-              aria-label={copyTooltip}
-            />
-          }
-        >
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type='button'
+            className='key-secret-cell'
+            onClick={handleCopy}
+            disabled={isLoading}
+            aria-label={copyTooltip}
+          />
+        }
+      >
+        <span className='key-secret-code'>{maskedKey}</span>
+        <span className='key-icon-btn' aria-hidden='true'>
           {copyIcon}
-        </TooltipTrigger>
-        <TooltipContent>{copyTooltip}</TooltipContent>
-      </Tooltip>
-    </div>
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>{copyTooltip}</TooltipContent>
+    </Tooltip>
   )
 }
 

@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/Calcium-Ion/go-epay/epay"
@@ -32,6 +33,9 @@ type PaymentSetting struct {
 	DailyTopUpExemptUsers         []string `json:"daily_topup_exempt_users"`
 	DailyTopUpContactWeChatQRCode string   `json:"daily_topup_contact_wechat_qrcode"`
 	DailyTopUpContactNote         string   `json:"daily_topup_contact_note"`
+
+	// OrderExpireMinutes controls after how many minutes unpaid pending orders expire automatically (0 disables).
+	OrderExpireMinutes int `json:"order_expire_minutes"`
 }
 
 const CurrentComplianceTermsVersion = "v1"
@@ -48,12 +52,15 @@ const (
 	DailyTopUpExemptUsersOptionKey         = "payment_setting.daily_topup_exempt_users"
 	DailyTopUpContactWeChatQRCodeOptionKey = "payment_setting.daily_topup_contact_wechat_qrcode"
 	DailyTopUpContactNoteOptionKey         = "payment_setting.daily_topup_contact_note"
+	OrderExpireMinutesOptionKey            = "payment_setting.order_expire_minutes"
 
 	DefaultDailyTopUpLimit        = 200.0
 	MaxDailyTopUpLimit            = 1_000_000_000.0
 	MaxDailyTopUpExemptUsers      = 1000
 	MaxDailyTopUpQRCodeLength     = 750 * 1024
 	MaxDailyTopUpContactNoteRunes = 500
+	DefaultOrderExpireMinutes     = 20
+	MaxOrderExpireMinutes         = 30 * 24 * 60
 )
 
 type DailyTopUpLimitConfig struct {
@@ -71,6 +78,7 @@ var paymentSetting = PaymentSetting{
 	EpaySignType:          EpaySignTypeMD5,
 	DailyTopUpLimit:       DefaultDailyTopUpLimit,
 	DailyTopUpExemptUsers: []string{},
+	OrderExpireMinutes:    DefaultOrderExpireMinutes,
 }
 
 func init() {
@@ -109,6 +117,36 @@ func GetDailyTopUpLimitConfig() DailyTopUpLimitConfig {
 		ContactWeChatQR: strings.TrimSpace(paymentSetting.DailyTopUpContactWeChatQRCode),
 		ContactNote:     strings.TrimSpace(paymentSetting.DailyTopUpContactNote),
 	}
+}
+
+func GetOrderExpireMinutes() int {
+	common.OptionMapRWMutex.RLock()
+	defer common.OptionMapRWMutex.RUnlock()
+
+	minutes := paymentSetting.OrderExpireMinutes
+	if minutes < 0 {
+		return 0
+	}
+	return min(minutes, MaxOrderExpireMinutes)
+}
+
+func GetOrderExpireDuration() time.Duration {
+	minutes := GetOrderExpireMinutes()
+	if minutes <= 0 {
+		return 0
+	}
+	return time.Duration(minutes) * time.Minute
+}
+
+func ValidateOrderExpireOption(key, value string) error {
+	if key != OrderExpireMinutesOptionKey {
+		return nil
+	}
+	parsed, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil || parsed < 0 || parsed > MaxOrderExpireMinutes {
+		return common.NewMessage("Order expiration timeout must be an integer between 0 and {{max}} minutes", map[string]any{"max": MaxOrderExpireMinutes})
+	}
+	return nil
 }
 
 func (cfg DailyTopUpLimitConfig) IsUserExempt(userId int, username string, email string) bool {

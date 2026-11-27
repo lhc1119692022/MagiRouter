@@ -1,4 +1,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRoute,
+  createRouter,
+  RouterProvider,
+} from '@tanstack/react-router'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -7,6 +14,7 @@ import { api } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth-store'
 
 import { AuditLogs } from '../../audit'
+import { UsageLogs } from '../../index'
 import {
   mapTaskStatusToTone,
   parseTaskProgressPercent,
@@ -128,6 +136,9 @@ describe('audit logs editorial layout', () => {
     )
 
     expect(await screen.findByText('Matching Events')).toBeVisible()
+    expect(
+      screen.getByRole('heading', { name: 'Audit Logs' }).closest('main')
+    ).toHaveClass('console-page-wide')
     expect(await screen.findByText('127.0.0.1')).toBeVisible()
     expect(screen.getByText('Access Token Calls')).toBeVisible()
     expect(screen.getByText('Security & Login')).toBeVisible()
@@ -149,4 +160,62 @@ describe('audit logs editorial layout', () => {
       })
     )
   })
+})
+
+describe('usage logs wide layout', () => {
+  it.each([
+    { path: '/usage-logs/common', heading: 'LLM Logs' },
+    { path: '/usage-logs/task', heading: 'Task Logs' },
+  ])(
+    'renders $heading in the wide console layout',
+    async ({ path, heading }) => {
+      useAuthStore.getState().auth.setUser({
+        id: 7,
+        username: 'member',
+        role: 1,
+      })
+      vi.spyOn(api, 'get').mockImplementation(async (url: string) => {
+        if (url.includes('/api/log/self/stat')) {
+          return { data: { success: true, data: { quota: 0, rpm: 0, tpm: 0 } } }
+        }
+        if (url.includes('/api/subscription/self')) {
+          return {
+            data: {
+              success: true,
+              data: { subscriptions: [], all_subscriptions: [] },
+            },
+          }
+        }
+        return { data: { success: true, data: { items: [], total: 0 } } }
+      })
+
+      const root = createRootRoute()
+      const auth = createRoute({
+        getParentRoute: () => root,
+        id: '_authenticated',
+      })
+      const logs = createRoute({
+        getParentRoute: () => auth,
+        path: '/usage-logs/$section',
+        component: UsageLogs,
+        validateSearch: (search: Record<string, unknown>) => search,
+      })
+      const router = createRouter({
+        routeTree: root.addChildren([auth.addChildren([logs])]),
+        history: createMemoryHistory({ initialEntries: [path] }),
+      })
+      const client = new QueryClient({
+        defaultOptions: { queries: { retry: false } },
+      })
+
+      render(
+        <QueryClientProvider client={client}>
+          <RouterProvider router={router} />
+        </QueryClientProvider>
+      )
+
+      const title = await screen.findByRole('heading', { name: heading })
+      expect(title.closest('main')).toHaveClass('console-page-wide')
+    }
+  )
 })

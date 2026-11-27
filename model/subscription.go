@@ -722,6 +722,24 @@ func ExpireSubscriptionOrder(tradeNo string, expectedPaymentProvider string) err
 	})
 }
 
+// ExpireOverduePendingSubscriptionOrders marks unpaid pending subscription orders past the configured timeout as expired.
+func ExpireOverduePendingSubscriptionOrders(now time.Time) (int64, error) {
+	cutoff, enabled := pendingOrderExpireCutoff(now)
+	if !enabled {
+		return 0, nil
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	res := DB.Model(&SubscriptionOrder{}).
+		Where("status = ? AND create_time > 0 AND create_time <= ?", common.TopUpStatusPending, cutoff).
+		Updates(map[string]any{
+			"status":        common.TopUpStatusExpired,
+			"complete_time": now.Unix(),
+		})
+	return res.RowsAffected, res.Error
+}
+
 // Admin bind (no payment). Creates a UserSubscription from a plan.
 func AdminBindSubscription(userId int, planId int, sourceNote string) (*common.Message, error) {
 	if userId <= 0 || planId <= 0 {

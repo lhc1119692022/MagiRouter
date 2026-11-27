@@ -66,7 +66,7 @@ export function extractDailyTopUpLimitExceeded(
     return null
   }
   const limitObj = rawLimit as Record<string, unknown>
-  return {
+  const parsed: DailyTopUpLimitStatus = {
     enabled: Boolean(limitObj.enabled),
     limit: Number(limitObj.limit) || 0,
     used: Number(limitObj.used) || 0,
@@ -80,6 +80,11 @@ export function extractDailyTopUpLimitExceeded(
     contact_note:
       typeof limitObj.contact_note === 'string' ? limitObj.contact_note : '',
   }
+  const pendingHoldMinutes = Number(limitObj.pending_hold_minutes)
+  if (Number.isFinite(pendingHoldMinutes) && pendingHoldMinutes > 0) {
+    parsed.pending_hold_minutes = pendingHoldMinutes
+  }
+  return parsed
 }
 
 export function isAmountOverDailyLimit(
