@@ -463,6 +463,7 @@ func (s *responsesWSSession) runCall(c *gin.Context, state *responsesWSCallState
 				return nil
 			}
 			info.SetFirstResponseTime()
+			info.SetLastResponseTime()
 			var event struct {
 				dto.ResponsesStreamResponse
 				StreamID string `json:"stream_id"`

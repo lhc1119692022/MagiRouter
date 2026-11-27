@@ -21,8 +21,9 @@ import { useTranslation } from 'react-i18next'
 
 import {
   formatLatency,
-  formatThroughput,
+  formatThroughputDisplay,
   getSuccessRateDotClass,
+  shouldAllowCriticalSuccessRate,
 } from '@/features/performance-metrics/lib/format'
 import type { SuccessRatePoint } from '@/features/performance-metrics/types'
 import { cn } from '@/lib/utils'
@@ -33,6 +34,7 @@ export type ModelPerfBadgeData = {
   avg_latency_ms: number
   success_rate: number
   avg_tps: number
+  tps_insufficient?: boolean
   recent_success_series?: SuccessRatePoint[]
 }
 
@@ -47,10 +49,13 @@ export const ModelPerfBadge = memo(function ModelPerfBadge(
 ) {
   const { t } = useTranslation()
   const latencyText = formatLatency(props.perf?.avg_latency_ms ?? 0)
-  const throughputText = formatThroughput(props.perf?.avg_tps ?? 0).replace(
-    ' t/s',
-    't/s'
-  )
+  const isThroughputInsufficient =
+    Boolean(props.perf?.tps_insufficient) &&
+    !(props.perf && props.perf.avg_tps > 0)
+  const throughputText = formatThroughputDisplay(props.perf?.avg_tps ?? 0, {
+    insufficient: props.perf?.tps_insufficient,
+    insufficientLabel: t('Insufficient samples'),
+  }).replace(' t/s', 't/s')
   const successRate = props.perf?.success_rate
   const hasSuccessRate =
     successRate != null &&
@@ -70,6 +75,10 @@ export const ModelPerfBadge = memo(function ModelPerfBadge(
         .sort((a, b) => a.ts - b.ts)
         .slice(-STATUS_SAMPLE_LIMIT),
     [props.perf?.recent_success_series]
+  )
+  const allowCritical = shouldAllowCriticalSuccessRate(
+    hasSuccessRate ? successRate : undefined,
+    statusSamples.map((sample) => sample.success_rate)
   )
   const statusLabel =
     statusSamples.length > 0
@@ -110,7 +119,9 @@ export const ModelPerfBadge = memo(function ModelPerfBadge(
                   aria-hidden
                   className={cn(
                     'h-full w-[3px] shrink-0 rounded-xs',
-                    getSuccessRateDotClass(sample.success_rate)
+                    getSuccessRateDotClass(sample.success_rate, {
+                      allowCritical,
+                    })
                   )}
                 />
               ))
@@ -131,7 +142,14 @@ export const ModelPerfBadge = memo(function ModelPerfBadge(
           <dt className='text-muted-foreground text-[11px] leading-4'>
             {t('Throughput short')}
           </dt>
-          <dd className='mt-1 font-mono whitespace-nowrap'>
+          <dd
+            className={cn(
+              'mt-1 whitespace-nowrap',
+              isThroughputInsufficient
+                ? 'text-muted-foreground font-sans'
+                : 'font-mono'
+            )}
+          >
             {throughputText === '—' ? '—t/s' : throughputText}
           </dd>
         </div>

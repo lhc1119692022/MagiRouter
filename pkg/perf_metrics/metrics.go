@@ -29,6 +29,17 @@ const MaxRecentModels = 50
 const recentSuccessSampleLimit = 24
 const recentSuccessHistoryHours = 7 * 24
 
+const (
+	// MinThroughputOutputTokens excludes tiny test/probe/greeting outputs whose
+	// framing overhead dominates decode time.
+	MinThroughputOutputTokens int64 = 64
+	// MinThroughputGenerationMs excludes sub-200ms burst frames from TPS math.
+	MinThroughputGenerationMs int64 = 200
+	// MinThroughputSamples is the minimum qualified sustained-generation sample
+	// count required before publishing an average throughput number.
+	MinThroughputSamples int64 = 5
+)
+
 func Init() {
 	go flushLoop()
 }
@@ -50,12 +61,18 @@ func RecordRelayResult(ctx context.Context, info *relaycommon.RelayInfo, apiErr 
 		ttftMs = info.FirstResponseTime.Sub(info.StartTime).Milliseconds()
 	}
 	latencyMs := now.Sub(info.StartTime).Milliseconds()
-	generationMs := latencyMs
-	if hasTtft {
-		generationMs = now.Sub(info.FirstResponseTime).Milliseconds()
-	}
-	if generationMs <= 0 {
-		generationMs = latencyMs
+	var outputTokens, generationMs int64
+	if outcome == OutcomeSuccess && info.IsStream && info.PerformanceOutputTokens >= MinThroughputOutputTokens {
+		var decodeMs int64
+		if info.StreamOutputChunks >= 2 && info.StreamLastTokenTime.After(info.StreamFirstTokenTime) {
+			decodeMs = info.StreamLastTokenTime.Sub(info.StreamFirstTokenTime).Milliseconds()
+		} else if info.StreamOutputChunks == 0 && hasTtft && info.LastResponseTime.After(info.FirstResponseTime) {
+			decodeMs = info.LastResponseTime.Sub(info.FirstResponseTime).Milliseconds()
+		}
+		if decodeMs >= MinThroughputGenerationMs {
+			outputTokens = info.PerformanceOutputTokens
+			generationMs = decodeMs
+		}
 	}
 	if outcome == OutcomeSuccess && info.HasChannelMeta() && info.ChannelId > 0 {
 		RecordChannelTraffic(info.ChannelId, now.Unix())
@@ -67,7 +84,7 @@ func RecordRelayResult(ctx context.Context, info *relaycommon.RelayInfo, apiErr 
 		TtftMs:       ttftMs,
 		HasTtft:      hasTtft,
 		Success:      outcome == OutcomeSuccess,
-		OutputTokens: info.PerformanceOutputTokens,
+		OutputTokens: outputTokens,
 		GenerationMs: generationMs,
 		PromptTokens: info.PerformancePromptTokens,
 		CachedTokens: info.PerformanceCachedTokens,
@@ -195,6 +212,7 @@ func Query(params QueryParams) (QueryResult, error) {
 			ttftCount:      row.TtftCount,
 			outputTokens:   row.OutputTokens,
 			generationMs:   row.GenerationMs,
+			tpsCount:       row.TpsCount,
 			promptTokens:   row.PromptTokens,
 			cachedTokens:   row.CachedTokens,
 		})
@@ -267,6 +285,7 @@ func QuerySummaryAll(hours int, groups []string, recentModels ...string) (Summar
 			totalLatencyMs: row.TotalLatencyMs,
 			outputTokens:   row.OutputTokens,
 			generationMs:   row.GenerationMs,
+			tpsCount:       row.TpsCount,
 			promptTokens:   row.PromptTokens,
 			cachedTokens:   row.CachedTokens,
 		}
@@ -333,19 +352,16 @@ func QuerySummaryAll(hours int, groups []string, recentModels ...string) (Summar
 		all.totalLatencyMs += total.totalLatencyMs
 		all.outputTokens += total.outputTokens
 		all.generationMs += total.generationMs
+		all.tpsCount += total.tpsCount
 		all.promptTokens += total.promptTokens
 		all.cachedTokens += total.cachedTokens
 		avgLatency := total.totalLatencyMs / total.requestCount
-		successRate := float64(total.successCount) / float64(total.requestCount) * 100
-		avgTps := 0.0
-		if total.generationMs > 0 {
-			avgTps = float64(total.outputTokens) / (float64(total.generationMs) / 1000.0)
-		}
 		models = append(models, ModelSummary{
 			ModelName:           name,
 			AvgLatencyMs:        avgLatency,
-			SuccessRate:         math.Round(successRate*100) / 100,
-			AvgTps:              math.Round(avgTps*100) / 100,
+			SuccessRate:         math.Round(successRate(total)*100) / 100,
+			AvgTps:              math.Round(avgTps(total)*100) / 100,
+			TpsInsufficient:     isThroughputInsufficient(total, name),
 			CacheHitRate:        cacheHitRate(total),
 			RecentSuccessSeries: recentSuccessSeries(modelBuckets[name]),
 			RequestCount:        total.requestCount,
@@ -356,9 +372,286 @@ func QuerySummaryAll(hours int, groups []string, recentModels ...string) (Summar
 	})
 
 	return SummaryAllResult{
-		Summary: summarize(all), WindowStart: startTs, WindowEnd: endTs,
+		Summary: summarize(all, ""), WindowStart: startTs, WindowEnd: endTs,
 		Models: models, RecentSuccessSeries: recentSeries,
 	}, nil
+}
+
+// QuerySummaryAllBestGroup summarizes each model using the visible group with
+// the highest availability in the window so a degraded route does not mask
+// healthy routes in the Model Square.
+func QuerySummaryAllBestGroup(hours int, groups []string, recentModels ...string) (SummaryAllResult, error) {
+	if len(recentModels) > MaxRecentModels {
+		return SummaryAllResult{}, common.NewMessage("Invalid parameters")
+	}
+	now := time.Now()
+	startTs, endTs := queryWindow(now, hours)
+	recentStartTs, _ := queryWindow(now, recentSuccessHistoryHours)
+	allowedGroups := allowedGroupSet(groups)
+	queryStartTs := startTs
+
+	recentGroupBuckets := make(map[string]map[string]map[int64]counters, len(recentModels))
+	for _, name := range recentModels {
+		if name == "" {
+			continue
+		}
+		if _, exists := recentGroupBuckets[name]; exists {
+			continue
+		}
+		recentGroupBuckets[name] = map[string]map[int64]counters{}
+		buckets, err := model.GetRecentPerfMetricSuccessGroupBuckets(name, recentStartTs, endTs, groups)
+		if err != nil {
+			return SummaryAllResult{}, err
+		}
+		for _, bucket := range buckets {
+			if bucket.Group == "" || bucket.RequestCount <= 0 {
+				continue
+			}
+			if _, ok := recentGroupBuckets[name][bucket.Group]; !ok {
+				recentGroupBuckets[name][bucket.Group] = map[int64]counters{}
+			}
+			mergeBucketCounter(recentGroupBuckets[name][bucket.Group], bucket.BucketTs, counters{
+				requestCount: bucket.RequestCount,
+				successCount: bucket.SuccessCount,
+			})
+		}
+	}
+
+	for _, byGroup := range recentGroupBuckets {
+		for _, buckets := range byGroup {
+			points := recentSuccessSeries(buckets)
+			if len(points) == 0 {
+				continue
+			}
+			trimmed := points[max(0, len(points)-recentSuccessSampleLimit):]
+			queryStartTs = min(queryStartTs, trimmed[0].Ts)
+		}
+	}
+
+	rows, err := model.GetPerfMetricsSummaryGroupBucketsAll(queryStartTs, endTs, groups)
+	if err != nil {
+		return SummaryAllResult{}, err
+	}
+
+	modelGroupBuckets := map[string]map[string]map[int64]counters{}
+	addGroupBucket := func(modelName, group string, bucketTs int64, value counters) {
+		if modelName == "" || group == "" || value.requestCount == 0 {
+			return
+		}
+		if _, ok := modelGroupBuckets[modelName]; !ok {
+			modelGroupBuckets[modelName] = map[string]map[int64]counters{}
+		}
+		if _, ok := modelGroupBuckets[modelName][group]; !ok {
+			modelGroupBuckets[modelName][group] = map[int64]counters{}
+		}
+		mergeBucketCounter(modelGroupBuckets[modelName][group], bucketTs, value)
+	}
+
+	for _, row := range rows {
+		addGroupBucket(row.ModelName, row.Group, row.BucketTs, counters{
+			requestCount:   row.RequestCount,
+			successCount:   row.SuccessCount,
+			totalLatencyMs: row.TotalLatencyMs,
+			outputTokens:   row.OutputTokens,
+			generationMs:   row.GenerationMs,
+			tpsCount:       row.TpsCount,
+			promptTokens:   row.PromptTokens,
+			cachedTokens:   row.CachedTokens,
+		})
+	}
+
+	hotBuckets.Range(func(key, value any) bool {
+		k := key.(bucketKey)
+		if k.bucketTs > endTs {
+			return true
+		}
+		if allowedGroups != nil {
+			if _, ok := allowedGroups[k.group]; !ok {
+				return true
+			}
+		}
+		snap := value.(*atomicBucket).snapshot()
+		if snap.requestCount == 0 {
+			return true
+		}
+		if byGroup, requested := recentGroupBuckets[k.model]; requested && k.bucketTs >= recentStartTs {
+			if _, ok := byGroup[k.group]; !ok {
+				byGroup[k.group] = map[int64]counters{}
+			}
+			mergeBucketCounter(byGroup[k.group], k.bucketTs, snap)
+		}
+		if k.bucketTs < queryStartTs {
+			return true
+		}
+		addGroupBucket(k.model, k.group, k.bucketTs, snap)
+		return true
+	})
+
+	recentGroupSeries := make(map[string]map[string][]SuccessRatePoint, len(recentGroupBuckets))
+	for name, byGroup := range recentGroupBuckets {
+		for group, buckets := range byGroup {
+			points := recentSuccessSeries(buckets)
+			if len(points) == 0 {
+				continue
+			}
+			if _, ok := recentGroupSeries[name]; !ok {
+				recentGroupSeries[name] = map[string][]SuccessRatePoint{}
+			}
+			recentGroupSeries[name][group] = points[max(0, len(points)-recentSuccessSampleLimit):]
+		}
+	}
+
+	all := counters{}
+	models := make([]ModelSummary, 0, len(modelGroupBuckets))
+	recentSeries := make(map[string][]SuccessRatePoint, len(recentGroupSeries))
+
+	for name, byGroup := range modelGroupBuckets {
+		var (
+			hasBest       bool
+			bestGroup     string
+			bestTotal     counters
+			bestSeries    []SuccessRatePoint
+			modelRequests int64
+		)
+
+		for group, buckets := range byGroup {
+			fromTs := startTs
+			if byModelRecent, ok := recentGroupSeries[name]; ok {
+				if points, hasPoints := byModelRecent[group]; hasPoints && len(points) > 0 {
+					fromTs = points[0].Ts
+				}
+			}
+			total := counters{}
+			filtered := make(map[int64]counters, len(buckets))
+			for bucketTs, value := range buckets {
+				if bucketTs < fromTs {
+					continue
+				}
+				filtered[bucketTs] = value
+				total = addCounters(total, value)
+			}
+			if total.requestCount == 0 {
+				continue
+			}
+			modelRequests += total.requestCount
+			all = addCounters(all, total)
+
+			series := recentSuccessSeries(filtered)
+			if !hasBest || isBetterAvailabilityGroup(group, total, len(series), bestGroup, bestTotal, len(bestSeries)) {
+				hasBest = true
+				bestGroup = group
+				bestTotal = total
+				bestSeries = series
+			}
+		}
+
+		if !hasBest {
+			continue
+		}
+
+		if _, requested := recentGroupBuckets[name]; requested && len(bestSeries) > 0 {
+			recentSeries[name] = bestSeries[max(0, len(bestSeries)-recentSuccessSampleLimit):]
+		}
+
+		models = append(models, ModelSummary{
+			ModelName:           name,
+			BestGroup:           bestGroup,
+			AvgLatencyMs:        avg(bestTotal.totalLatencyMs, bestTotal.requestCount),
+			SuccessRate:         math.Round(successRate(bestTotal)*100) / 100,
+			AvgTps:              math.Round(avgTps(bestTotal)*100) / 100,
+			TpsInsufficient:     isThroughputInsufficient(bestTotal, name),
+			CacheHitRate:        cacheHitRate(bestTotal),
+			RecentSuccessSeries: bestSeries,
+			RequestCount:        modelRequests,
+		})
+	}
+
+	for name, byGroup := range recentGroupSeries {
+		if _, already := recentSeries[name]; already {
+			continue
+		}
+		var (
+			hasBest    bool
+			bestGroup  string
+			bestTotal  counters
+			bestSeries []SuccessRatePoint
+		)
+		for group, points := range byGroup {
+			if len(points) == 0 {
+				continue
+			}
+			fromTs := points[0].Ts
+			total := counters{}
+			for ts, val := range recentGroupBuckets[name][group] {
+				if ts >= fromTs {
+					total = addCounters(total, val)
+				}
+			}
+			if total.requestCount == 0 {
+				continue
+			}
+			if !hasBest || isBetterAvailabilityGroup(group, total, len(points), bestGroup, bestTotal, len(bestSeries)) {
+				hasBest = true
+				bestGroup = group
+				bestTotal = total
+				bestSeries = points
+			}
+		}
+		if hasBest {
+			recentSeries[name] = bestSeries
+		}
+	}
+
+	sort.Slice(models, func(i, j int) bool {
+		if models[i].RequestCount != models[j].RequestCount {
+			return models[i].RequestCount > models[j].RequestCount
+		}
+		return models[i].ModelName < models[j].ModelName
+	})
+
+	return SummaryAllResult{
+		Summary:             summarize(all, ""),
+		WindowStart:         startTs,
+		WindowEnd:           endTs,
+		Models:              models,
+		RecentSuccessSeries: recentSeries,
+	}, nil
+}
+
+func isBetterAvailabilityGroup(
+	candidateGroup string,
+	candidate counters,
+	candidateHours int,
+	currentGroup string,
+	current counters,
+	currentHours int,
+) bool {
+	candidateRate := successRate(candidate)
+	currentRate := successRate(current)
+	const rateEpsilon = 1e-9
+	if candidateRate > currentRate+rateEpsilon {
+		return true
+	}
+	if currentRate > candidateRate+rateEpsilon {
+		return false
+	}
+	if candidateHours != currentHours {
+		return candidateHours > currentHours
+	}
+	if candidate.requestCount != current.requestCount {
+		return candidate.requestCount > current.requestCount
+	}
+	if candidate.tpsCount != current.tpsCount {
+		return candidate.tpsCount > current.tpsCount
+	}
+	return candidateGroup < currentGroup
+}
+
+func mergeBucketCounter(buckets map[int64]counters, bucketTs int64, value counters) {
+	if value.requestCount == 0 {
+		return
+	}
+	buckets[bucketTs] = addCounters(buckets[bucketTs], value)
 }
 
 func QueryModelGroupRequestCounts(hours int, allowedGroups []string) (map[string]map[string]int64, map[string]int64, error) {
@@ -421,6 +714,7 @@ func mergeModelTotals(totals map[string]counters, modelName string, value counte
 	current.ttftCount += value.ttftCount
 	current.outputTokens += value.outputTokens
 	current.generationMs += value.generationMs
+	current.tpsCount += value.tpsCount
 	current.promptTokens += value.promptTokens
 	current.cachedTokens += value.cachedTokens
 	totals[modelName] = current
@@ -441,6 +735,7 @@ func mergeModelBucket(modelBuckets map[string]map[int64]counters, modelName stri
 	current.ttftCount += value.ttftCount
 	current.outputTokens += value.outputTokens
 	current.generationMs += value.generationMs
+	current.tpsCount += value.tpsCount
 	current.promptTokens += value.promptTokens
 	current.cachedTokens += value.cachedTokens
 	modelBuckets[modelName][bucketTs] = current
@@ -512,6 +807,7 @@ func mergeCounters(merged map[bucketKey]counters, key bucketKey, value counters)
 	current.ttftCount += value.ttftCount
 	current.outputTokens += value.outputTokens
 	current.generationMs += value.generationMs
+	current.tpsCount += value.tpsCount
 	current.promptTokens += value.promptTokens
 	current.cachedTokens += value.cachedTokens
 	merged[key] = current
@@ -560,6 +856,7 @@ func buildQueryResult(modelName string, merged map[bucketKey]counters) QueryResu
 			total.ttftCount += value.ttftCount
 			total.outputTokens += value.outputTokens
 			total.generationMs += value.generationMs
+			total.tpsCount += value.tpsCount
 			total.promptTokens += value.promptTokens
 			total.cachedTokens += value.cachedTokens
 			series = append(series, bucketPoint(ts, value))
@@ -569,17 +866,19 @@ func buildQueryResult(modelName string, merged map[bucketKey]counters) QueryResu
 		all.totalLatencyMs += total.totalLatencyMs
 		all.outputTokens += total.outputTokens
 		all.generationMs += total.generationMs
+		all.tpsCount += total.tpsCount
 		all.promptTokens += total.promptTokens
 		all.cachedTokens += total.cachedTokens
 
 		results = append(results, GroupResult{
-			Group:        group,
-			AvgTtftMs:    avg(total.ttftSumMs, total.ttftCount),
-			AvgLatencyMs: avg(total.totalLatencyMs, total.requestCount),
-			SuccessRate:  successRate(total),
-			AvgTps:       avgTps(total),
-			CacheHitRate: cacheHitRate(total),
-			Series:       series,
+			Group:           group,
+			AvgTtftMs:       avg(total.ttftSumMs, total.ttftCount),
+			AvgLatencyMs:    avg(total.totalLatencyMs, total.requestCount),
+			SuccessRate:     successRate(total),
+			AvgTps:          avgTps(total),
+			TpsInsufficient: isThroughputInsufficient(total, modelName),
+			CacheHitRate:    cacheHitRate(total),
+			Series:          series,
 		})
 	}
 
@@ -594,7 +893,7 @@ func buildQueryResult(modelName string, merged map[bucketKey]counters) QueryResu
 	return QueryResult{
 		ModelName:    modelName,
 		SeriesSchema: seriesSchema,
-		Summary:      summarize(all),
+		Summary:      summarize(all, modelName),
 		Series:       modelSeries,
 		Groups:       results,
 	}
@@ -602,15 +901,16 @@ func buildQueryResult(modelName string, merged map[bucketKey]counters) QueryResu
 
 // summarize returns nil when nothing was sampled, so clients can show
 // "no data" instead of a fabricated 0% success rate.
-func summarize(total counters) *Summary {
+func summarize(total counters, modelName string) *Summary {
 	if total.requestCount <= 0 {
 		return nil
 	}
 	return &Summary{
-		AvgLatencyMs: avg(total.totalLatencyMs, total.requestCount),
-		SuccessRate:  math.Round(successRate(total)*100) / 100,
-		AvgTps:       math.Round(avgTps(total)*100) / 100,
-		CacheHitRate: cacheHitRate(total),
+		AvgLatencyMs:    avg(total.totalLatencyMs, total.requestCount),
+		SuccessRate:     math.Round(successRate(total)*100) / 100,
+		AvgTps:          math.Round(avgTps(total)*100) / 100,
+		TpsInsufficient: isThroughputInsufficient(total, modelName),
+		CacheHitRate:    cacheHitRate(total),
 	}
 }
 
@@ -639,11 +939,28 @@ func successRate(value counters) float64 {
 	return float64(value.successCount) / float64(value.requestCount) * 100
 }
 
+func hasSufficientThroughputSamples(value counters) bool {
+	return value.tpsCount >= MinThroughputSamples && value.outputTokens > 0 && value.generationMs > 0
+}
+
 func avgTps(value counters) float64 {
-	if value.outputTokens <= 0 || value.generationMs <= 0 {
+	if !hasSufficientThroughputSamples(value) {
 		return 0
 	}
 	return float64(value.outputTokens) / (float64(value.generationMs) / 1000)
+}
+
+func isThroughputInsufficient(value counters, modelName string) bool {
+	if value.requestCount <= 0 || hasSufficientThroughputSamples(value) {
+		return false
+	}
+	if value.tpsCount > 0 {
+		return true
+	}
+	if modelName == "" {
+		return true
+	}
+	return ClassifyModelKind(modelName) == ModelKindText
 }
 
 func cacheHitRate(value counters) *float64 {
@@ -678,6 +995,7 @@ func recordRedis(key bucketKey, sample Sample) {
 	if sample.OutputTokens > 0 && sample.GenerationMs > 0 {
 		pipe.HIncrBy(ctx, redisKey, "out", sample.OutputTokens)
 		pipe.HIncrBy(ctx, redisKey, "gen_ms", sample.GenerationMs)
+		pipe.HIncrBy(ctx, redisKey, "tps_n", 1)
 	}
 	if sample.PromptTokens > 0 {
 		cached := min(max(sample.CachedTokens, 0), sample.PromptTokens)

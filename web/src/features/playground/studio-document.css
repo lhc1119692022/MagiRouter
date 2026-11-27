@@ -1078,9 +1078,12 @@ html[data-theme='dark'] .pg-compare-table tr[aria-current] .pg-compare-dot,
   background: #10b981;
 }
 .pg-compare-status-badge.is-degraded .pg-compare-status-dot {
-  background: #f59e0b;
+  background: #6ee7b7;
 }
 .pg-compare-status-badge.is-unstable .pg-compare-status-dot {
+  background: #f59e0b;
+}
+.pg-compare-status-badge.is-unavailable .pg-compare-status-dot {
   background: #ef4444;
 }
 .pg-compare-status-meta {

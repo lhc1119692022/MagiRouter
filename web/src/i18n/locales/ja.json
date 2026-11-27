@@ -9485,6 +9485,17 @@
     "Download all": "すべてダウンロード",
     "{{count}} lines": "{{count}} 行",
     "Download {{filename}}": "{{filename}} をダウンロード",
-    "Manufacturer order (Name: Z to A)": "プロバイダー順（名称降順）"
+    "Manufacturer order (Name: Z to A)": "プロバイダー順（名称降順）",
+    "Best group": "最適グループ",
+    "Insufficient samples": "サンプル不足",
+    "Created {{count}}": "{{count}} 件作成済み",
+    "Batch Enable": "一括有効化",
+    "Batch Disable": "一括無効化",
+    "Batch Delete": "一括削除",
+    "Enabled {{count}} API key(s)": "{{count}} 件の API キーを有効にしました",
+    "Disabled {{count}} API key(s)": "{{count}} 件の API キーを無効にしました",
+    "{{count}} key(s) selected": "{{count}} 件のキーを選択中",
+    "Reveal full API key": "完全な API キーを表示",
+    "Priority {{rank}}": "優先度 {{rank}}"
   }
 }

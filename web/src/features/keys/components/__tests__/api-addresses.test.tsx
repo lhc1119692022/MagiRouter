@@ -40,6 +40,8 @@ afterEach(() => {
   cleanup()
   client.clear()
   localStorage.clear()
+  vi.restoreAllMocks()
+  vi.unstubAllGlobals()
 })
 
 function renderAddresses(status: StatusData) {
@@ -54,7 +56,11 @@ function renderAddresses(status: StatusData) {
   )
 }
 
-it('renders configured addresses expanded in a horizontal row without a popover trigger and copies only the chosen URL', async () => {
+it('renders compact single-line endpoint chips without an outer label, marks the default line, copies, and tests latency', async () => {
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValue(new Response(null, { status: 204 }))
+  vi.stubGlobal('fetch', fetchMock)
   const user = userEvent.setup()
   const writeText = vi.spyOn(navigator.clipboard, 'writeText')
   renderAddresses({
@@ -80,19 +86,23 @@ it('renders configured addresses expanded in a horizontal row without a popover 
   expect(screen.getByRole('button', { name: 'Create API Key' })).toBeVisible()
 
   const region = screen.getByRole('region', { name: 'API Addresses' })
+  expect(within(region).queryByText('API Addresses')).not.toBeInTheDocument()
   const list = within(region).getByRole('list')
   expect(list).toHaveClass('flex-row')
   const rows = within(list).getAllByRole('listitem')
   expect(rows).toHaveLength(2)
+  expect(rows[0]).toHaveClass('w-fit')
+  expect(rows[0]).not.toHaveClass('flex-1')
   expect(rows[0]).toHaveTextContent('Global')
-  expect(rows[0]).toHaveTextContent('Worldwide access')
+  expect(within(rows[0]).getByText('Default')).toBeVisible()
   expect(within(rows[0]).getByText('https://api.example.com/v1')).toBeVisible()
   expect(rows[1]).toHaveTextContent('Asia')
-  expect(rows[1]).toHaveTextContent('Regional access')
+  expect(within(rows[1]).queryByText('Default')).not.toBeInTheDocument()
   expect(
     within(rows[1]).getByText('https://asia.example.com/gateway/v1/')
   ).toBeVisible()
   expect(writeText).not.toHaveBeenCalled()
+  expect(fetchMock).not.toHaveBeenCalled()
 
   await user.click(
     within(rows[1]).getByRole('button', {
@@ -108,6 +118,62 @@ it('renders configured addresses expanded in a horizontal row without a popover 
       name: 'Copy API URL: https://api.example.com/v1',
     })
   ).toBeVisible()
+
+  await user.click(
+    within(rows[0]).getByRole('button', {
+      name: 'Test latency: https://api.example.com/v1',
+    })
+  )
+  expect(fetchMock).toHaveBeenCalledExactlyOnceWith(
+    'https://api.example.com/v1',
+    expect.objectContaining({
+      method: 'HEAD',
+      credentials: 'omit',
+      referrerPolicy: 'no-referrer',
+      redirect: 'error',
+      cache: 'no-store',
+    })
+  )
+  expect(await within(rows[0]).findByText(/\d+ms/)).toBeVisible()
+})
+
+it('marks the endpoint matching server_address as default and shows failed status on probe error', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockRejectedValue(new TypeError('CORS unavailable'))
+  )
+  const user = userEvent.setup()
+  renderAddresses({
+    server_address: 'https://asia.example.com/gateway/v1',
+    api_info_enabled: true,
+    api_info: [
+      {
+        route: 'Global',
+        description: 'Worldwide access',
+        url: 'https://api.example.com/v1',
+        color: 'blue',
+      },
+      {
+        route: 'Asia',
+        description: 'Regional access',
+        url: 'https://asia.example.com/gateway/v1/',
+        color: 'green',
+      },
+    ],
+  })
+
+  const rows = within(
+    screen.getByRole('region', { name: 'API Addresses' })
+  ).getAllByRole('listitem')
+  expect(within(rows[0]).queryByText('Default')).not.toBeInTheDocument()
+  expect(within(rows[1]).getByText('Default')).toBeVisible()
+
+  await user.click(
+    within(rows[1]).getByRole('button', {
+      name: 'Test latency: https://asia.example.com/gateway/v1/',
+    })
+  )
+  expect(await within(rows[1]).findByText('Failed')).toBeVisible()
 })
 
 it.each([

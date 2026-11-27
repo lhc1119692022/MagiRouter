@@ -92,6 +92,12 @@ type RelayInfo struct {
 	StartTime         time.Time
 	FirstResponseTime time.Time
 	isFirstResponse   bool
+	LastResponseTime  time.Time
+	// StreamFirstTokenTime and StreamLastTokenTime bound the pure output-token
+	// decode span for streaming responses, excluding framing and post-stream billing.
+	StreamFirstTokenTime time.Time
+	StreamLastTokenTime  time.Time
+	StreamOutputChunks   int
 	//SendLastReasoningResponse bool
 	IsStream               bool
 	IsGeminiBatchEmbedding bool
@@ -1024,6 +1030,32 @@ func (info *RelayInfo) SetFirstResponseTime() {
 		info.FirstResponseTime = time.Now()
 		info.isFirstResponse = false
 	}
+}
+
+func (info *RelayInfo) SetLastResponseTime() {
+	info.LastResponseTime = time.Now()
+}
+
+func (info *RelayInfo) ObserveStreamOutputToken() {
+	if info == nil {
+		return
+	}
+	now := time.Now()
+	if info.StreamFirstTokenTime.IsZero() {
+		info.StreamFirstTokenTime = now
+	}
+	info.StreamLastTokenTime = now
+	info.StreamOutputChunks++
+}
+
+func (info *RelayInfo) ResetStreamOutputTiming() {
+	if info == nil {
+		return
+	}
+	info.LastResponseTime = time.Time{}
+	info.StreamFirstTokenTime = time.Time{}
+	info.StreamLastTokenTime = time.Time{}
+	info.StreamOutputChunks = 0
 }
 
 func (info *RelayInfo) HasSendResponse() bool {

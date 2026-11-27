@@ -22,6 +22,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { PerformanceOverview } from '@/features/dashboard/components/models/performance-overview'
 import { PerformanceHealthPanel } from '@/features/dashboard/components/overview/performance-health-panel'
+import {
+  getSuccessRateLevel,
+  shouldAllowCriticalSuccessRate,
+} from '@/features/performance-metrics/lib/format'
 import { ModelDetailsPerformance } from '@/features/pricing/components/model-details-performance'
 import { UptimeSparkline } from '@/features/pricing/components/model-details-uptime-sparkline'
 import { api } from '@/lib/api'
@@ -202,5 +206,21 @@ describe('server performance summaries', () => {
     )
     expect(screen.getAllByText('—')).toHaveLength(3)
     expect(screen.queryByText('0.00%')).not.toBeInTheDocument()
+  })
+
+  it('grades availability across 95%, 80%, 30%, and below-30% thresholds', () => {
+    expect(getSuccessRateLevel(100)).toBe('excellent')
+    expect(getSuccessRateLevel(95)).toBe('excellent')
+    expect(getSuccessRateLevel(94.99)).toBe('good')
+    expect(getSuccessRateLevel(80)).toBe('good')
+    expect(getSuccessRateLevel(79.99)).toBe('warning')
+    expect(getSuccessRateLevel(30)).toBe('warning')
+    expect(getSuccessRateLevel(29.99)).toBe('critical')
+    expect(getSuccessRateLevel(0)).toBe('critical')
+    expect(getSuccessRateLevel(0, { allowCritical: false })).toBe('warning')
+    expect(shouldAllowCriticalSuccessRate(30, [0])).toBe(false)
+    expect(shouldAllowCriticalSuccessRate(29.99, [100])).toBe(true)
+    expect(shouldAllowCriticalSuccessRate(undefined, [30, 0])).toBe(false)
+    expect(shouldAllowCriticalSuccessRate(undefined, [29.9, 0])).toBe(true)
   })
 })

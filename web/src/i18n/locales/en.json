@@ -9503,6 +9503,17 @@
     "Download all": "Download all",
     "{{count}} lines": "{{count}} lines",
     "Download {{filename}}": "Download {{filename}}",
-    "Manufacturer order (Name: Z to A)": "Manufacturer order (Name: Z to A)"
+    "Manufacturer order (Name: Z to A)": "Manufacturer order (Name: Z to A)",
+    "Best group": "Best group",
+    "Insufficient samples": "Insufficient samples",
+    "Created {{count}}": "Created {{count}}",
+    "Batch Enable": "Batch Enable",
+    "Batch Disable": "Batch Disable",
+    "Batch Delete": "Batch Delete",
+    "Enabled {{count}} API key(s)": "Enabled {{count}} API key(s)",
+    "Disabled {{count}} API key(s)": "Disabled {{count}} API key(s)",
+    "{{count}} key(s) selected": "{{count}} key(s) selected",
+    "Reveal full API key": "Reveal full API key",
+    "Priority {{rank}}": "Priority {{rank}}"
   }
 }

@@ -10,14 +10,16 @@ import (
 )
 
 type MonitorSetting struct {
-	AutoTestChannelEnabled   bool    `json:"auto_test_channel_enabled"`
-	AutoTestChannelMinutes   float64 `json:"auto_test_channel_minutes"`
-	ChannelTestMode          string  `json:"channel_test_mode"`
-	ChannelTestConcurrency   int     `json:"channel_test_concurrency"`
-	ChannelTestModelStrategy string  `json:"channel_test_model_strategy"`
-	ChannelTestSamplePercent int     `json:"channel_test_sample_percent"`
-	ChannelTestExcludeModels string  `json:"channel_test_exclude_models"`
-	ChannelTestIdleMinutes   int     `json:"channel_test_idle_minutes"`
+	AutoTestChannelEnabled             bool    `json:"auto_test_channel_enabled"`
+	AutoTestChannelMinutes             float64 `json:"auto_test_channel_minutes"`
+	ChannelTestMode                    string  `json:"channel_test_mode"`
+	ChannelTestConcurrency             int     `json:"channel_test_concurrency"`
+	ChannelTestModelStrategy           string  `json:"channel_test_model_strategy"`
+	ChannelTestSamplePercent           int     `json:"channel_test_sample_percent"`
+	ChannelTestExcludeModels           string  `json:"channel_test_exclude_models"`
+	ChannelTestIdleMinutes             int     `json:"channel_test_idle_minutes"`
+	ConsecutiveFailureDisableThreshold int     `json:"consecutive_failure_disable_threshold"`
+	RecoveryBackoffMaxMinutes          int     `json:"recovery_backoff_max_minutes"`
 }
 
 const (
@@ -39,18 +41,28 @@ const (
 	DefaultChannelTestIdleMinutes = 30
 	MinChannelTestIdleMinutes     = 0
 	MaxChannelTestIdleMinutes     = 1440
+
+	DefaultConsecutiveFailureDisableThreshold = 3
+	MinConsecutiveFailureDisableThreshold     = 0
+	MaxConsecutiveFailureDisableThreshold     = 50
+
+	DefaultRecoveryBackoffMaxMinutes = 240
+	MinRecoveryBackoffMaxMinutes     = 0
+	MaxRecoveryBackoffMaxMinutes     = 1440
 )
 
 // 默认配置
 var monitorSetting = MonitorSetting{
-	AutoTestChannelEnabled:   false,
-	AutoTestChannelMinutes:   10,
-	ChannelTestMode:          ChannelTestModeScheduledAll,
-	ChannelTestConcurrency:   DefaultChannelTestConcurrency,
-	ChannelTestModelStrategy: ChannelTestModelStrategyFixed,
-	ChannelTestSamplePercent: DefaultChannelTestSamplePercent,
-	ChannelTestExcludeModels: "",
-	ChannelTestIdleMinutes:   DefaultChannelTestIdleMinutes,
+	AutoTestChannelEnabled:             false,
+	AutoTestChannelMinutes:             10,
+	ChannelTestMode:                    ChannelTestModeScheduledAll,
+	ChannelTestConcurrency:             DefaultChannelTestConcurrency,
+	ChannelTestModelStrategy:           ChannelTestModelStrategyFixed,
+	ChannelTestSamplePercent:           DefaultChannelTestSamplePercent,
+	ChannelTestExcludeModels:           "",
+	ChannelTestIdleMinutes:             DefaultChannelTestIdleMinutes,
+	ConsecutiveFailureDisableThreshold: DefaultConsecutiveFailureDisableThreshold,
+	RecoveryBackoffMaxMinutes:          DefaultRecoveryBackoffMaxMinutes,
 }
 
 func init() {
@@ -82,6 +94,8 @@ func GetMonitorSetting() *MonitorSetting {
 	monitorSetting.ChannelTestModelStrategy = NormalizeChannelTestModelStrategy(monitorSetting.ChannelTestModelStrategy)
 	monitorSetting.ChannelTestSamplePercent = NormalizeChannelTestSamplePercent(monitorSetting.ChannelTestSamplePercent)
 	monitorSetting.ChannelTestIdleMinutes = NormalizeChannelTestIdleMinutes(monitorSetting.ChannelTestIdleMinutes)
+	monitorSetting.ConsecutiveFailureDisableThreshold = NormalizeConsecutiveFailureDisableThreshold(monitorSetting.ConsecutiveFailureDisableThreshold)
+	monitorSetting.RecoveryBackoffMaxMinutes = NormalizeRecoveryBackoffMaxMinutes(monitorSetting.RecoveryBackoffMaxMinutes)
 	return &monitorSetting
 }
 
@@ -153,6 +167,42 @@ func ValidateChannelTestIdleMinutes(value string) error {
 	minutes, err := strconv.Atoi(strings.TrimSpace(value))
 	if err != nil || minutes < MinChannelTestIdleMinutes || minutes > MaxChannelTestIdleMinutes {
 		return fmt.Errorf("channel test idle minutes must be between %d and %d", MinChannelTestIdleMinutes, MaxChannelTestIdleMinutes)
+	}
+	return nil
+}
+
+func NormalizeConsecutiveFailureDisableThreshold(threshold int) int {
+	if threshold < MinConsecutiveFailureDisableThreshold {
+		return MinConsecutiveFailureDisableThreshold
+	}
+	if threshold > MaxConsecutiveFailureDisableThreshold {
+		return MaxConsecutiveFailureDisableThreshold
+	}
+	return threshold
+}
+
+func ValidateConsecutiveFailureDisableThreshold(value string) error {
+	threshold, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil || threshold < MinConsecutiveFailureDisableThreshold || threshold > MaxConsecutiveFailureDisableThreshold {
+		return fmt.Errorf("consecutive failure disable threshold must be between %d and %d", MinConsecutiveFailureDisableThreshold, MaxConsecutiveFailureDisableThreshold)
+	}
+	return nil
+}
+
+func NormalizeRecoveryBackoffMaxMinutes(minutes int) int {
+	if minutes < MinRecoveryBackoffMaxMinutes {
+		return MinRecoveryBackoffMaxMinutes
+	}
+	if minutes > MaxRecoveryBackoffMaxMinutes {
+		return MaxRecoveryBackoffMaxMinutes
+	}
+	return minutes
+}
+
+func ValidateRecoveryBackoffMaxMinutes(value string) error {
+	minutes, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil || minutes < MinRecoveryBackoffMaxMinutes || minutes > MaxRecoveryBackoffMaxMinutes {
+		return fmt.Errorf("recovery backoff max minutes must be between %d and %d", MinRecoveryBackoffMaxMinutes, MaxRecoveryBackoffMaxMinutes)
 	}
 	return nil
 }

@@ -1,14 +1,21 @@
 package controller
 
 import (
+	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
+	perfmetrics "github.com/QuantumNous/new-api/pkg/perf_metrics"
+	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/console_setting"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
@@ -123,4 +130,58 @@ func TestUpdatePerfMetricsGroupOrderPermissionsAndPersistence(t *testing.T) {
 	optionResp := accessTokenRequest(router, http.MethodPut, "/api/option/", rootSession, "", `{"key":"console_setting.channel_status_group_order","value":"[\" alpha \",\"beta\",\"alpha\"]"}`)
 	require.Equal(t, http.StatusOK, optionResp.Code, optionResp.Body.String())
 	require.True(t, slices.Equal([]string{"alpha", "beta"}, console_setting.GetChannelStatusGroupOrder()))
+}
+
+func TestGetPerfMetricsSummaryBestGroupAndGroupScope(t *testing.T) {
+	setupAccessTokenAudit(t)
+	require.NoError(t, model.DB.AutoMigrate(&model.PerfMetric{}))
+
+	originalUsable := setting.UserUsableGroups2JSONString()
+	originalRatios := ratio_setting.GroupRatio2JSONString()
+	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{"aws":"AWS","kiro":"Kiro"}`))
+	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"aws":0.55,"kiro":0.25,"hidden":1}`))
+	t.Cleanup(func() {
+		require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(originalUsable))
+		require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(originalRatios))
+	})
+
+	hour := time.Now().Unix() - time.Now().Unix()%3600 - 3600
+	for _, row := range []model.PerfMetric{
+		{ModelName: "claude-sonnet-5-5", Group: "aws", BucketTs: hour, RequestCount: 10, SuccessCount: 6, TotalLatencyMs: 90000},
+		{ModelName: "claude-sonnet-5-5", Group: "kiro", BucketTs: hour, RequestCount: 10, SuccessCount: 10, TotalLatencyMs: 80000},
+		{ModelName: "claude-sonnet-5-5", Group: "hidden", BucketTs: hour, RequestCount: 50, SuccessCount: 50, TotalLatencyMs: 100000},
+	} {
+		require.NoError(t, model.UpsertPerfMetric(&row))
+	}
+
+	querySummary := func(rawQuery string) perfmetrics.SummaryAllResult {
+		t.Helper()
+		recorder := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(recorder)
+		ctx.Request = httptest.NewRequest(http.MethodGet, "/api/perf-metrics/summary"+rawQuery, nil)
+		common.SetContextKey(ctx, constant.ContextKeyUserGroup, "aws")
+		GetPerfMetricsSummary(ctx)
+		require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+		var envelope struct {
+			Success bool                         `json:"success"`
+			Data    perfmetrics.SummaryAllResult `json:"data"`
+		}
+		require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &envelope))
+		require.True(t, envelope.Success)
+		return envelope.Data
+	}
+
+	unfiltered := querySummary("?hours=24")
+	require.Len(t, unfiltered.Models, 1)
+	require.Equal(t, "kiro", unfiltered.Models[0].BestGroup)
+	require.Equal(t, 100.0, unfiltered.Models[0].SuccessRate)
+	require.True(t, unfiltered.Models[0].TpsInsufficient)
+
+	scopedAWS := querySummary("?hours=24&group=aws")
+	require.Len(t, scopedAWS.Models, 1)
+	require.Equal(t, "aws", scopedAWS.Models[0].BestGroup)
+	require.Equal(t, 60.0, scopedAWS.Models[0].SuccessRate)
+
+	scopedHidden := querySummary("?hours=24&group=hidden")
+	require.Empty(t, scopedHidden.Models)
 }

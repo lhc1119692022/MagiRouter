@@ -311,6 +311,7 @@ export interface GroupChannelStatusModel {
   avg_latency_ms: number
   avg_ttft_ms: number
   avg_tps: number
+  tps_insufficient?: boolean
   cache_hit_rate?: number
 }
 
@@ -343,6 +344,7 @@ export interface GroupChannelStatusItem {
   avg_latency_ms: number
   avg_ttft_ms: number
   avg_tps: number
+  tps_insufficient?: boolean
   cache_hit_rate?: number
   series: GroupChannelStatusPoint[]
   top_models: GroupChannelStatusModel[]
@@ -360,6 +362,7 @@ export interface GroupChannelStatusSummary {
   avg_latency_ms: number
   avg_ttft_ms: number
   avg_tps: number
+  tps_insufficient?: boolean
 }
 
 export interface GroupChannelStatusResponse {

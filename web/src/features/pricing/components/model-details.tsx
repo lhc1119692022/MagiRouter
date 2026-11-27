@@ -61,7 +61,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   formatCacheHitRate,
   formatLatency,
-  formatThroughput,
+  formatThroughputDisplay,
   formatUptimePct,
   getSuccessRateDotClass,
   getSuccessRateTextClass,
@@ -597,6 +597,11 @@ function OverviewSummaryGrid(props: {
     : Number.NaN
   const avgTps = summary.avg_tps ?? 0
   const avgLatency = summary.avg_latency_ms ?? 0
+  const isTpsInsufficient = Boolean(summary.tps_insufficient) && avgTps <= 0
+  const throughputValue = formatThroughputDisplay(avgTps, {
+    insufficient: summary.tps_insufficient,
+    insufficientLabel: t('Insufficient samples'),
+  })
 
   return (
     <div className='space-y-1.5'>
@@ -619,7 +624,12 @@ function OverviewSummaryGrid(props: {
         <OverviewMetricCell
           icon={Gauge}
           label={t('Throughput')}
-          value={formatThroughput(avgTps)}
+          value={throughputValue}
+          valueClassName={
+            isTpsInsufficient
+              ? 'text-muted-foreground font-sans text-xs font-normal'
+              : undefined
+          }
         />
         <OverviewMetricCell
           icon={DatabaseZap}
@@ -1017,6 +1027,7 @@ function CompactBasePriceStrip(props: {
 
 const GROUP_AVAILABILITY_TICK_CLASS: Record<HourlyMonitorSlotState, string> = {
   ok: 'h-full flex-1 rounded-[1.5px] bg-emerald-500',
+  good: 'h-full flex-1 rounded-[1.5px] bg-emerald-300',
   warn: 'h-full flex-1 rounded-[1.5px] bg-amber-500',
   err: 'h-full flex-1 rounded-[1.5px] bg-red-500',
   empty: 'h-full flex-1 rounded-[1.5px] bg-foreground/12 dark:bg-white/15',
@@ -1037,15 +1048,23 @@ function GroupPerfStrip(props: {
       buildHourlyMonitorSlots(
         perf?.series,
         props.monitoringData ?? undefined,
-        24
+        24,
+        hasSuccess ? successRate : undefined
       ),
-    [perf, props.monitoringData]
+    [hasSuccess, perf, props.monitoringData, successRate]
   )
   const hasSampledTicks = monitorSlots.some((slot) => slot.state !== 'empty')
   const latencyDisplay = perf ? formatLatency(perf.avg_latency_ms) : '—'
   const ttftDisplay =
     perf && perf.avg_ttft_ms > 0 ? formatLatency(perf.avg_ttft_ms) : null
-  const throughputDisplay = perf ? formatThroughput(perf.avg_tps) : '—'
+  const isThroughputInsufficient =
+    Boolean(perf?.tps_insufficient) && !(perf && perf.avg_tps > 0)
+  const throughputDisplay = perf
+    ? formatThroughputDisplay(perf.avg_tps, {
+        insufficient: perf.tps_insufficient,
+        insufficientLabel: t('Insufficient samples'),
+      })
+    : '—'
   const cacheDisplay = formatCacheHitRate(perf?.cache_hit_rate)
 
   return (
@@ -1110,7 +1129,14 @@ function GroupPerfStrip(props: {
         <span className='text-muted-foreground/80 truncate text-[10px]'>
           {t('Throughput')}
         </span>
-        <span className='text-foreground truncate font-mono text-xs font-medium tabular-nums'>
+        <span
+          className={cn(
+            'truncate text-xs tabular-nums',
+            isThroughputInsufficient
+              ? 'text-muted-foreground font-normal'
+              : 'text-foreground font-mono font-medium'
+          )}
+        >
           {throughputDisplay}
         </span>
       </div>

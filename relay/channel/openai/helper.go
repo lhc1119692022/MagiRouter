@@ -138,6 +138,8 @@ func ProcessStreamResponse(streamResponse dto.ChatCompletionsStreamResponse, res
 }
 
 func processTokenData(info *relaycommon.RelayInfo, data string, responseTextBuilder *strings.Builder, toolCount *int) error {
+	beforeLen := responseTextBuilder.Len()
+	beforeTools := *toolCount
 	switch info.RelayMode {
 	case relayconstant.RelayModeChatCompletions:
 		var streamResponse dto.ChatCompletionsStreamResponse
@@ -145,13 +147,18 @@ func processTokenData(info *relaycommon.RelayInfo, data string, responseTextBuil
 			return err
 		}
 		info.ObserveResponseModel(streamResponse.Model)
-		return ProcessStreamResponse(streamResponse, responseTextBuilder, toolCount)
+		if err := ProcessStreamResponse(streamResponse, responseTextBuilder, toolCount); err != nil {
+			return err
+		}
 	case relayconstant.RelayModeCompletions:
 		var streamResponse dto.CompletionsStreamResponse
 		if err := common.UnmarshalJsonStr(data, &streamResponse); err != nil {
 			return err
 		}
 		processCompletionsStreamResponse(streamResponse, responseTextBuilder)
+	}
+	if responseTextBuilder.Len() > beforeLen || *toolCount > beforeTools {
+		info.ObserveStreamOutputToken()
 	}
 	return nil
 }

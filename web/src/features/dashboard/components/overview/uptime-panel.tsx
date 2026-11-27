@@ -43,6 +43,10 @@ import type {
   GroupChannelStatusSummary,
   UptimeGroupResult,
 } from '@/features/dashboard/types'
+import {
+  getSuccessRateLevel,
+  shouldAllowCriticalSuccessRate,
+} from '@/features/performance-metrics/lib/format'
 import { toIntlLocale } from '@/i18n/languages'
 import { formatNumber } from '@/lib/format'
 import { handleServerError } from '@/lib/handle-server-error'
@@ -98,6 +102,16 @@ function modelKindLabelKey(kind?: string): string {
     default:
       return 'Token-billed'
   }
+}
+
+function formatGroupStatusThroughput(
+  avgTps: number,
+  insufficient: boolean | undefined,
+  insufficientLabel: string
+): string {
+  if (avgTps > 0) return `${avgTps.toFixed(1)} tok/s`
+  if (insufficient) return insufficientLabel
+  return '—'
 }
 
 function resolveGroupCapabilities(
@@ -245,7 +259,7 @@ function buildTimelineBars(
   slotCount = TIMELINE_SLOT_COUNT
 ): Array<{
   key: string
-  state: 'ok' | 'warn' | 'err' | 'idle'
+  state: 'ok' | 'good' | 'warn' | 'err' | 'idle'
   point?: GroupChannelStatusPoint
 }> {
   if (!series.length) {
@@ -254,14 +268,38 @@ function buildTimelineBars(
       state: 'idle' as const,
     }))
   }
+  let totalRequests = 0
+  let totalSuccess = 0
+  const sampledRates: number[] = []
+  for (const point of series) {
+    if (point.request_count > 0) {
+      totalRequests += point.request_count
+      totalSuccess += point.success_count
+      sampledRates.push(point.success_rate)
+    }
+  }
+  const overallRate =
+    totalRequests > 0 ? (totalSuccess / totalRequests) * 100 : undefined
+  const allowCritical = shouldAllowCriticalSuccessRate(
+    overallRate,
+    sampledRates
+  )
+  const stateForPoint = (
+    point?: GroupChannelStatusPoint
+  ): 'ok' | 'good' | 'warn' | 'err' | 'idle' => {
+    if (!point || point.request_count <= 0) return 'idle'
+    const level = getSuccessRateLevel(point.success_rate, { allowCritical })
+    if (level === 'excellent') return 'ok'
+    if (level === 'good') return 'good'
+    if (level === 'critical') return 'err'
+    return 'warn'
+  }
   if (series.length >= slotCount) {
-    return series.slice(-slotCount).map((point) => {
-      let state: 'ok' | 'warn' | 'err' | 'idle' = 'ok'
-      if (point.request_count <= 0) state = 'idle'
-      else if (point.success_rate < 80) state = 'err'
-      else if (point.success_rate < 98) state = 'warn'
-      return { key: `ts-${point.ts}`, state, point }
-    })
+    return series.slice(-slotCount).map((point) => ({
+      key: `ts-${point.ts}`,
+      state: stateForPoint(point),
+      point,
+    }))
   }
   const safeBucket = bucketSeconds > 0 ? bucketSeconds : 3600
   const firstTs = series[0].ts
@@ -279,24 +317,16 @@ function buildTimelineBars(
   }
   const bars: Array<{
     key: string
-    state: 'ok' | 'warn' | 'err' | 'idle'
+    state: 'ok' | 'good' | 'warn' | 'err' | 'idle'
     point?: GroupChannelStatusPoint
   }> = []
   for (let i = 0; i < slotCount; i++) {
     const slotCenter = start + ((i + 0.5) / slotCount) * span
     const alignedBucket = Math.floor(slotCenter / safeBucket) * safeBucket
     const point = byBucket.get(alignedBucket)
-    let state: 'ok' | 'warn' | 'err' | 'idle' = 'ok'
-    if (!point || point.request_count <= 0) {
-      state = 'idle'
-    } else if (point.success_rate < 80) {
-      state = 'err'
-    } else if (point.success_rate < 98) {
-      state = 'warn'
-    }
     bars.push({
       key: `slot-${i}`,
-      state,
+      state: stateForPoint(point),
       point,
     })
   }
@@ -355,7 +385,8 @@ function TimelineTrack({
             ? `${timeText} · ${bar.point.success_rate.toFixed(1)}% (${bar.point.success_count}/${bar.point.request_count}) · ${formatSeconds(bar.point.avg_ttft_ms || bar.point.avg_latency_ms)}`
             : t('No traffic in bucket')
           let barClassName = 'gm-probe-bar'
-          if (bar.state === 'warn') barClassName = 'gm-probe-bar is-warn'
+          if (bar.state === 'good') barClassName = 'gm-probe-bar is-good'
+          else if (bar.state === 'warn') barClassName = 'gm-probe-bar is-warn'
           else if (bar.state === 'err') barClassName = 'gm-probe-bar is-err'
           else if (bar.state === 'idle') barClassName = 'gm-probe-bar is-idle'
           return <span key={bar.key} className={barClassName} title={title} />
@@ -734,9 +765,11 @@ function GroupDetailSheet({
                 <div className='gm-drawer-metric-box'>
                   <span className='gm-submetric-label'>{t('Throughput')}</span>
                   <span className='gm-submetric-val tabular-nums'>
-                    {item.avg_tps > 0
-                      ? `${item.avg_tps.toFixed(1)} tok/s`
-                      : '—'}
+                    {formatGroupStatusThroughput(
+                      item.avg_tps,
+                      item.tps_insufficient,
+                      t('Insufficient samples')
+                    )}
                   </span>
                 </div>
               </>
@@ -785,9 +818,11 @@ function GroupDetailSheet({
             {filteredModels.length > 0 ? (
               <div className='gm-drawer-model-list'>
                 {filteredModels.map((modelItem) => {
+                  const modelLevel = getSuccessRateLevel(modelItem.success_rate)
                   let modelTone = 'healthy'
-                  if (modelItem.success_rate < 80) modelTone = 'error'
-                  else if (modelItem.success_rate < 98) modelTone = 'warning'
+                  if (modelLevel === 'good') modelTone = 'good'
+                  else if (modelLevel === 'warning') modelTone = 'warning'
+                  else if (modelLevel === 'critical') modelTone = 'error'
                   const modelUsesCache =
                     modelItem.metric_focus === 'cache_rate' ||
                     (modelItem.metric_focus === undefined &&
@@ -857,9 +892,11 @@ function GroupDetailSheet({
                                 {t('Throughput')}
                               </span>
                               <span className='gm-drawer-stat-val'>
-                                {modelItem.avg_tps > 0
-                                  ? `${modelItem.avg_tps.toFixed(1)} tok/s`
-                                  : '—'}
+                                {formatGroupStatusThroughput(
+                                  modelItem.avg_tps,
+                                  modelItem.tps_insufficient,
+                                  t('Insufficient samples')
+                                )}
                               </span>
                             </div>
                           </>

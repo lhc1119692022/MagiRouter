@@ -9485,6 +9485,17 @@
     "Download all": "Tout télécharger",
     "{{count}} lines": "{{count}} lignes",
     "Download {{filename}}": "Télécharger {{filename}}",
-    "Manufacturer order (Name: Z to A)": "Ordre des fournisseurs (Nom : Z à A)"
+    "Manufacturer order (Name: Z to A)": "Ordre des fournisseurs (Nom : Z à A)",
+    "Best group": "Meilleur groupe",
+    "Insufficient samples": "Échantillons insuffisants",
+    "Created {{count}}": "{{count}} créé(s)",
+    "Batch Enable": "Activer la sélection",
+    "Batch Disable": "Désactiver la sélection",
+    "Batch Delete": "Supprimer la sélection",
+    "Enabled {{count}} API key(s)": "{{count}} clé(s) API activée(s)",
+    "Disabled {{count}} API key(s)": "{{count}} clé(s) API désactivée(s)",
+    "{{count}} key(s) selected": "{{count}} clé(s) sélectionnée(s)",
+    "Reveal full API key": "Afficher la clé API complète",
+    "Priority {{rank}}": "Priorité {{rank}}"
   }
 }

@@ -20,6 +20,7 @@ export type PerformanceSummary = {
   avg_latency_ms: number
   success_rate: number
   avg_tps: number
+  tps_insufficient?: boolean
   cache_hit_rate?: number | null
 }
 
@@ -38,6 +39,7 @@ export type PerformanceGroup = {
   avg_latency_ms: number
   success_rate: number
   avg_tps: number
+  tps_insufficient?: boolean
   cache_hit_rate?: number | null
   series: PerformanceSeriesPoint[]
 }
@@ -60,9 +62,11 @@ export type SuccessRatePoint = { ts: number; success_rate: number }
 
 export type PerfModelSummary = {
   model_name: string
+  best_group?: string
   avg_latency_ms: number
   success_rate: number
   avg_tps: number
+  tps_insufficient?: boolean
   cache_hit_rate?: number | null
   recent_success_series?: SuccessRatePoint[]
   request_count?: number

@@ -27,6 +27,7 @@ import {
   formatUptimePct,
   getSuccessRateDotClass,
   getSuccessRateTextClass,
+  shouldAllowCriticalSuccessRate,
 } from '@/features/performance-metrics/lib/format'
 import type { SuccessRatePoint } from '@/features/performance-metrics/types'
 import { formatTimestampToDate } from '@/lib/format'
@@ -44,10 +45,9 @@ type UptimeSparklineProps = {
 }
 
 function heightFor(uptime: number): string {
-  if (uptime >= 99.9) return 'h-full'
-  if (uptime >= 99.0) return 'h-[88%]'
-  if (uptime >= 95.0) return 'h-[72%]'
-  if (uptime >= 90.0) return 'h-[55%]'
+  if (uptime >= 95.0) return 'h-full'
+  if (uptime >= 80.0) return 'h-[80%]'
+  if (uptime >= 30.0) return 'h-[60%]'
   return 'h-[40%]'
 }
 
@@ -67,6 +67,10 @@ export function UptimeSparkline(props: UptimeSparklineProps) {
   const containerHeight = size === 'sm' ? 'h-3.5' : 'h-5'
   const barWidth = size === 'sm' ? 'w-[3px]' : 'w-1'
   const gap = size === 'sm' ? 'gap-px' : 'gap-[2px]'
+  const allowCritical = shouldAllowCriticalSuccessRate(
+    isMeasuredRate(overall) ? overall : undefined,
+    props.series.map((sample) => sample.success_rate)
+  )
 
   return (
     <div className={cn('flex items-center gap-2', props.className)}>
@@ -93,7 +97,9 @@ export function UptimeSparkline(props: UptimeSparklineProps) {
                 <div
                   className={cn(
                     'w-full rounded-sm',
-                    getSuccessRateDotClass(sample.success_rate),
+                    getSuccessRateDotClass(sample.success_rate, {
+                      allowCritical,
+                    }),
                     heightFor(sample.success_rate)
                   )}
                   aria-hidden

@@ -28,7 +28,7 @@ import { GroupBadge } from '@/components/group-badge'
 import {
   formatCacheHitRate,
   formatLatency,
-  formatThroughput,
+  formatThroughputDisplay,
   formatUptimePct,
   getSuccessRateTextClass,
 } from '@/features/performance-metrics/lib/format'
@@ -152,6 +152,12 @@ export function ModelDetailsPerformance(props: {
     ? summary.success_rate
     : Number.NaN
   const cacheHitRate = summary?.cache_hit_rate
+  const isSummaryTpsInsufficient =
+    Boolean(summary?.tps_insufficient) && avgTps <= 0
+  const summaryThroughput = formatThroughputDisplay(avgTps, {
+    insufficient: summary?.tps_insufficient,
+    insufficientLabel: t('Insufficient samples'),
+  })
 
   return (
     <div className='flex flex-col gap-4'>
@@ -163,8 +169,13 @@ export function ModelDetailsPerformance(props: {
         <StatCard
           icon={Timer}
           label='TPS'
-          value={formatThroughput(avgTps)}
+          value={summaryThroughput}
           hint={t('Sustained tokens per second')}
+          valueClassName={
+            isSummaryTpsInsufficient
+              ? 'text-muted-foreground font-sans text-sm font-normal'
+              : undefined
+          }
         />
         <StatCard
           icon={Timer}
@@ -212,7 +223,11 @@ export function ModelDetailsPerformance(props: {
               header: 'TPS',
               className: tableStyles.compactHeaderCellRight,
               cellClassName: tableStyles.compactNumericCell,
-              cell: (perf) => formatThroughput(perf.avg_tps),
+              cell: (perf) =>
+                formatThroughputDisplay(perf.avg_tps, {
+                  insufficient: perf.tps_insufficient,
+                  insufficientLabel: t('Insufficient samples'),
+                }),
             },
             {
               id: 'ttft',

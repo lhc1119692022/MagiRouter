@@ -81,6 +81,16 @@ func TestRequestPolicyDatabaseMatrix(t *testing.T) {
 			require.NoError(t, UpdateOption("AutomaticRetryStatusCodes", "429,500-503"))
 			assert.Equal(t, "429,500-503", CurrentRequestPolicy().Options["AutomaticRetryStatusCodes"])
 			assert.Equal(t, "429,500-503", operation_setting.AutomaticRetryStatusCodesToString())
+			require.NoError(t, UpdateRequestPolicyOptions(map[string]string{
+				"monitor_setting.consecutive_failure_disable_threshold": "5",
+				"monitor_setting.recovery_backoff_max_minutes":          "360",
+			}))
+			assert.Equal(t, "5", CurrentRequestPolicy().Options["monitor_setting.consecutive_failure_disable_threshold"])
+			assert.Equal(t, "360", CurrentRequestPolicy().Options["monitor_setting.recovery_backoff_max_minutes"])
+			assert.Equal(t, 5, operation_setting.GetMonitorSetting().ConsecutiveFailureDisableThreshold)
+			assert.Equal(t, 360, operation_setting.GetMonitorSetting().RecoveryBackoffMaxMinutes)
+			assert.Error(t, UpdateRequestPolicyOptions(map[string]string{"monitor_setting.consecutive_failure_disable_threshold": "51"}))
+			assert.Error(t, UpdateRequestPolicyOptions(map[string]string{"monitor_setting.recovery_backoff_max_minutes": "1441"}))
 			assert.Error(t, UpdateRequestPolicyOptions(map[string]string{"request_policy_setting.mode": "off"}), "the removed mode switch is not a policy option")
 			assert.False(t, CurrentRequestPolicy().Affinity.Rules[0].SkipRetryOnFailure)
 			assert.Equal(t, rules, CurrentRequestPolicy().Options["channel_affinity_setting.rules"])

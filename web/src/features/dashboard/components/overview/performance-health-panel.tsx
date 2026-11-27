@@ -26,7 +26,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { getDashboardPerfMetricsSummary } from '@/features/performance-metrics/api'
 import {
   formatLatency,
-  formatThroughput,
+  formatThroughputDisplay,
   formatUptimePct,
   getSuccessRateDotClass,
   getSuccessRateTextClass,
@@ -94,7 +94,10 @@ export function PerformanceHealthPanel() {
           <MetricCell
             icon={Gauge}
             label={t('Throughput')}
-            value={formatThroughput(summary?.avg_tps ?? 0)}
+            value={formatThroughputDisplay(summary?.avg_tps ?? 0, {
+              insufficient: summary?.tps_insufficient,
+              insufficientLabel: t('Insufficient samples'),
+            })}
             loading={loading}
             tone='info'
           />

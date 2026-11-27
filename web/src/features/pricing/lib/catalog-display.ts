@@ -30,12 +30,20 @@ import { taskUsageUnitLabel } from './task-price-display'
 export const MONITOR_TICK_CLASS: Record<HourlyMonitorSlotState, string> = {
   empty: 'zm-uptime-tick',
   ok: 'zm-uptime-tick is-ok',
+  good: 'zm-uptime-tick is-good',
   warn: 'zm-uptime-tick is-warn',
   err: 'zm-uptime-tick is-err',
 }
 
+export interface CatalogPriceItem {
+  key: 'input' | 'output'
+  label: string
+  value: string
+}
+
 export interface CatalogPriceDisplay {
   primary: string
+  items?: CatalogPriceItem[]
   suffix: string
   tooltip: string
 }
@@ -258,14 +266,22 @@ export function resolveCatalogPriceDisplay(
         !displayGroup.isSelectedGroup ||
         tokenTiers.length > 1 ||
         dynamicSummary.tierCount > 1
+      const inputLabel = t('Input')
+      const outputLabel = t('Output')
+      const items: CatalogPriceItem[] = formattedOutput
+        ? [
+            { key: 'input', label: inputLabel, value: formattedInput },
+            { key: 'output', label: outputLabel, value: formattedOutput },
+          ]
+        : [{ key: 'input', label: inputLabel, value: formattedInput }]
+      const primary = formattedOutput
+        ? `${inputLabel} ${formattedInput} · ${outputLabel} ${formattedOutput}`
+        : `${inputLabel} ${formattedInput}`
       return {
-        primary: formattedOutput
-          ? `${formattedInput} / ${formattedOutput}`
-          : formattedInput,
+        primary,
+        items,
         suffix: formatSuffix(tokenUnitLabel, showStarting),
-        tooltip: formattedOutput
-          ? `${groupPrefix}${t('Input')} ${formattedInput} · ${t('Output')} ${formattedOutput} / ${tokenUnitLabel}`
-          : `${groupPrefix}${formattedInput} / ${tokenUnitLabel}`,
+        tooltip: `${groupPrefix}${primary} / ${tokenUnitLabel}`,
       }
     }
 
@@ -321,11 +337,23 @@ export function resolveCatalogPriceDisplay(
         tooltip: t('Unset price'),
       }
     }
+    const inputLabel = t('Input')
+    const outputLabel = t('Output')
+    const hasOutput = outputPrice !== '-'
+    const items: CatalogPriceItem[] = hasOutput
+      ? [
+          { key: 'input', label: inputLabel, value: inputPrice },
+          { key: 'output', label: outputLabel, value: outputPrice },
+        ]
+      : [{ key: 'input', label: inputLabel, value: inputPrice }]
+    const primary = hasOutput
+      ? `${inputLabel} ${inputPrice} · ${outputLabel} ${outputPrice}`
+      : `${inputLabel} ${inputPrice}`
     return {
-      primary:
-        outputPrice !== '-' ? `${inputPrice} / ${outputPrice}` : inputPrice,
+      primary,
+      items,
       suffix: formatSuffix(tokenUnitLabel, !displayGroup.isSelectedGroup),
-      tooltip: `${groupPrefix}${t('Input')} ${inputPrice} · ${t('Output')} ${outputPrice} / ${tokenUnitLabel}`,
+      tooltip: `${groupPrefix}${primary} / ${tokenUnitLabel}`,
     }
   }
 

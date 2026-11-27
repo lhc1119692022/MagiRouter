@@ -120,4 +120,20 @@ func TestMonitorSettingModelStrategyAndSampling(t *testing.T) {
 	assert.Error(t, ValidateChannelTestIdleMinutes("1441"))
 	assert.Equal(t, 0, NormalizeChannelTestIdleMinutes(-5))
 	assert.Equal(t, 1440, NormalizeChannelTestIdleMinutes(2000))
+
+	require.NoError(t, ValidateConsecutiveFailureDisableThreshold("0"))
+	require.NoError(t, ValidateConsecutiveFailureDisableThreshold("3"))
+	require.NoError(t, ValidateConsecutiveFailureDisableThreshold("50"))
+	assert.Error(t, ValidateConsecutiveFailureDisableThreshold("-1"))
+	assert.Error(t, ValidateConsecutiveFailureDisableThreshold("51"))
+	assert.Equal(t, 0, NormalizeConsecutiveFailureDisableThreshold(-3))
+	assert.Equal(t, 50, NormalizeConsecutiveFailureDisableThreshold(99))
+
+	require.NoError(t, ValidateRecoveryBackoffMaxMinutes("0"))
+	require.NoError(t, ValidateRecoveryBackoffMaxMinutes("240"))
+	require.NoError(t, ValidateRecoveryBackoffMaxMinutes("1440"))
+	assert.Error(t, ValidateRecoveryBackoffMaxMinutes("-1"))
+	assert.Error(t, ValidateRecoveryBackoffMaxMinutes("1441"))
+	assert.Equal(t, 0, NormalizeRecoveryBackoffMaxMinutes(-10))
+	assert.Equal(t, 1440, NormalizeRecoveryBackoffMaxMinutes(5000))
 }

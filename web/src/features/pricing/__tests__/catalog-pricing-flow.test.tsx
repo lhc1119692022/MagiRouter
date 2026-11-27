@@ -167,6 +167,12 @@ test('the catalog card renders 创建 instead of 新建 in Simplified Chinese', 
   const card = screen.getByRole('article')
   expect(within(card).getByRole('button', { name: '创建' })).toBeVisible()
   expect(within(card).queryByRole('button', { name: '新建' })).toBeNull()
+  expect(within(card).getByText('输入').parentElement).toHaveTextContent(
+    '输入¥2'
+  )
+  expect(within(card).getByText('输出').parentElement).toHaveTextContent(
+    '输出¥6'
+  )
 })
 
 test('displays the lowest group starting price for token and tiered models, and prefers the lowest per-request price for mixed billing', () => {
@@ -233,18 +239,30 @@ test('displays the lowest group starting price for token and tiered models, and 
   expect(cards).toHaveLength(4)
 
   // Your price (default): RMB symbol with starting suffix and lowest group ratio
-  expect(within(cards[0]).getByText('¥18.75 / ¥112.5')).toBeVisible()
+  expect(within(cards[0]).getByText('Input').parentElement).toHaveTextContent(
+    'Input¥18.75'
+  )
+  expect(within(cards[0]).getByText('Output').parentElement).toHaveTextContent(
+    'Output¥112.5'
+  )
   expect(within(cards[0]).getByText('/1M+')).toBeVisible()
 
-  expect(within(cards[1]).getByText('¥1 / ¥4')).toBeVisible()
+  expect(within(cards[1]).getByText('Input').parentElement).toHaveTextContent(
+    'Input¥1'
+  )
+  expect(within(cards[1]).getByText('Output').parentElement).toHaveTextContent(
+    'Output¥4'
+  )
   expect(within(cards[1]).getByText('/1M+')).toBeVisible()
 
   expect(within(cards[2]).getByText('¥0.005')).toBeVisible()
   expect(within(cards[2]).getByText('/call+')).toBeVisible()
   expect(within(cards[2]).getByText('Per-call / Token')).toBeVisible()
+  expect(within(cards[2]).queryByText('Input')).toBeNull()
 
   expect(within(cards[3]).getByText('¥0.01')).toBeVisible()
   expect(within(cards[3]).getByText('/call+')).toBeVisible()
+  expect(within(cards[3]).queryByText('Input')).toBeNull()
 
   // Your price scales by the site recharge rate (status.price)
   rerender(
@@ -258,7 +276,12 @@ test('displays the lowest group starting price for token and tiered models, and 
     </QueryClientProvider>
   )
   const scaledCards = screen.getAllByRole('article')
-  expect(within(scaledCards[0]).getByText('¥37.5 / ¥225')).toBeVisible()
+  expect(
+    within(scaledCards[0]).getByText('Input').parentElement
+  ).toHaveTextContent('Input¥37.5')
+  expect(
+    within(scaledCards[0]).getByText('Output').parentElement
+  ).toHaveTextContent('Output¥225')
   expect(within(scaledCards[1]).getByText('¥0.01')).toBeVisible()
 
   // When a specific group filter is active, prices switch to that group's multiplier
@@ -274,10 +297,20 @@ test('displays the lowest group starting price for token and tiered models, and 
     </QueryClientProvider>
   )
   const filteredCards = screen.getAllByRole('article')
-  expect(within(filteredCards[0]).getByText('¥37.5 / ¥225')).toBeVisible()
+  expect(
+    within(filteredCards[0]).getByText('Input').parentElement
+  ).toHaveTextContent('Input¥37.5')
+  expect(
+    within(filteredCards[0]).getByText('Output').parentElement
+  ).toHaveTextContent('Output¥225')
   expect(within(filteredCards[0]).getByText('/1M')).toBeVisible()
   expect(within(filteredCards[0]).queryByText('/1M+')).toBeNull()
-  expect(within(filteredCards[1]).getByText('¥2 / ¥8')).toBeVisible()
+  expect(
+    within(filteredCards[1]).getByText('Input').parentElement
+  ).toHaveTextContent('Input¥2')
+  expect(
+    within(filteredCards[1]).getByText('Output').parentElement
+  ).toHaveTextContent('Output¥8')
   expect(within(filteredCards[1]).getByText('/1M+')).toBeVisible()
   expect(within(filteredCards[2]).getByText('¥0.01')).toBeVisible()
 
@@ -294,11 +327,21 @@ test('displays the lowest group starting price for token and tiered models, and 
     </QueryClientProvider>
   )
   const officialCards = screen.getAllByRole('article')
-  expect(within(officialCards[0]).getByText('$75 / $450')).toBeVisible()
+  expect(
+    within(officialCards[0]).getByText('Input').parentElement
+  ).toHaveTextContent('Input$75')
+  expect(
+    within(officialCards[0]).getByText('Output').parentElement
+  ).toHaveTextContent('Output$450')
   expect(within(officialCards[0]).getByText('/1M')).toBeVisible()
   expect(within(officialCards[0]).queryByText('/1M+')).toBeNull()
 
-  expect(within(officialCards[1]).getByText('$4 / $16')).toBeVisible()
+  expect(
+    within(officialCards[1]).getByText('Input').parentElement
+  ).toHaveTextContent('Input$4')
+  expect(
+    within(officialCards[1]).getByText('Output').parentElement
+  ).toHaveTextContent('Output$16')
   expect(within(officialCards[1]).getByText('/1M')).toBeVisible()
 
   expect(within(officialCards[2]).getByText('$0.02')).toBeVisible()

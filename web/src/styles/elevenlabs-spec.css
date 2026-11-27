@@ -3362,6 +3362,11 @@ html[data-theme='dark'] .zm-uptime-tick.is-ok,
 .dark .zm-uptime-tick.is-ok {
   background: #22c55e;
 }
+.zm-uptime-tick.is-good,
+html[data-theme='dark'] .zm-uptime-tick.is-good,
+.dark .zm-uptime-tick.is-good {
+  background: #86efac;
+}
 .zm-uptime-tick.is-warn,
 html[data-theme='dark'] .zm-uptime-tick.is-warn,
 .dark .zm-uptime-tick.is-warn {
@@ -3553,19 +3558,37 @@ html[data-theme='dark'] .zm-action-btn.is-secondary {
 }
 .zm-card-price {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: baseline;
-  gap: 4px;
+  column-gap: 4px;
+  row-gap: 2px;
+  min-width: 0;
   font-size: 12.5px;
   font-weight: 400;
   color: var(--ink-strong);
-  overflow: hidden;
-  text-overflow: ellipsis;
+}
+.zm-card-price-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
   white-space: nowrap;
+}
+.zm-card-price-label {
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--ink-muted);
+}
+.zm-card-price-sep {
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--ink-subtle);
+  user-select: none;
 }
 .zm-card-price-unit {
   font-size: 11.5px;
   font-weight: 400;
   color: var(--ink-muted);
+  white-space: nowrap;
 }
 .zm-card-meta-pill {
   font-size: 11.5px;
@@ -5902,6 +5925,10 @@ html[data-theme='dark'] .dash-gs-status.is-warn {
   -webkit-line-clamp: 1;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+.gm-probe-bar.is-good {
+  background: #6ee7b7;
+  height: 22px;
 }
 .gm-probe-bar.is-warn {
   background: #f59e0b;

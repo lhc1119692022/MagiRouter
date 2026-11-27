@@ -20,17 +20,26 @@ import { useTranslation } from 'react-i18next'
 
 import { SectionPageLayout } from '@/components/layout'
 
+import './keys-editorial.css'
 import { ApiKeysDialogs } from './components/api-keys-dialogs'
 import { ApiKeysPrimaryButtons } from './components/api-keys-primary-buttons'
-import { ApiKeysProvider } from './components/api-keys-provider'
+import { ApiKeysProvider, useApiKeys } from './components/api-keys-provider'
 import { ApiKeysTable } from './components/api-keys-table'
 
-export function ApiKeys() {
+function ApiKeysPageContent() {
   const { t } = useTranslation()
+  const { totalKeysCount } = useApiKeys()
   return (
-    <ApiKeysProvider>
-      <SectionPageLayout fixedContent>
+    <>
+      <SectionPageLayout>
         <SectionPageLayout.Title>{t('API Keys')}</SectionPageLayout.Title>
+        {totalKeysCount !== null && (
+          <SectionPageLayout.Subtitle>
+            <span className='tabular-nums'>
+              {t('Created {{count}}', { count: totalKeysCount })}
+            </span>
+          </SectionPageLayout.Subtitle>
+        )}
         <SectionPageLayout.Actions>
           <ApiKeysPrimaryButtons />
         </SectionPageLayout.Actions>
@@ -40,6 +49,14 @@ export function ApiKeys() {
       </SectionPageLayout>
 
       <ApiKeysDialogs />
+    </>
+  )
+}
+
+export function ApiKeys() {
+  return (
+    <ApiKeysProvider>
+      <ApiKeysPageContent />
     </ApiKeysProvider>
   )
 }

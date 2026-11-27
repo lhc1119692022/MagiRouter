@@ -665,6 +665,11 @@ html[data-theme='dark'] .channel-status-pill[data-tone='error'] {
   filter: brightness(1.08);
 }
 
+.gm-probe-bar.is-good {
+  background: #6ee7b7;
+  height: 22px;
+}
+
 .gm-probe-bar.is-warn {
   background: #f59e0b;
   height: 16px;
@@ -907,6 +912,10 @@ html[data-theme='dark'] .channel-status-pill[data-tone='error'] {
   color: #047857;
 }
 
+.gm-model-rate[data-tone='good'] {
+  color: #10b981;
+}
+
 .gm-model-rate[data-tone='warning'] {
   color: #b45309;
 }
@@ -917,6 +926,10 @@ html[data-theme='dark'] .channel-status-pill[data-tone='error'] {
 
 html[data-theme='dark'] .gm-model-rate[data-tone='healthy'] {
   color: #6ee7b7;
+}
+
+html[data-theme='dark'] .gm-model-rate[data-tone='good'] {
+  color: #a7f3d0;
 }
 
 html[data-theme='dark'] .gm-model-rate[data-tone='warning'] {

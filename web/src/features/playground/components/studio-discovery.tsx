@@ -54,7 +54,12 @@ const titles = {
   audio: 'Audio model comparison',
 } as const
 
-type CompareStatusTone = 'available' | 'degraded' | 'unstable' | 'unmonitored'
+type CompareStatusTone =
+  | 'available'
+  | 'degraded'
+  | 'unstable'
+  | 'unavailable'
+  | 'unmonitored'
 
 interface CompareModelStatus {
   tone: CompareStatusTone
@@ -89,6 +94,14 @@ function resolveCompareModelStatus(
       return {
         tone: 'degraded',
         label: t('Degraded'),
+        meta,
+        hint: state.monitoringHint,
+      }
+    }
+    if (rate < 30) {
+      return {
+        tone: 'unavailable',
+        label: t('Not available'),
         meta,
         hint: state.monitoringHint,
       }
@@ -174,7 +187,7 @@ export function StudioDiscovery(props: DiscoveryProps) {
     return map
   }, [perfData])
   const monitoringHint = [
-    t('All visible groups'),
+    t('Best group'),
     t(
       'Success rate excludes business rejections and includes the current partial hour.'
     ),

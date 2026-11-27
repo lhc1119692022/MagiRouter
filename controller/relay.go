@@ -205,6 +205,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		relayInfo.PerformanceOutputTokens = 0
 		relayInfo.PerformancePromptTokens = 0
 		relayInfo.PerformanceCachedTokens = 0
+		relayInfo.ResetStreamOutputTiming()
 		relayInfo.RetryIndex = retryParam.GetRetry()
 		channel, channelErr := getChannel(c, relayInfo, retryParam)
 		if channelErr != nil {

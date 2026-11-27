@@ -34,10 +34,18 @@ export async function getDashboardPerfMetricsSummary(
 
 export async function getPerfMetricsSummary(
   hours = 24,
-  recentModels?: string[]
+  recentModels?: string[],
+  group?: string
 ): Promise<PerfSummaryAllData> {
+  const params: Record<string, unknown> = {
+    hours,
+    recent_model: recentModels,
+  }
+  if (group) {
+    params.group = group
+  }
   const res = await api.get<PerfSummaryAllData>('/api/perf-metrics/summary', {
-    params: { hours, recent_model: recentModels },
+    params,
     paramsSerializer: { indexes: null },
   })
   return res.data

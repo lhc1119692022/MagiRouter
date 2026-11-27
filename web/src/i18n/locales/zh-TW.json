@@ -9485,6 +9485,17 @@
     "Download all": "全部下載",
     "{{count}} lines": "{{count}} 行",
     "Download {{filename}}": "下載 {{filename}}",
-    "Manufacturer order (Name: Z to A)": "依廠商順序（同廠商依名稱降冪）"
+    "Manufacturer order (Name: Z to A)": "依廠商順序（同廠商依名稱降冪）",
+    "Best group": "最優分組",
+    "Insufficient samples": "樣本不足",
+    "Created {{count}}": "已建立 {{count}}",
+    "Batch Enable": "批次啟用",
+    "Batch Disable": "批次停用",
+    "Batch Delete": "批次刪除",
+    "Enabled {{count}} API key(s)": "已啟用 {{count}} 個 API 金鑰",
+    "Disabled {{count}} API key(s)": "已停用 {{count}} 個 API 金鑰",
+    "{{count}} key(s) selected": "已選 {{count}} 個金鑰",
+    "Reveal full API key": "檢視完整 API 金鑰",
+    "Priority {{rank}}": "優先級 {{rank}}"
   }
 }

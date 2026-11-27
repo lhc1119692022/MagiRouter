@@ -308,6 +308,7 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 			}
 			if data != "[DONE]" {
 				info.SetFirstResponseTime()
+				info.SetLastResponseTime()
 				info.ReceivedResponseCount++
 
 				select {

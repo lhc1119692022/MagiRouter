@@ -18,24 +18,14 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery } from '@tanstack/react-query'
-import { ChevronDown, KeyRound, Settings2, WalletCards } from 'lucide-react'
+import { Calendar, ChevronDown } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useForm, type SubmitErrorHandler } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { DateTimePicker } from '@/components/datetime-picker'
-import {
-  SideDrawerSection,
-  SideDrawerSectionHeader,
-  sideDrawerContentClassName,
-  sideDrawerFooterClassName,
-  sideDrawerFormClassName,
-  sideDrawerHeaderClassName,
-  sideDrawerSwitchItemClassName,
-} from '@/components/drawer-layout'
 import { MultiSelect } from '@/components/multi-select'
-import { Button } from '@/components/ui/button'
 import {
   Collapsible,
   CollapsibleContent,
@@ -80,6 +70,8 @@ import {
   getTokenAutoGroups,
 } from '../api'
 import { ERROR_MESSAGES, SUCCESS_MESSAGES } from '../constants'
+
+import '../keys-editorial.css'
 import {
   getApiKeyFormSchema,
   type ApiKeyFormValues,
@@ -103,6 +95,10 @@ type ApiKeyMutateDrawerProps = {
   currentRow?: ApiKey
 }
 
+type ExpirePreset = 'never' | 'month' | 'day' | 'hour' | 'custom'
+
+const QUOTA_PRESET_AMOUNTS = [10, 50, 100, 500] as const
+
 export function ApiKeysMutateDrawer({
   open,
   onOpenChange,
@@ -117,6 +113,7 @@ export function ApiKeysMutateDrawer({
   const { status, loading: statusLoading } = useStatus()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [advancedOpen, setAdvancedOpen] = useState(false)
+  const [expirePreset, setExpirePreset] = useState<ExpirePreset>('never')
   const [initializedTarget, setInitializedTarget] = useState<string | null>(
     null
   )
@@ -226,6 +223,8 @@ export function ApiKeysMutateDrawer({
         getApiKeyFormDefaultValues(defaultUseAutoGroup && backendHasAuto)
       )
       setInitializedTarget(null)
+      setExpirePreset('never')
+      setAdvancedOpen(false)
       return
     }
     if (
@@ -243,12 +242,15 @@ export function ApiKeysMutateDrawer({
     if (initializedTarget === target) return
     if (isUpdate && currentRow) {
       if (apiKeyData?.success && apiKeyData.data) {
-        form.reset(
-          transformApiKeyToFormDefaults(
-            apiKeyData.data,
-            availableAutoGroupNames,
-            maxAutoGroups
-          )
+        const defaults = transformApiKeyToFormDefaults(
+          apiKeyData.data,
+          availableAutoGroupNames,
+          maxAutoGroups
+        )
+        form.reset(defaults)
+        setExpirePreset(defaults.expired_time ? 'custom' : 'never')
+        setAdvancedOpen(
+          defaults.model_limits.length > 0 || Boolean(defaults.allow_ips?.trim())
         )
         setInitializedTarget(target)
       }
@@ -256,6 +258,8 @@ export function ApiKeysMutateDrawer({
       form.reset(
         getApiKeyFormDefaultValues(defaultUseAutoGroup && backendHasAuto)
       )
+      setExpirePreset('never')
+      setAdvancedOpen(false)
       setInitializedTarget(target)
     }
   }, [
@@ -373,7 +377,13 @@ export function ApiKeysMutateDrawer({
     toast.error(t('Please fix the highlighted fields before saving'))
   }
 
-  const handleSetExpiry = (months: number, days: number, hours: number) => {
+  const handleSetExpiry = (
+    months: number,
+    days: number,
+    hours: number,
+    preset: ExpirePreset
+  ) => {
+    setExpirePreset(preset)
     if (months === 0 && days === 0 && hours === 0) {
       form.setValue('expired_time', null)
       return
@@ -408,14 +418,12 @@ export function ApiKeysMutateDrawer({
         if (!isSubmitting) onOpenChange(next)
       }}
     >
-      <SheetContent
-        className={sideDrawerContentClassName('max-w-none sm:!max-w-[620px]')}
-      >
-        <SheetHeader className={sideDrawerHeaderClassName()}>
-          <SheetTitle>
+      <SheetContent className='kdrawer-panel'>
+        <SheetHeader className='kdrawer-head'>
+          <SheetTitle className='kdrawer-title'>
             {isUpdate ? t('Update API Key') : t('Create API Key')}
           </SheetTitle>
-          <SheetDescription>
+          <SheetDescription className='kdrawer-sub'>
             {isUpdate
               ? t('Update the API key by providing necessary info.')
               : t('Add a new API key by providing necessary info.')}
@@ -427,23 +435,24 @@ export function ApiKeysMutateDrawer({
             onSubmit={form.handleSubmit(onSubmit, onInvalid)}
             aria-busy={!isFormInitialized}
             inert={!isFormInitialized || isSubmitting ? true : undefined}
-            className={sideDrawerFormClassName('gap-5')}
+            className='kdrawer-form'
           >
-            <SideDrawerSection>
-              <SideDrawerSectionHeader
-                title={t('Basic Information')}
-                description={t('Set API key basic information')}
-                icon={<KeyRound className='size-4' />}
-                iconTone='info'
-              />
+            <div className='kform-section'>
+              <div className='kform-section-title'>
+                {t('Basic Information')}
+              </div>
               <FormField
                 control={form.control}
                 name='name'
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{t('Name')}</FormLabel>
+                    <FormLabel className='kform-label'>{t('Name')}</FormLabel>
                     <FormControl>
-                      <Input {...field} placeholder={t('Enter a name')} />
+                      <Input
+                        {...field}
+                        className='kform-input'
+                        placeholder={t('Enter a name')}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -455,7 +464,10 @@ export function ApiKeysMutateDrawer({
                 name='group'
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel required={requireExplicitGroup}>
+                    <FormLabel
+                      className='kform-label'
+                      required={requireExplicitGroup}
+                    >
                       {t('Group')}
                     </FormLabel>
                     <FormControl>
@@ -481,8 +493,8 @@ export function ApiKeysMutateDrawer({
                       <FormDescription
                         className={
                           noBillingGroupsAvailable
-                            ? 'text-destructive'
-                            : undefined
+                            ? 'text-destructive text-xs'
+                            : 'kform-hint'
                         }
                       >
                         {noBillingGroupsAvailable
@@ -506,8 +518,10 @@ export function ApiKeysMutateDrawer({
                   name='auto_groups'
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>{t('Auto group order')}</FormLabel>
-                      <FormDescription>
+                      <FormLabel className='kform-label'>
+                        {t('Auto group order')}
+                      </FormLabel>
+                      <FormDescription className='kform-hint'>
                         {t(
                           'Choose and order the groups this API key will try.'
                         )}
@@ -546,12 +560,12 @@ export function ApiKeysMutateDrawer({
                   control={form.control}
                   name='cross_group_retry'
                   render={({ field }) => (
-                    <FormItem className={sideDrawerSwitchItemClassName()}>
-                      <div className='flex flex-col gap-0.5'>
-                        <FormLabel className='text-sm'>
+                    <FormItem className='kform-switch-row'>
+                      <div className='kform-switch-text'>
+                        <FormLabel className='kform-switch-title'>
                           {t('Cross-group retry')}
                         </FormLabel>
-                        <FormDescription className='line-clamp-2 text-xs sm:line-clamp-none'>
+                        <FormDescription className='kform-switch-desc line-clamp-2 sm:line-clamp-none'>
                           {t(
                             'When enabled, if channels in the current group fail, it will try channels in the next group in order.'
                           )}
@@ -574,53 +588,69 @@ export function ApiKeysMutateDrawer({
                 name='expired_time'
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{t('Expiration Time')}</FormLabel>
-                    <div className='grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center'>
+                    <FormLabel className='kform-label'>
+                      {t('Expiration Time')}
+                    </FormLabel>
+                    <div className='kform-expire-stack'>
                       <FormControl>
                         <DateTimePicker
                           value={field.value ?? undefined}
-                          onChange={(date) => field.onChange(date ?? null)}
+                          onChange={(date) => {
+                            setExpirePreset(date ? 'custom' : 'never')
+                            field.onChange(date ?? null)
+                          }}
                           placeholder={t('Never expires')}
-                          className='min-w-0 [&_input[type=time]]:w-24 sm:[&_input[type=time]]:w-32'
+                          className='kform-expire-picker min-w-0 [&_input[type=time]]:w-24 sm:[&_input[type=time]]:w-32'
                         />
                       </FormControl>
-                      <div className='grid grid-cols-4 gap-2 sm:flex'>
-                        <Button
+                      <div className='kform-expire-quick-row'>
+                        <button
                           type='button'
-                          variant='outline'
-                          size='sm'
-                          className='px-2 text-xs sm:px-3 sm:text-sm'
-                          onClick={() => handleSetExpiry(0, 0, 0)}
+                          className={cn(
+                            'kform-expire-main-btn',
+                            !field.value && 'is-active'
+                          )}
+                          onClick={() => handleSetExpiry(0, 0, 0, 'never')}
                         >
+                          <Calendar className='size-3.5' aria-hidden='true' />
                           {t('Never')}
-                        </Button>
-                        <Button
+                        </button>
+                        <button
                           type='button'
-                          variant='outline'
-                          size='sm'
-                          className='px-2 text-xs sm:px-3 sm:text-sm'
-                          onClick={() => handleSetExpiry(1, 0, 0)}
+                          className={cn(
+                            'kform-expire-quick-btn',
+                            Boolean(field.value) &&
+                              expirePreset === 'month' &&
+                              'is-active'
+                          )}
+                          onClick={() => handleSetExpiry(1, 0, 0, 'month')}
                         >
                           {t('1 Month')}
-                        </Button>
-                        <Button
+                        </button>
+                        <button
                           type='button'
-                          variant='outline'
-                          size='sm'
-                          className='px-2 text-xs sm:px-3 sm:text-sm'
-                          onClick={() => handleSetExpiry(0, 1, 0)}
+                          className={cn(
+                            'kform-expire-quick-btn',
+                            Boolean(field.value) &&
+                              expirePreset === 'day' &&
+                              'is-active'
+                          )}
+                          onClick={() => handleSetExpiry(0, 1, 0, 'day')}
                         >
                           {t('1 Day')}
-                        </Button>
-                        <Button
+                        </button>
+                        <button
                           type='button'
-                          variant='outline'
-                          size='sm'
-                          className='px-2 text-xs sm:px-3 sm:text-sm'
-                          onClick={() => handleSetExpiry(0, 0, 1)}
+                          className={cn(
+                            'kform-expire-quick-btn',
+                            Boolean(field.value) &&
+                              expirePreset === 'hour' &&
+                              'is-active'
+                          )}
+                          onClick={() => handleSetExpiry(0, 0, 1, 'hour')}
                         >
                           {t('1 Hour')}
-                        </Button>
+                        </button>
                       </div>
                     </div>
                     <FormMessage />
@@ -634,12 +664,15 @@ export function ApiKeysMutateDrawer({
                   name='tokenCount'
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>{t('Quantity')}</FormLabel>
+                      <FormLabel className='kform-label'>
+                        {t('Quantity')}
+                      </FormLabel>
                       <FormControl>
                         <Input
                           {...field}
                           type='number'
                           min='1'
+                          className='kform-input tabular-nums'
                           placeholder={t('Number of keys to create')}
                           onChange={(e) =>
                             field.onChange(
@@ -648,7 +681,7 @@ export function ApiKeysMutateDrawer({
                           }
                         />
                       </FormControl>
-                      <FormDescription>
+                      <FormDescription className='kform-hint'>
                         {t(
                           'Create multiple API keys at once (random suffix will be added to names)'
                         )}
@@ -658,58 +691,20 @@ export function ApiKeysMutateDrawer({
                   )}
                 />
               )}
-            </SideDrawerSection>
+            </div>
 
-            <SideDrawerSection>
-              <SideDrawerSectionHeader
-                title={t('Quota Settings')}
-                description={t('Set quota amount and limits')}
-                icon={<WalletCards className='size-4' />}
-                iconTone='success'
-              />
-              {!unlimitedQuota && (
-                <FormField
-                  control={form.control}
-                  name='remain_quota_dollars'
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{quotaLabel}</FormLabel>
-                      <FormControl>
-                        <Input
-                          {...field}
-                          type='number'
-                          step={tokensOnly ? 1 : 0.01}
-                          placeholder={quotaPlaceholder}
-                          onChange={(e) =>
-                            field.onChange(
-                              Number.parseFloat(e.target.value) || 0
-                            )
-                          }
-                        />
-                      </FormControl>
-                      <FormDescription>
-                        {tokensOnly
-                          ? t('Enter the quota amount in tokens')
-                          : t('Enter the quota amount in {{currency}}', {
-                              currency: currencyLabel,
-                            })}
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              )}
-
+            <div className='kform-section'>
+              <div className='kform-section-title'>{t('Quota Settings')}</div>
               <FormField
                 control={form.control}
                 name='unlimited_quota'
                 render={({ field }) => (
-                  <FormItem className={sideDrawerSwitchItemClassName()}>
-                    <div className='flex flex-col gap-0.5'>
-                      <FormLabel className='text-sm'>
+                  <FormItem className='kform-switch-row'>
+                    <div className='kform-switch-text'>
+                      <FormLabel className='kform-switch-title'>
                         {t('Unlimited Quota')}
                       </FormLabel>
-                      <FormDescription className='text-xs'>
+                      <FormDescription className='kform-switch-desc'>
                         {t('Enable unlimited quota for this API key')}
                       </FormDescription>
                     </div>
@@ -722,53 +717,116 @@ export function ApiKeysMutateDrawer({
                   </FormItem>
                 )}
               />
-            </SideDrawerSection>
+              {!unlimitedQuota && (
+                <FormField
+                  control={form.control}
+                  name='remain_quota_dollars'
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className='kform-label'>
+                        {quotaLabel}
+                      </FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          type='number'
+                          step={tokensOnly ? 1 : 0.01}
+                          className='kform-input tabular-nums'
+                          placeholder={quotaPlaceholder}
+                          onChange={(e) =>
+                            field.onChange(
+                              Number.parseFloat(e.target.value) || 0
+                            )
+                          }
+                        />
+                      </FormControl>
+                      {!tokensOnly && (
+                        <div className='kform-presets'>
+                          {QUOTA_PRESET_AMOUNTS.map((preset) => (
+                            <button
+                              key={preset}
+                              type='button'
+                              className={cn(
+                                'kform-preset-btn tabular-nums',
+                                field.value === preset && 'is-active'
+                              )}
+                              onClick={() => field.onChange(preset)}
+                            >
+                              {`${currencyMeta.symbol}${preset}`}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      <FormDescription className='kform-hint'>
+                        {tokensOnly
+                          ? t('Enter the quota amount in tokens')
+                          : t('Enter the quota amount in {{currency}}', {
+                              currency: currencyLabel,
+                            })}
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
+            </div>
 
             <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
-              <SideDrawerSection>
+              <div className='kform-section'>
                 <CollapsibleTrigger
                   render={
-                    <button
-                      type='button'
-                      className='hover:bg-muted/40 flex w-full items-center gap-3 rounded-md py-1.5 text-left transition-colors'
-                    />
+                    <button type='button' className='kform-collapse-trigger' />
                   }
                 >
-                  <SideDrawerSectionHeader
-                    className='flex-1'
-                    title={t('Advanced Settings')}
-                    description={t('Set API key access restrictions')}
-                    icon={<Settings2 className='size-4' />}
-                  />
+                  <span className='min-w-0'>
+                    <span>{t('Advanced Settings')}</span>
+                    <span className='kform-hint ml-2 font-normal'>
+                      {t('Set API key access restrictions')}
+                    </span>
+                  </span>
                   <ChevronDown
                     className={cn(
-                      'text-muted-foreground size-4 shrink-0 transition-transform',
+                      'kform-collapse-chevron size-4',
                       advancedOpen && 'rotate-180'
                     )}
+                    aria-hidden='true'
                   />
                 </CollapsibleTrigger>
                 <CollapsibleContent>
-                  <div className='flex flex-col gap-4 pt-2'>
+                  <div className='kform-advanced-body'>
                     <FormField
                       control={form.control}
                       name='model_limits'
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>{t('Model Limits')}</FormLabel>
-                          <FormControl>
-                            <MultiSelect
-                              options={models.map((m) => ({
-                                label: m,
-                                value: m,
-                              }))}
-                              selected={field.value}
-                              onChange={field.onChange}
-                              placeholder={t(
-                                'Select models (empty for allow all)'
-                              )}
-                            />
-                          </FormControl>
-                          <FormDescription>
+                          <div className='kform-label-row'>
+                            <FormLabel className='kform-label'>
+                              {t('Model Limits')}
+                            </FormLabel>
+                            <span className='kform-hint tabular-nums'>
+                              {field.value.length > 0
+                                ? t('{{count}} models', {
+                                    count: field.value.length,
+                                  })
+                                : t('Unlimited')}
+                            </span>
+                          </div>
+                          <div className='kform-model-select-wrap'>
+                            <FormControl>
+                              <MultiSelect
+                                options={models.map((m) => ({
+                                  label: m,
+                                  value: m,
+                                }))}
+                                selected={field.value}
+                                onChange={field.onChange}
+                                placeholder={t(
+                                  'Select models (empty for allow all)'
+                                )}
+                              />
+                            </FormControl>
+                          </div>
+                          <FormDescription className='kform-hint'>
                             {t('Limit which models can be used with this key')}
                           </FormDescription>
                           <FormMessage />
@@ -781,20 +839,20 @@ export function ApiKeysMutateDrawer({
                       name='allow_ips'
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>
+                          <FormLabel className='kform-label'>
                             {t('IP Whitelist (supports CIDR)')}
                           </FormLabel>
                           <FormControl>
                             <Textarea
                               {...field}
-                              className='min-h-20 resize-none'
+                              className='kform-textarea resize-y'
                               placeholder={t(
                                 'One IP per line (empty for no restriction)'
                               )}
                               rows={3}
                             />
                           </FormControl>
-                          <FormDescription>
+                          <FormDescription className='kform-hint'>
                             {t(
                               'Do not over-trust this feature. IP may be spoofed. Please use with nginx, CDN and other gateways.'
                             )}
@@ -808,12 +866,12 @@ export function ApiKeysMutateDrawer({
                       control={form.control}
                       name='allow_user_quota_query'
                       render={({ field }) => (
-                        <FormItem className={sideDrawerSwitchItemClassName()}>
-                          <div className='flex flex-col gap-0.5'>
-                            <FormLabel className='text-sm'>
+                        <FormItem className='kform-switch-row'>
+                          <div className='kform-switch-text'>
+                            <FormLabel className='kform-switch-title'>
                               {t('Allow querying user quota')}
                             </FormLabel>
-                            <FormDescription className='text-xs'>
+                            <FormDescription className='kform-switch-desc'>
                               {t(
                                 "When enabled, this API key can be used to check your account's remaining and used quota."
                               )}
@@ -830,25 +888,27 @@ export function ApiKeysMutateDrawer({
                     />
                   </div>
                 </CollapsibleContent>
-              </SideDrawerSection>
+              </div>
             </Collapsible>
           </form>
         </Form>
-        <SheetFooter className={sideDrawerFooterClassName()}>
+        <SheetFooter className='kdrawer-footer'>
           <SheetClose
             disabled={isSubmitting}
-            render={<Button variant='outline' className='w-full sm:w-auto' />}
+            render={
+              <button type='button' className='el-btn el-btn-md el-btn-white' />
+            }
           >
             {closeLabel ?? t('Close')}
           </SheetClose>
-          <Button
+          <button
             type='button'
+            className='el-btn el-btn-md el-btn-primary'
             onClick={form.handleSubmit(onSubmit, onInvalid)}
             disabled={!isFormInitialized || isSubmitting}
-            className='w-full sm:w-auto'
           >
             {isSubmitting ? t('Saving...') : t('Save changes')}
-          </Button>
+          </button>
         </SheetFooter>
       </SheetContent>
     </Sheet>

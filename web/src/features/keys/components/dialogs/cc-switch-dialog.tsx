@@ -22,13 +22,13 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { Dialog } from '@/components/dialog'
-import { Button } from '@/components/ui/button'
 import { Combobox } from '@/components/ui/combobox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { getUserModels } from '@/lib/api'
 import { requireServerSuccess } from '@/lib/server-error-message'
+import { cn } from '@/lib/utils'
 
 const APP_CONFIGS = {
   claude: {
@@ -152,25 +152,35 @@ export function CCSwitchDialog(props: Props) {
       open={props.open}
       onOpenChange={props.onOpenChange}
       title={t('Import to CC Switch')}
-      contentClassName='sm:max-w-md'
+      contentClassName='keys-editorial-dialog sm:max-w-lg'
       contentHeight='auto'
       bodyClassName='space-y-4'
       footer={
         <>
-          <Button variant='outline' onClick={() => props.onOpenChange(false)}>
+          <button
+            type='button'
+            className='el-btn el-btn-md el-btn-white'
+            onClick={() => props.onOpenChange(false)}
+          >
             {t('Cancel')}
-          </Button>
-          <Button onClick={handleSubmit}>{t('Open CC Switch')}</Button>
+          </button>
+          <button
+            type='button'
+            className='el-btn el-btn-md el-btn-primary'
+            onClick={handleSubmit}
+          >
+            {t('Open CC Switch')}
+          </button>
         </>
       }
     >
       <div className='space-y-4'>
         <div className='space-y-2'>
-          <Label>{t('Application')}</Label>
+          <Label className='kform-label'>{t('Application')}</Label>
           <RadioGroup
             value={app}
             onValueChange={handleAppChange}
-            className='flex gap-4'
+            className='cc-app-grid'
           >
             {(
               Object.entries(APP_CONFIGS) as [
@@ -178,9 +188,15 @@ export function CCSwitchDialog(props: Props) {
                 (typeof APP_CONFIGS)[AppType],
               ][]
             ).map(([key, cfg]) => (
-              <div key={key} className='flex items-center gap-2'>
+              <div
+                key={key}
+                className={cn('cc-app-card', app === key && 'is-active')}
+              >
                 <RadioGroupItem value={key} id={`app-${key}`} />
-                <Label htmlFor={`app-${key}`} className='cursor-pointer'>
+                <Label
+                  htmlFor={`app-${key}`}
+                  className='flex-1 cursor-pointer text-[13px] font-medium'
+                >
                   {cfg.label}
                 </Label>
               </div>
@@ -189,9 +205,12 @@ export function CCSwitchDialog(props: Props) {
         </div>
 
         <div className='space-y-2'>
-          <Label htmlFor='cc-switch-name'>{t('Name')}</Label>
+          <Label htmlFor='cc-switch-name' className='kform-label'>
+            {t('Name')}
+          </Label>
           <Input
             id='cc-switch-name'
+            className='kform-input'
             value={name}
             onChange={(event) => setName(event.target.value)}
             placeholder={currentConfig.defaultName}
@@ -200,7 +219,11 @@ export function CCSwitchDialog(props: Props) {
 
         {currentConfig.modelFields.map((field) => (
           <div key={field.key} className='space-y-2'>
-            <Label htmlFor={`cc-switch-${field.key}`} required={field.required}>
+            <Label
+              htmlFor={`cc-switch-${field.key}`}
+              className='kform-label'
+              required={field.required}
+            >
               {t(field.labelKey)}
             </Label>
             <Combobox

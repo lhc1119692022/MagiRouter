@@ -66,23 +66,29 @@ export function ApiKeysDeleteDialog() {
       open={open === 'delete'}
       onOpenChange={(open) => !open && setOpen(null)}
     >
-      <AlertDialogContent>
+      <AlertDialogContent className='keys-editorial-dialog'>
         <AlertDialogHeader>
-          <AlertDialogTitle>{t('Are you sure?')}</AlertDialogTitle>
-          <AlertDialogDescription>
+          <AlertDialogTitle className='kdrawer-title'>
+            {t('Are you sure?')}
+          </AlertDialogTitle>
+          <AlertDialogDescription className='kdrawer-sub'>
             {t('This will permanently delete API key')}{' '}
             <span className='font-semibold'>{currentRow?.name}</span>
             {t('. This action cannot be undone.')}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={isDeleting}>
+          <AlertDialogCancel
+            disabled={isDeleting}
+            className='el-btn el-btn-md el-btn-white'
+          >
             {t('Cancel')}
           </AlertDialogCancel>
           <AlertDialogAction
             onClick={handleDelete}
             disabled={isDeleting}
             variant='destructive'
+            className='el-btn el-btn-md keys-danger-btn'
           >
             {isDeleting ? t('Deleting...') : t('Delete')}
           </AlertDialogAction>

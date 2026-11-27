@@ -99,6 +99,12 @@ func HandleStreamResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 	if claudeResponse.Type == "message_start" && claudeResponse.Message != nil {
 		info.ObserveResponseModel(claudeResponse.Message.Model)
 	}
+	if claudeResponse.Type == "content_block_delta" && claudeResponse.Delta != nil &&
+		((claudeResponse.Delta.Text != nil && *claudeResponse.Delta.Text != "") ||
+			(claudeResponse.Delta.Thinking != nil && *claudeResponse.Delta.Thinking != "") ||
+			(claudeResponse.Delta.PartialJson != nil && *claudeResponse.Delta.PartialJson != "")) {
+		info.ObserveStreamOutputToken()
+	}
 	if claudeResponse.StopReason != "" {
 		maybeMarkClaudeRefusal(c, info, claudeResponse.StopReason)
 	}

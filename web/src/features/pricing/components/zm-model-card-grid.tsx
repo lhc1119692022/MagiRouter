@@ -1,6 +1,6 @@
 import { useNavigate } from '@tanstack/react-router'
 import { Check, ChevronLeft, ChevronRight, Copy } from 'lucide-react'
-import { memo, useCallback, useMemo, useState } from 'react'
+import { Fragment, memo, useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { formatUptimePct } from '@/features/performance-metrics/lib/format'
@@ -55,6 +55,7 @@ interface ZmModelCardItemProps {
   showRechargePrice: boolean
   priceMode: PriceMode
   selectedGroup?: string
+  scopedMonitoringGroup?: string
   perf?: PerfModelSummary
   monitoringWindow?: MonitoringWindow
   windowLabel: string
@@ -167,9 +168,17 @@ const ZmModelCardItem = memo(function ZmModelCardItem(
         props.monitoringStatus === 'success' ? samples : undefined,
         props.monitoringStatus === 'success'
           ? props.monitoringWindow
-          : undefined
+          : undefined,
+        undefined,
+        hasMeasuredRate ? successRate : undefined
       ),
-    [props.monitoringStatus, props.monitoringWindow, samples]
+    [
+      hasMeasuredRate,
+      props.monitoringStatus,
+      props.monitoringWindow,
+      samples,
+      successRate,
+    ]
   )
   const hasSampledTicks = monitorSlots.some((slot) => slot.state !== 'empty')
   const hasMetrics = hasMeasuredRate || hasSampledTicks
@@ -178,8 +187,16 @@ const ZmModelCardItem = memo(function ZmModelCardItem(
   if (props.monitoringStatus === 'error') {
     statusText = t('Monitoring unavailable')
   }
+  const scopeLabel = props.scopedMonitoringGroup || t('Best group')
+  const bestGroupName = props.perf?.best_group
+  let scopeHint = t('Best group')
+  if (props.scopedMonitoringGroup) {
+    scopeHint = props.scopedMonitoringGroup
+  } else if (bestGroupName) {
+    scopeHint = `${t('Best group')}: ${bestGroupName}`
+  }
   const monitoringHint = [
-    t('All visible groups'),
+    scopeHint,
     t(
       'Success rate excludes business rejections and includes the current partial hour.'
     ),
@@ -265,7 +282,7 @@ const ZmModelCardItem = memo(function ZmModelCardItem(
         <div className='zm-uptime-strip' title={monitoringHint}>
           <div className='zm-uptime-meta tabular-nums'>
             <span className='zm-uptime-time'>
-              {hasMetrics ? t('All visible groups') : t('Success rate')}
+              {hasMetrics ? scopeLabel : t('Success rate')}
             </span>
             <span
               className={
@@ -374,7 +391,23 @@ const ZmModelCardItem = memo(function ZmModelCardItem(
           className='zm-card-price tabular-nums'
           title={priceDisplay.tooltip}
         >
-          <strong>{priceDisplay.primary}</strong>
+          {priceDisplay.items ? (
+            priceDisplay.items.map((item, index) => (
+              <Fragment key={item.key}>
+                {index > 0 && (
+                  <span className='zm-card-price-sep' aria-hidden='true'>
+                    ·
+                  </span>
+                )}
+                <span className='zm-card-price-item'>
+                  <span className='zm-card-price-label'>{item.label}</span>
+                  <strong>{item.value}</strong>
+                </span>
+              </Fragment>
+            ))
+          ) : (
+            <strong>{priceDisplay.primary}</strong>
+          )}
           {priceDisplay.suffix && (
             <span className='zm-card-price-unit'>{priceDisplay.suffix}</span>
           )}
@@ -407,8 +440,13 @@ export const ZmModelCardGrid = memo(function ZmModelCardGrid(
     return props.models.slice(startIndex, startIndex + pageSize)
   }, [currentPage, pageSize, props.models])
 
-  const { perfMap, monitoringWindow, windowLabel, monitoringStatus } =
-    useCatalogPerfMetrics(props.models.length > 0)
+  const {
+    perfMap,
+    monitoringWindow,
+    windowLabel,
+    monitoringStatus,
+    scopedGroup,
+  } = useCatalogPerfMetrics(props.models.length > 0, props.selectedGroup)
 
   if (props.models.length === 0) {
     return (
@@ -452,6 +490,7 @@ export const ZmModelCardGrid = memo(function ZmModelCardGrid(
             showRechargePrice={showRechargePrice}
             priceMode={priceMode}
             selectedGroup={props.selectedGroup}
+            scopedMonitoringGroup={scopedGroup}
             perf={perfMap.get(model.model_name || '')}
             monitoringWindow={monitoringWindow}
             windowLabel={windowLabel}

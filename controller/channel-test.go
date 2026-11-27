@@ -954,12 +954,14 @@ func TestChannel(c *gin.Context) {
 	tok := time.Now()
 	milliseconds := tok.Sub(tik).Milliseconds()
 	go channel.UpdateResponseTime(milliseconds)
-	perfmetrics.RecordChannelProbe(channel.GetGroups(), perfmetrics.ProbeSample{
-		Timestamp: tok.Unix(),
-		Model:     resolvedModel,
-		Success:   result.newAPIError == nil,
-		LatencyMs: milliseconds,
-	})
+	if channel.Status == common.ChannelStatusEnabled || result.newAPIError == nil {
+		perfmetrics.RecordChannelProbe(channel.GetGroups(), perfmetrics.ProbeSample{
+			Timestamp: tok.Unix(),
+			Model:     resolvedModel,
+			Success:   result.newAPIError == nil,
+			LatencyMs: milliseconds,
+		})
+	}
 	consumedTime := float64(milliseconds) / 1000.0
 	if result.newAPIError != nil {
 		c.JSON(http.StatusOK, gin.H{
@@ -970,6 +972,7 @@ func TestChannel(c *gin.Context) {
 		})
 		return
 	}
+	service.ResetChannelFailureCount(channel.Id, "")
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
@@ -987,7 +990,7 @@ type channelTestSummary struct {
 	Enabled   int `json:"enabled"`
 }
 
-func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, testUserID int, allowDisable bool, disableThreshold int64) channelTestSummary {
+func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, testUserID int, allowDisable bool, recordRecoveryBackoff bool, disableThreshold int64) channelTestSummary {
 	summary := channelTestSummary{}
 	if !tryAcquireChannelTestSlot(channel.Id) {
 		return summary
@@ -1016,7 +1019,7 @@ func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, test
 		shouldBanChannel = service.ShouldDisableChannel(result.newAPIError)
 	}
 
-	if common.AutomaticDisableChannelEnabled && !shouldBanChannel {
+	if isChannelEnabled && allowDisable && common.AutomaticDisableChannelEnabled && !shouldBanChannel {
 		if milliseconds > disableThreshold {
 			// The reason is stored with the channel and sent in the disable
 			// notice; no request states a language here.
@@ -1031,11 +1034,16 @@ func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, test
 
 	if newAPIError == nil {
 		summary.Succeeded++
+		resetKey := ""
+		if channel.ChannelInfo.IsMultiKey {
+			resetKey = common.GetContextKeyString(result.context, constant.ContextKeyChannelKey)
+		}
+		service.ResetChannelFailureCount(channel.Id, resetKey)
 	} else {
 		summary.Failed++
 	}
 
-	if result.localErr == nil {
+	if result.localErr == nil && (isChannelEnabled || newAPIError == nil) {
 		perfmetrics.RecordChannelProbe(channel.GetGroups(), perfmetrics.ProbeSample{
 			Timestamp: time.Now().Unix(),
 			Model:     chosenModel,
@@ -1044,14 +1052,27 @@ func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, test
 		})
 	}
 
-	if allowDisable && isChannelEnabled && shouldBanChannel && channel.GetAutoBan() {
-		processChannelError(result.context, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(result.context, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError, nil)
-		summary.Disabled++
+	if allowDisable && isChannelEnabled && newAPIError != nil && channel.GetAutoBan() {
+		channelErr := *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(result.context, constant.ContextKeyChannelKey), channel.GetAutoBan())
+		if shouldBanChannel {
+			processChannelError(result.context, channelErr, newAPIError, nil)
+			summary.Disabled++
+		} else if service.HandleChannelErrorAndReportDisable(result.context, channelErr, newAPIError) {
+			summary.Disabled++
+		}
 	}
 
 	if result.localErr == nil && !isChannelEnabled && service.ShouldEnableChannel(newAPIError, channel.Status) {
 		service.EnableChannel(channel.Id, common.GetContextKeyString(result.context, constant.ContextKeyChannelKey), channel.Name)
 		summary.Enabled++
+	} else if recordRecoveryBackoff && channel.Status == common.ChannelStatusAutoDisabled && newAPIError != nil {
+		nextFailCount := int(otherInfoInt64(channel.GetOtherInfo(), model.ChannelOtherInfoRecoveryFailCount)) + 1
+		delaySeconds := computeRecoveryBackoffDelaySeconds(nextFailCount, monitorSetting.AutoTestChannelMinutes, monitorSetting.RecoveryBackoffMaxMinutes)
+		if delaySeconds > 0 {
+			if err := model.RecordChannelRecoveryProbeFailure(channel.Id, nextFailCount, tik.Unix()+delaySeconds); err != nil {
+				common.SysLog(common.LogText("failed to record recovery backoff: channel_id=%d, error=%v", channel.Id, err))
+			}
+		}
 	}
 
 	channel.UpdateResponseTime(milliseconds)
@@ -1154,7 +1175,7 @@ func runChannelTestWorkers(
 // performChannelTests runs channel health checks with the configured bounded
 // concurrency and honors cancellation when a system-task runner loses its
 // lease.
-func performChannelTests(ctx context.Context, channels []*model.Channel, testUserID int, allowDisable bool, concurrency int, report func(processed, total int)) channelTestSummary {
+func performChannelTests(ctx context.Context, channels []*model.Channel, testUserID int, allowDisable bool, recordRecoveryBackoff bool, concurrency int, report func(processed, total int)) channelTestSummary {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -1167,7 +1188,7 @@ func performChannelTests(ctx context.Context, channels []*model.Channel, testUse
 		channels,
 		concurrency,
 		func(ctx context.Context, channel *model.Channel) channelTestSummary {
-			return testChannelForHealthCheck(ctx, channel, testUserID, allowDisable, disableThreshold)
+			return testChannelForHealthCheck(ctx, channel, testUserID, allowDisable, recordRecoveryBackoff, disableThreshold)
 		},
 		report,
 	)
@@ -1195,15 +1216,18 @@ func runChannelTestTask(ctx context.Context, mode string, notify bool, report fu
 		mode = operation_setting.GetMonitorSetting().ChannelTestMode
 	}
 	selected := selectChannelsForAutomaticTest(channels, mode)
+	monitorSetting := operation_setting.GetMonitorSetting()
 	if !notify {
-		monitorSetting := operation_setting.GetMonitorSetting()
-		selected = filterChannelsByScheduledCooldown(selected, mode, monitorSetting.AutoTestChannelMinutes, time.Now().Unix())
-		selected = filterChannelsByIdleTraffic(selected, mode, monitorSetting.ChannelTestIdleMinutes, time.Now().Unix())
+		nowUnix := time.Now().Unix()
+		selected = filterChannelsByScheduledCooldown(selected, mode, monitorSetting.AutoTestChannelMinutes, nowUnix)
+		selected = filterChannelsByIdleTraffic(selected, mode, monitorSetting.ChannelTestIdleMinutes, nowUnix)
+		selected = filterChannelsByRecoveryBackoff(selected, monitorSetting.AutoTestChannelMinutes, monitorSetting.RecoveryBackoffMaxMinutes, nowUnix)
 		selected = sampleChannelsForScheduledTest(selected, monitorSetting.ChannelTestSamplePercent)
 	}
 	allowDisable := mode != operation_setting.ChannelTestModePassiveRecovery
-	concurrency := operation_setting.GetMonitorSetting().ChannelTestConcurrency
-	summary := performChannelTests(ctx, selected, testUserID, allowDisable, concurrency, report)
+	recordRecoveryBackoff := !notify && monitorSetting.RecoveryBackoffMaxMinutes > 0
+	concurrency := monitorSetting.ChannelTestConcurrency
+	summary := performChannelTests(ctx, selected, testUserID, allowDisable, recordRecoveryBackoff, concurrency, report)
 	if notify && (ctx == nil || ctx.Err() == nil) {
 		service.NotifyChannelWatchers(dto.NotifyTypeChannelTest, func(lang string) (string, string) {
 			return i18n.Translate(lang, i18n.MsgChannelTestCompletedSubject), i18n.Translate(lang, i18n.MsgChannelTestCompletedContent)
@@ -1287,6 +1311,110 @@ func filterChannelsByIdleTraffic(channels []*model.Channel, mode string, idleMin
 		if channel.Status == common.ChannelStatusEnabled {
 			lastTraffic := perfmetrics.GetChannelLastTrafficTime(channel.Id)
 			if lastTraffic > 0 && nowUnix-lastTraffic < idleSeconds {
+				continue
+			}
+		}
+		filtered = append(filtered, channel)
+	}
+	return filtered
+}
+
+func otherInfoInt64(info map[string]any, key string) int64 {
+	if info == nil {
+		return 0
+	}
+	raw, ok := info[key]
+	if !ok || raw == nil {
+		return 0
+	}
+	switch v := raw.(type) {
+	case int:
+		return int64(v)
+	case int64:
+		return v
+	case float64:
+		return int64(v)
+	case json.Number:
+		if n, err := v.Int64(); err == nil {
+			return n
+		}
+	case string:
+		if n, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64); err == nil {
+			return n
+		}
+	}
+	return 0
+}
+
+// computeRecoveryBackoffDelaySeconds returns the wait duration before the next
+// recovery probe for an auto-disabled channel. With baseMinutes=10 and
+// maxMinutes=240, the sequence is 10m -> 30m -> 1h -> 2h -> 4h (capped).
+func computeRecoveryBackoffDelaySeconds(failCount int, baseMinutes float64, maxMinutes int) int64 {
+	if maxMinutes <= 0 {
+		return 0
+	}
+	if baseMinutes <= 0 {
+		baseMinutes = 10
+	}
+	baseSeconds := int64(math.Round(baseMinutes * 60))
+	if baseSeconds < 60 {
+		baseSeconds = 60
+	}
+	maxSeconds := int64(maxMinutes) * 60
+	if maxSeconds < baseSeconds {
+		maxSeconds = baseSeconds
+	}
+	if failCount <= 0 {
+		return baseSeconds
+	}
+	delay := baseSeconds * 3
+	for i := 1; i < failCount && delay < maxSeconds; i++ {
+		delay *= 2
+	}
+	if delay > maxSeconds {
+		delay = maxSeconds
+	}
+	return delay
+}
+
+func nextRecoveryTestTimestamp(channel *model.Channel, baseMinutes float64, maxMinutes int) int64 {
+	if channel == nil || maxMinutes <= 0 {
+		return 0
+	}
+	info := channel.GetOtherInfo()
+	anchor := otherInfoInt64(info, "status_time")
+	if channel.TestTime > anchor {
+		anchor = channel.TestTime
+	}
+	failCount := int(otherInfoInt64(info, model.ChannelOtherInfoRecoveryFailCount))
+	delay := computeRecoveryBackoffDelaySeconds(failCount, baseMinutes, maxMinutes)
+	if nextAt := otherInfoInt64(info, model.ChannelOtherInfoRecoveryNextTestAt); nextAt > 0 {
+		if anchor > 0 && delay > 0 && nextAt > anchor+delay {
+			return anchor + delay
+		}
+		return nextAt
+	}
+	if anchor <= 0 {
+		return 0
+	}
+	return anchor + delay
+}
+
+// filterChannelsByRecoveryBackoff throttles scheduled recovery probes for
+// auto-disabled channels using exponential backoff so long-term upstream
+// outages incur minimal probe overhead while recent failures recover quickly.
+func filterChannelsByRecoveryBackoff(channels []*model.Channel, baseMinutes float64, maxMinutes int, nowUnix int64) []*model.Channel {
+	if maxMinutes <= 0 {
+		return channels
+	}
+	filtered := make([]*model.Channel, 0, len(channels))
+	for _, channel := range channels {
+		if channel == nil {
+			continue
+		}
+		if channel.Status == common.ChannelStatusAutoDisabled {
+			dueAt := nextRecoveryTestTimestamp(channel, baseMinutes, maxMinutes)
+			if dueAt > 0 && nowUnix < dueAt {
 				continue
 			}
 		}

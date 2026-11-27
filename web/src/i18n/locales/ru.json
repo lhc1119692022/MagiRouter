@@ -9485,6 +9485,17 @@
     "Download all": "Скачать все",
     "{{count}} lines": "{{count}} строк",
     "Download {{filename}}": "Скачать {{filename}}",
-    "Manufacturer order (Name: Z to A)": "По порядку провайдеров (Имя: Я–А)"
+    "Manufacturer order (Name: Z to A)": "По порядку провайдеров (Имя: Я–А)",
+    "Best group": "Лучшая группа",
+    "Insufficient samples": "Недостаточно данных",
+    "Created {{count}}": "Создано: {{count}}",
+    "Batch Enable": "Включить выбранные",
+    "Batch Disable": "Отключить выбранные",
+    "Batch Delete": "Удалить выбранные",
+    "Enabled {{count}} API key(s)": "Включено API-ключей: {{count}}",
+    "Disabled {{count}} API key(s)": "Отключено API-ключей: {{count}}",
+    "{{count}} key(s) selected": "Выбрано ключей: {{count}}",
+    "Reveal full API key": "Показать полный API-ключ",
+    "Priority {{rank}}": "Приоритет {{rank}}"
   }
 }

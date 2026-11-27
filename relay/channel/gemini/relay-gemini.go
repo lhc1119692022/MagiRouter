@@ -247,7 +247,10 @@ func geminiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 				}
 			}
 		}
-		responseText.WriteString(geminiResponseUsageText(&geminiResponse))
+		if chunkText := geminiResponseUsageText(&geminiResponse); chunkText != "" {
+			info.ObserveStreamOutputToken()
+			responseText.WriteString(chunkText)
+		}
 
 		// 更新使用量统计
 		if metadata := geminiResponse.GetUsageMetadata(); dto.HasGeminiUsageMetadataTokens(metadata) {

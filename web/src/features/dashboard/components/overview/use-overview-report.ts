@@ -53,19 +53,85 @@ export const overviewPeriods = {
 } as const
 
 export type OverviewRange = keyof typeof overviewPeriods
+
+export type OverviewModelUsage = {
+  quota: number
+  count: number
+  token: number
+}
+
+export type OverviewModelSummary = OverviewModelUsage & {
+  name: string
+  color: string
+}
+
+export type OverviewTrendBucket = TrendBucket & {
+  models: ReadonlyMap<string, OverviewModelUsage>
+}
+
+export const overviewModelColors = [
+  'var(--ink-strong)',
+  '#10b981',
+  '#3b82f6',
+  '#f59e0b',
+  '#8b5cf6',
+  '#ec4899',
+  '#06b6d4',
+  '#f97316',
+  '#14b8a6',
+  '#6366f1',
+  '#84cc16',
+  '#ef4444',
+] as const
+
 const emptyRows: QuotaDataItem[] = []
 
-function overviewBuckets(
+export function summarizeOverviewModels(
+  rows: QuotaDataItem[]
+): OverviewModelSummary[] {
+  const perModel = new Map<string, OverviewModelUsage & { name: string }>()
+  for (const row of rows) {
+    const name = row.model_name?.trim() ?? ''
+    const item = perModel.get(name) ?? { name, quota: 0, count: 0, token: 0 }
+    item.quota += Number(row.quota) || 0
+    item.count += Number(row.count) || 0
+    item.token += Number(row.token_used) || 0
+    perModel.set(name, item)
+  }
+  return [...perModel.values()]
+    .sort(
+      (left, right) =>
+        right.quota - left.quota ||
+        right.count - left.count ||
+        right.token - left.token ||
+        left.name.localeCompare(right.name)
+    )
+    .map((item, index) => ({
+      ...item,
+      color:
+        overviewModelColors[index] ??
+        `hsl(${Math.round(((index - overviewModelColors.length) * 137.508 + 25) % 360)} 65% 48%)`,
+    }))
+}
+
+export function buildOverviewBuckets(
   rows: QuotaDataItem[],
   range: OverviewRange,
   start: number,
   end: number
-): TrendBucket[] {
+): OverviewTrendBucket[] {
   const unit = { today: 'hour', '7d': 'day', '30d': 'day', all: 'month' }[
     range
   ] as 'hour' | 'day' | 'month'
-  const first = dayjs.unix(start).startOf(unit)
-  const count = Math.max(1, dayjs.unix(end).startOf(unit).diff(first, unit) + 1)
+  const first =
+    range === 'today'
+      ? dayjs.unix(start).startOf('day')
+      : dayjs.unix(start).startOf(unit)
+  const last =
+    range === 'today'
+      ? first.endOf('day').startOf('hour')
+      : dayjs.unix(end).startOf(unit)
+  const count = Math.max(1, last.diff(first, unit) + 1)
   const stride = Math.max(range === '30d' ? 3 : 1, Math.ceil(count / 180))
   const buckets = Array.from(
     { length: Math.ceil(count / stride) },
@@ -74,6 +140,7 @@ function overviewBuckets(
       quota: 0,
       count: 0,
       token: 0,
+      models: new Map<string, OverviewModelUsage>(),
     })
   )
   for (const row of rows) {
@@ -82,9 +149,25 @@ function overviewBuckets(
     )
     const bucket = buckets[index]
     if (!bucket) continue
-    bucket.quota += Number(row.quota) || 0
-    bucket.count += Number(row.count) || 0
-    bucket.token += Number(row.token_used) || 0
+    const quota = Number(row.quota) || 0
+    const countValue = Number(row.count) || 0
+    const token = Number(row.token_used) || 0
+    bucket.quota += quota
+    bucket.count += countValue
+    bucket.token += token
+    const modelName = row.model_name?.trim() ?? ''
+    const existing = bucket.models.get(modelName)
+    if (existing) {
+      existing.quota += quota
+      existing.count += countValue
+      existing.token += token
+    } else {
+      bucket.models.set(modelName, {
+        quota,
+        count: countValue,
+        token,
+      })
+    }
   }
   return buckets
 }
@@ -146,15 +229,17 @@ export function useOverviewReport() {
     window.limit ||
     rows.reduce((first, row) => Math.min(first, row.created_at), window.end)
   const buckets = useMemo(
-    () => overviewBuckets(rows, range, start, window.end),
+    () => buildOverviewBuckets(rows, range, start, window.end),
     [range, rows, start, window.end]
   )
+  const models = useMemo(() => summarizeOverviewModels(rows), [rows])
   return {
     range,
     setRange,
     query,
     rows,
     buckets,
+    models,
     start,
     end: window.end,
     ...period,

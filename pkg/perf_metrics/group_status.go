@@ -22,29 +22,31 @@ type GroupBucketPoint struct {
 }
 
 type GroupModelMetric struct {
-	ModelName    string   `json:"model_name"`
-	ModelKind    string   `json:"model_kind"`
-	MetricFocus  string   `json:"metric_focus"`
-	RequestCount int64    `json:"request_count"`
-	SuccessCount int64    `json:"success_count"`
-	SuccessRate  float64  `json:"success_rate"`
-	AvgLatencyMs int64    `json:"avg_latency_ms"`
-	AvgTtftMs    int64    `json:"avg_ttft_ms"`
-	AvgTps       float64  `json:"avg_tps"`
-	CacheHitRate *float64 `json:"cache_hit_rate,omitempty"`
+	ModelName       string   `json:"model_name"`
+	ModelKind       string   `json:"model_kind"`
+	MetricFocus     string   `json:"metric_focus"`
+	RequestCount    int64    `json:"request_count"`
+	SuccessCount    int64    `json:"success_count"`
+	SuccessRate     float64  `json:"success_rate"`
+	AvgLatencyMs    int64    `json:"avg_latency_ms"`
+	AvgTtftMs       int64    `json:"avg_ttft_ms"`
+	AvgTps          float64  `json:"avg_tps"`
+	TpsInsufficient bool     `json:"tps_insufficient,omitempty"`
+	CacheHitRate    *float64 `json:"cache_hit_rate,omitempty"`
 }
 
 type GroupMetricsSnapshot struct {
-	Group        string             `json:"group"`
-	RequestCount int64              `json:"request_count"`
-	SuccessCount int64              `json:"success_count"`
-	SuccessRate  float64            `json:"success_rate"`
-	AvgLatencyMs int64              `json:"avg_latency_ms"`
-	AvgTtftMs    int64              `json:"avg_ttft_ms"`
-	AvgTps       float64            `json:"avg_tps"`
-	CacheHitRate *float64           `json:"cache_hit_rate,omitempty"`
-	Series       []GroupBucketPoint `json:"series"`
-	TopModels    []GroupModelMetric `json:"top_models"`
+	Group           string             `json:"group"`
+	RequestCount    int64              `json:"request_count"`
+	SuccessCount    int64              `json:"success_count"`
+	SuccessRate     float64            `json:"success_rate"`
+	AvgLatencyMs    int64              `json:"avg_latency_ms"`
+	AvgTtftMs       int64              `json:"avg_ttft_ms"`
+	AvgTps          float64            `json:"avg_tps"`
+	TpsInsufficient bool               `json:"tps_insufficient,omitempty"`
+	CacheHitRate    *float64           `json:"cache_hit_rate,omitempty"`
+	Series          []GroupBucketPoint `json:"series"`
+	TopModels       []GroupModelMetric `json:"top_models"`
 }
 
 type GroupStatusQueryResult struct {
@@ -64,6 +66,7 @@ func addCounters(dst counters, src counters) counters {
 	dst.ttftCount += src.ttftCount
 	dst.outputTokens += src.outputTokens
 	dst.generationMs += src.generationMs
+	dst.tpsCount += src.tpsCount
 	dst.promptTokens += src.promptTokens
 	dst.cachedTokens += src.cachedTokens
 	return dst
@@ -128,6 +131,7 @@ func QueryGroupStatus(hours int, allowedGroups []string) (GroupStatusQueryResult
 			ttftCount:      row.TtftCount,
 			outputTokens:   row.OutputTokens,
 			generationMs:   row.GenerationMs,
+			tpsCount:       row.TpsCount,
 			promptTokens:   row.PromptTokens,
 			cachedTokens:   row.CachedTokens,
 		})
@@ -146,6 +150,7 @@ func QueryGroupStatus(hours int, allowedGroups []string) (GroupStatusQueryResult
 			ttftCount:      row.TtftCount,
 			outputTokens:   row.OutputTokens,
 			generationMs:   row.GenerationMs,
+			tpsCount:       row.TpsCount,
 			promptTokens:   row.PromptTokens,
 			cachedTokens:   row.CachedTokens,
 		})
@@ -210,16 +215,17 @@ func QueryGroupStatus(hours int, allowedGroups []string) (GroupStatusQueryResult
 				focus = MetricFocusCacheRate
 			}
 			topModels = append(topModels, GroupModelMetric{
-				ModelName:    modelName,
-				ModelKind:    kind,
-				MetricFocus:  focus,
-				RequestCount: val.requestCount,
-				SuccessCount: val.successCount,
-				SuccessRate:  math.Round(successRate(val)*100) / 100,
-				AvgLatencyMs: avg(val.totalLatencyMs, val.requestCount),
-				AvgTtftMs:    avg(val.ttftSumMs, val.ttftCount),
-				AvgTps:       math.Round(avgTps(val)*100) / 100,
-				CacheHitRate: hitRate,
+				ModelName:       modelName,
+				ModelKind:       kind,
+				MetricFocus:     focus,
+				RequestCount:    val.requestCount,
+				SuccessCount:    val.successCount,
+				SuccessRate:     math.Round(successRate(val)*100) / 100,
+				AvgLatencyMs:    avg(val.totalLatencyMs, val.requestCount),
+				AvgTtftMs:       avg(val.ttftSumMs, val.ttftCount),
+				AvgTps:          math.Round(avgTps(val)*100) / 100,
+				TpsInsufficient: isThroughputInsufficient(val, modelName),
+				CacheHitRate:    hitRate,
 			})
 		}
 		sort.Slice(topModels, func(i, j int) bool {
@@ -233,16 +239,17 @@ func QueryGroupStatus(hours int, allowedGroups []string) (GroupStatusQueryResult
 		}
 
 		result.Groups[group] = GroupMetricsSnapshot{
-			Group:        group,
-			RequestCount: total.requestCount,
-			SuccessCount: total.successCount,
-			SuccessRate:  math.Round(successRate(total)*100) / 100,
-			AvgLatencyMs: avg(total.totalLatencyMs, total.requestCount),
-			AvgTtftMs:    avg(total.ttftSumMs, total.ttftCount),
-			AvgTps:       math.Round(avgTps(total)*100) / 100,
-			CacheHitRate: cacheHitRate(total),
-			Series:       series,
-			TopModels:    topModels,
+			Group:           group,
+			RequestCount:    total.requestCount,
+			SuccessCount:    total.successCount,
+			SuccessRate:     math.Round(successRate(total)*100) / 100,
+			AvgLatencyMs:    avg(total.totalLatencyMs, total.requestCount),
+			AvgTtftMs:       avg(total.ttftSumMs, total.ttftCount),
+			AvgTps:          math.Round(avgTps(total)*100) / 100,
+			TpsInsufficient: isThroughputInsufficient(total, ""),
+			CacheHitRate:    cacheHitRate(total),
+			Series:          series,
+			TopModels:       topModels,
 		}
 	}
 

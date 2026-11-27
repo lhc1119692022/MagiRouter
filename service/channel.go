@@ -36,6 +36,12 @@ func DisableChannel(channelError types.ChannelError, reason string) {
 		return
 	}
 
+	resetKey := ""
+	if channelError.IsMultiKey {
+		resetKey = channelError.UsingKey
+	}
+	ResetChannelFailureCount(channelError.ChannelId, resetKey)
+
 	success := model.UpdateChannelStatus(channelError.ChannelId, channelError.UsingKey, common.ChannelStatusAutoDisabled, reason)
 	if success {
 		closeWebSockets, channel := shouldCloseActiveWebSocketsAfterDisable(channelError.ChannelId)
@@ -53,6 +59,7 @@ func DisableChannel(channelError types.ChannelError, reason string) {
 }
 
 func EnableChannel(channelId int, usingKey string, channelName string) {
+	ResetChannelFailureCount(channelId, usingKey)
 	success := model.UpdateChannelStatus(channelId, usingKey, common.ChannelStatusEnabled, "")
 	if success {
 		params := map[string]any{"Name": channelName, "Id": channelId}

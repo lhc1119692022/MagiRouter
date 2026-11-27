@@ -63,6 +63,10 @@ export function AutoGroupOrderEditor(props: AutoGroupOrderEditorProps) {
       ),
     [props.options, props.value]
   )
+  const optionsByValue = useMemo(
+    () => new Map(props.options.map((option) => [option.value, option])),
+    [props.options]
+  )
 
   const handleAdd = (group: string) => {
     if (atLimit || props.value.includes(group)) return
@@ -100,7 +104,7 @@ export function AutoGroupOrderEditor(props: AutoGroupOrderEditorProps) {
       className={cn('flex flex-col gap-3', props.className)}
     >
       <div className='flex items-center justify-between gap-3'>
-        <p className='text-muted-foreground text-xs' aria-live='polite'>
+        <p className='kform-hint' aria-live='polite'>
           {isInheriting
             ? t('Using the complete global Auto order ({{count}} groups)', {
                 count: props.globalOptions.length,
@@ -114,6 +118,7 @@ export function AutoGroupOrderEditor(props: AutoGroupOrderEditorProps) {
           type='button'
           variant='outline'
           size='sm'
+          className='kf-restore-btn'
           disabled={isInheriting}
           onClick={() => {
             props.onChange({ groups: [], mode: 'inherit' })
@@ -136,7 +141,7 @@ export function AutoGroupOrderEditor(props: AutoGroupOrderEditorProps) {
       />
 
       {isInheriting && props.globalOptions.length === 0 && (
-        <Empty className='min-h-28 border'>
+        <Empty className='kf-global-order-card min-h-24 border-0'>
           <EmptyHeader>
             <EmptyTitle>{t('Inherit global Auto order')}</EmptyTitle>
             <EmptyDescription>
@@ -147,57 +152,62 @@ export function AutoGroupOrderEditor(props: AutoGroupOrderEditorProps) {
       )}
 
       {isInheriting && props.globalOptions.length > 0 && (
-        <ol
-          data-slot='global-auto-order'
-          aria-label={t('Inherit global Auto order')}
-          className='flex max-h-24 flex-wrap content-start gap-1.5 overflow-y-auto'
-        >
-          {props.globalOptions.map((option, index) => (
-            <li key={option.value} className='flex min-w-0 items-center gap-1'>
-              {index > 0 && (
-                <HugeiconsIcon
-                  icon={ArrowRight01Icon}
-                  strokeWidth={2}
-                  aria-hidden='true'
-                  data-slot='global-auto-order-connector'
-                  className='text-muted-foreground size-3.5 shrink-0'
-                />
-              )}
-              <span
-                data-slot='global-auto-order-chip'
-                title={option.desc}
-                className='bg-muted/30 flex min-w-0 items-center gap-1.5 rounded-md border px-2 py-1'
+        <div className='kf-global-order-card'>
+          <ol
+            data-slot='global-auto-order'
+            aria-label={t('Inherit global Auto order')}
+            className='flex max-h-24 flex-wrap content-start gap-1.5 overflow-y-auto'
+          >
+            {props.globalOptions.map((option, index) => (
+              <li
+                key={option.value}
+                className='flex min-w-0 items-center gap-1'
               >
-                <span
-                  data-slot='global-auto-order-index'
-                  aria-hidden='true'
-                  className='bg-primary/10 text-primary flex size-4 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold tabular-nums'
-                >
-                  {index + 1}
-                </span>
-                <span
-                  data-slot='global-auto-order-name'
-                  className='max-w-40 truncate text-xs font-medium'
-                >
-                  {option.label}
-                </span>
-                {option.desc && (
-                  <span
-                    data-slot='global-auto-order-description'
-                    className='sr-only'
-                  >
-                    {option.desc}
-                  </span>
+                {index > 0 && (
+                  <HugeiconsIcon
+                    icon={ArrowRight01Icon}
+                    strokeWidth={2}
+                    aria-hidden='true'
+                    data-slot='global-auto-order-connector'
+                    className='text-muted-foreground size-3.5 shrink-0'
+                  />
                 )}
-                <GroupRatioBadge ratio={option.ratio} />
-              </span>
-            </li>
-          ))}
-        </ol>
+                <span
+                  data-slot='global-auto-order-chip'
+                  title={option.desc}
+                  className='bg-background/80 flex min-w-0 items-center gap-1.5 rounded-full border px-2.5 py-1'
+                >
+                  <span
+                    data-slot='global-auto-order-index'
+                    aria-hidden='true'
+                    className='bg-primary/10 text-primary flex size-4 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold tabular-nums'
+                  >
+                    {index + 1}
+                  </span>
+                  <span
+                    data-slot='global-auto-order-name'
+                    className='max-w-40 truncate text-xs font-medium'
+                  >
+                    {option.label}
+                  </span>
+                  {option.desc && (
+                    <span
+                      data-slot='global-auto-order-description'
+                      className='sr-only'
+                    >
+                      {option.desc}
+                    </span>
+                  )}
+                  <GroupRatioBadge ratio={option.ratio} />
+                </span>
+              </li>
+            ))}
+          </ol>
+        </div>
       )}
 
       {!isInheriting && props.value.length === 0 && (
-        <Empty className='min-h-24 border'>
+        <Empty className='kf-group-priority-card min-h-24 border-0'>
           <EmptyHeader>
             <EmptyTitle>{t('Auto group order')}</EmptyTitle>
             <EmptyDescription>
@@ -214,18 +224,35 @@ export function AutoGroupOrderEditor(props: AutoGroupOrderEditorProps) {
           axis='y'
           values={props.value}
           onReorder={(groups) => props.onChange({ groups, mode: 'custom' })}
-          className='flex flex-col gap-2'
+          className='kf-group-priority-card'
         >
-          {props.value.map((group, index) => (
-            <AutoGroupOrderItem
-              key={group}
-              group={group}
-              index={index}
-              count={props.value.length}
-              onMove={handleMove}
-              onRemove={handleRemove}
-            />
-          ))}
+          {props.value.map((group, index) => {
+            const option = optionsByValue.get(group)
+            return (
+              <AutoGroupOrderItem
+                key={group}
+                group={group}
+                index={index}
+                count={props.value.length}
+                leading={
+                  <span className='kf-gp-rank'>
+                    {t('Priority {{rank}}', { rank: index + 1 })}
+                  </span>
+                }
+                onMove={handleMove}
+                onRemove={handleRemove}
+              >
+                {option?.desc && option.desc !== group && (
+                  <span className='kf-gp-desc' title={option.desc}>
+                    {option.desc}
+                  </span>
+                )}
+                {option?.ratio !== undefined && (
+                  <GroupRatioBadge ratio={option.ratio} />
+                )}
+              </AutoGroupOrderItem>
+            )
+          })}
         </Reorder.Group>
       )}
     </div>

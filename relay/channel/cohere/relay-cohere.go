@@ -119,6 +119,7 @@ func cohereStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 				isFirst = false
 				info.FirstResponseTime = time.Now()
 			}
+			info.SetLastResponseTime()
 			data = strings.TrimSuffix(data, "\r")
 			var cohereResp CohereResponse
 			err := json.Unmarshal([]byte(data), &cohereResp)

@@ -365,4 +365,118 @@ describe('ModelDetailsContent redesigned 2-panel drawer', () => {
     expect(availabilityRow).not.toHaveClass('border')
     expect(availabilityRow).toHaveClass('border-t')
   })
+
+  it('avoids red for degraded available groups, reserves red for 0% unavailability, and displays insufficient throughput samples', () => {
+    const windowStart = 1789387200
+    const model: PricingModel = {
+      id: 4,
+      model_name: 'claude-sonnet-5-5',
+      vendor_name: 'Anthropic',
+      quota_type: 0,
+      model_ratio: 1,
+      completion_ratio: 5,
+      supported_endpoint_types: ['anthropic'],
+      enable_groups: ['claude-aws', 'claude-down'],
+      group_ratio: { 'claude-aws': 0.55, 'claude-down': 1 },
+    }
+    client.setQueryData(
+      ['perf-metrics', model.model_name, undefined, undefined],
+      {
+        model_name: model.model_name,
+        summary: {
+          success_rate: 60,
+          avg_latency_ms: 9460,
+          avg_tps: 0,
+          tps_insufficient: true,
+          cache_hit_rate: 0,
+        },
+        series: [],
+        window_start: windowStart,
+        window_end: windowStart + 23 * 3600,
+        groups: [
+          {
+            group: 'claude-aws',
+            success_rate: 60,
+            avg_latency_ms: 9460,
+            avg_ttft_ms: 6770,
+            avg_tps: 0,
+            tps_insufficient: true,
+            cache_hit_rate: 0,
+            series: [
+              {
+                ts: windowStart,
+                avg_ttft_ms: 6770,
+                avg_latency_ms: 9460,
+                success_rate: 100,
+                avg_tps: 0,
+              },
+              {
+                ts: windowStart + 3600,
+                avg_ttft_ms: 0,
+                avg_latency_ms: 9460,
+                success_rate: 0,
+                avg_tps: 0,
+              },
+            ],
+          },
+          {
+            group: 'claude-down',
+            success_rate: 0,
+            avg_latency_ms: 2000,
+            avg_ttft_ms: 0,
+            avg_tps: 0,
+            tps_insufficient: true,
+            cache_hit_rate: null,
+            series: [
+              {
+                ts: windowStart,
+                avg_ttft_ms: 0,
+                avg_latency_ms: 2000,
+                success_rate: 0,
+                avg_tps: 0,
+              },
+            ],
+          },
+        ],
+      }
+    )
+
+    render(
+      <QueryClientProvider client={client}>
+        <ModelDetailsContent
+          model={model}
+          groupRatio={{ 'claude-aws': 0.55, 'claude-down': 1 }}
+          usableGroup={{
+            'claude-aws': { desc: 'Claude AWS', ratio: 0.55 },
+            'claude-down': { desc: 'Claude Down', ratio: 1 },
+          }}
+          endpointMap={{}}
+          autoGroups={[]}
+          priceRate={1}
+          usdExchangeRate={1}
+          tokenUnit='M'
+        />
+      </QueryClientProvider>
+    )
+
+    const insufficientLabels = screen.getAllByText('Insufficient samples')
+    expect(insufficientLabels.length).toBeGreaterThanOrEqual(3)
+
+    const degradedRateLabels = screen.getAllByText('60.00%')
+    for (const label of degradedRateLabels) {
+      expect(label).toHaveClass('text-amber-600')
+      expect(label).not.toHaveClass('text-red-600')
+    }
+
+    const unavailableRateLabel = screen.getByText('0.00%')
+    expect(unavailableRateLabel).toHaveClass('text-red-600')
+
+    const bars = screen.getAllByRole('img', {
+      name: 'Sampled request success rates',
+    })
+    expect(bars).toHaveLength(2)
+    expect(bars[0].querySelectorAll('[data-state="warn"]')).toHaveLength(1)
+    expect(bars[0].querySelectorAll('[data-state="err"]')).toHaveLength(0)
+    expect(bars[1].querySelectorAll('[data-state="err"]')).toHaveLength(1)
+  })
 })

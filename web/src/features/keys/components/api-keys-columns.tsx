@@ -21,7 +21,6 @@ import type { ColumnDef } from '@tanstack/react-table'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { StatusBadge } from '@/components/status-badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { useMediaQuery } from '@/hooks'
 import { toIntlLocale } from '@/i18n/languages'
@@ -30,7 +29,7 @@ import { getCurrencyDisplay } from '@/lib/currency'
 import { requireServerSuccess } from '@/lib/server-error-message'
 import { useSystemConfigStore } from '@/stores/system-config-store'
 
-import { API_KEY_STATUSES } from '../constants'
+import { API_KEY_STATUS, API_KEY_STATUSES } from '../constants'
 import type { ApiKey } from '../types'
 import { ApiKeyGroupCell } from './api-key-group-cell'
 import { ApiKeyQuotaCell } from './api-key-quota-cell'
@@ -47,11 +46,13 @@ import { DataTableRowActions } from './data-table-row-actions'
 
 type UserGroupsMeta = {
   ratios: Record<string, number | string>
+  descriptions: Record<string, string>
   requireExplicitGroup: boolean
 }
 
 const EMPTY_USER_GROUPS_META: UserGroupsMeta = {
   ratios: {},
+  descriptions: {},
   requireExplicitGroup: false,
 }
 
@@ -62,6 +63,7 @@ function useUserGroupsMeta(): UserGroupsMeta {
     staleTime: 0,
     select: (res): UserGroupsMeta => {
       const ratios: Record<string, number | string> = {}
+      const descriptions: Record<string, string> = {}
       if (res.success && res.data) {
         for (const [group, info] of Object.entries(res.data)) {
           if (
@@ -70,10 +72,14 @@ function useUserGroupsMeta(): UserGroupsMeta {
           ) {
             ratios[group] = info.ratio
           }
+          if (typeof info.desc === 'string' && info.desc.trim()) {
+            descriptions[group] = info.desc.trim()
+          }
         }
       }
       return {
         ratios,
+        descriptions,
         requireExplicitGroup:
           res.success && res.require_explicit_group === true,
       }
@@ -83,12 +89,23 @@ function useUserGroupsMeta(): UserGroupsMeta {
   return data ?? EMPTY_USER_GROUPS_META
 }
 
+function getStatusTagClassName(status: number): string {
+  if (status === API_KEY_STATUS.ENABLED) return 'key-status-tag is-enabled'
+  if (status === API_KEY_STATUS.DISABLED) return 'key-status-tag is-disabled'
+  if (status === API_KEY_STATUS.EXPIRED) return 'key-status-tag is-expired'
+  return 'key-status-tag is-exhausted'
+}
+
 export function useApiKeysColumns(now: number): ColumnDef<ApiKey>[] {
   const { t, i18n } = useTranslation()
   useSystemConfigStore((state) => state.config.currency)
   const { meta: currency } = getCurrencyDisplay()
   const quotaUnit = currency.kind === 'tokens' ? t('Tokens') : currency.symbol
-  const { ratios: groupRatios, requireExplicitGroup } = useUserGroupsMeta()
+  const {
+    ratios: groupRatios,
+    descriptions: groupDescriptions,
+    requireExplicitGroup,
+  } = useUserGroupsMeta()
   const shouldReduceMotion = useMediaQuery('(prefers-reduced-motion: reduce)')
   const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
   const justNowLabel = t('Just now')
@@ -122,31 +139,16 @@ export function useApiKeysColumns(now: number): ColumnDef<ApiKey>[] {
       {
         accessorKey: 'name',
         header: t('Name'),
-        cell: ({ row }) => (
-          <span className='font-medium'>{row.getValue('name')}</span>
-        ),
-        size: 180,
-        meta: { mobileTitle: true },
-      },
-      {
-        accessorKey: 'status',
-        header: t('Status'),
         cell: ({ row }) => {
-          const statusConfig =
-            API_KEY_STATUSES[row.getValue('status') as number]
-          if (!statusConfig) return null
+          const name = String(row.getValue('name') ?? '')
           return (
-            <StatusBadge
-              label={t(statusConfig.label)}
-              variant={statusConfig.variant}
-              copyable={false}
-              className='-ml-1.5'
-            />
+            <span className='key-name-primary' title={name}>
+              {name}
+            </span>
           )
         },
-        filterFn: (row, id, value) => value.includes(String(row.getValue(id))),
-        size: 120,
-        meta: { mobileBadge: true },
+        size: 156,
+        meta: { mobileTitle: true },
       },
       {
         id: 'key',
@@ -154,15 +156,7 @@ export function useApiKeysColumns(now: number): ColumnDef<ApiKey>[] {
         header: t('API Key'),
         cell: ({ row }) => <ApiKeyCell apiKey={row.original} />,
         enableSorting: false,
-        size: 260,
-      },
-      {
-        id: 'quota',
-        accessorKey: 'remain_quota',
-        header: `${t('Quota')} (${quotaUnit})`,
-        cell: ({ row }) => <ApiKeyQuotaCell apiKey={row.original} now={now} />,
-        size: 260,
-        minSize: 260,
+        size: 215,
       },
       {
         accessorKey: 'group',
@@ -170,46 +164,66 @@ export function useApiKeysColumns(now: number): ColumnDef<ApiKey>[] {
         cell: ({ row }) => {
           const apiKey = row.original
           const group = row.getValue('group') as string
+          const autoOrderText =
+            group === 'auto' && apiKey.auto_groups?.length
+              ? apiKey.auto_groups.join(' → ')
+              : ''
+          const subNote = autoOrderText || groupDescriptions[group] || ''
           return (
-            <ApiKeyGroupCell
-              group={group}
-              ratio={groupRatios[group]}
-              crossGroupRetry={apiKey.cross_group_retry}
-              shouldReduceMotion={shouldReduceMotion}
-              requireExplicitGroup={requireExplicitGroup}
-            />
+            <div className='key-group-wrap'>
+              <ApiKeyGroupCell
+                group={group}
+                ratio={groupRatios[group]}
+                crossGroupRetry={apiKey.cross_group_retry}
+                shouldReduceMotion={shouldReduceMotion}
+                requireExplicitGroup={requireExplicitGroup}
+              />
+              {subNote && (
+                <span className='key-sub-note' title={subNote}>
+                  {subNote}
+                </span>
+              )}
+            </div>
           )
         },
-        size: 220,
+        filterFn: (row, id, value) => {
+          if (!value || value === 'all') return true
+          const target = String(value)
+          const rowGroup = String(row.getValue(id) ?? '')
+          if (rowGroup === target) return true
+          return (
+            rowGroup === 'auto' &&
+            Boolean(row.original.auto_groups?.includes(target))
+          )
+        },
+        size: 185,
         meta: { mobileHidden: true },
       },
       {
-        id: 'model_limits',
-        accessorKey: 'model_limits',
-        header: t('Models'),
-        cell: ({ row }) => <ModelLimitsCell apiKey={row.original} />,
-        enableSorting: false,
-        size: 160,
-        meta: { mobileHidden: true },
+        id: 'quota',
+        accessorKey: 'remain_quota',
+        header: `${t('Quota')} (${quotaUnit})`,
+        cell: ({ row }) => <ApiKeyQuotaCell apiKey={row.original} now={now} />,
+        size: 196,
+        minSize: 180,
       },
       {
-        id: 'allow_ips',
-        accessorKey: 'allow_ips',
-        header: t('IP Restriction'),
-        cell: ({ row }) => <IpRestrictionsCell apiKey={row.original} />,
-        enableSorting: false,
-        size: 160,
-        meta: { mobileHidden: true },
-      },
-      {
-        id: 'activity_time',
-        accessorKey: 'created_time',
-        header: t('Time'),
-        cell: ({ row }) => (
-          <ApiKeyActivityCell apiKey={row.original} now={now} />
-        ),
-        size: 220,
-        meta: { mobileHidden: true },
+        accessorKey: 'status',
+        header: t('Status'),
+        cell: ({ row }) => {
+          const status = row.getValue('status') as number
+          const statusConfig = API_KEY_STATUSES[status]
+          if (!statusConfig) return null
+          return (
+            <span className={getStatusTagClassName(status)}>
+              <span className='key-status-dot' aria-hidden='true' />
+              <span>{t(statusConfig.label)}</span>
+            </span>
+          )
+        },
+        filterFn: (row, id, value) => value.includes(String(row.getValue(id))),
+        size: 96,
+        meta: { mobileBadge: true },
       },
       {
         accessorKey: 'expired_time',
@@ -218,12 +232,9 @@ export function useApiKeysColumns(now: number): ColumnDef<ApiKey>[] {
           const expiredTime = row.getValue('expired_time') as number
           if (expiredTime === -1) {
             return (
-              <StatusBadge
-                label={t('Never')}
-                variant='neutral'
-                copyable={false}
-                className='-ml-1.5'
-              />
+              <span className='text-foreground text-[12.5px] font-normal whitespace-nowrap'>
+                {t('Never')}
+              </span>
             )
           }
           return (
@@ -240,7 +251,35 @@ export function useApiKeysColumns(now: number): ColumnDef<ApiKey>[] {
             />
           )
         },
-        size: 180,
+        size: 138,
+        meta: { mobileHidden: true },
+      },
+      {
+        id: 'activity_time',
+        accessorKey: 'created_time',
+        header: t('Time'),
+        cell: ({ row }) => (
+          <ApiKeyActivityCell apiKey={row.original} now={now} />
+        ),
+        size: 185,
+        meta: { mobileHidden: true },
+      },
+      {
+        id: 'model_limits',
+        accessorKey: 'model_limits',
+        header: t('Models'),
+        cell: ({ row }) => <ModelLimitsCell apiKey={row.original} />,
+        enableSorting: false,
+        size: 118,
+        meta: { mobileHidden: true },
+      },
+      {
+        id: 'allow_ips',
+        accessorKey: 'allow_ips',
+        header: t('IP Restriction'),
+        cell: ({ row }) => <IpRestrictionsCell apiKey={row.original} />,
+        enableSorting: false,
+        size: 118,
         meta: { mobileHidden: true },
       },
       {
@@ -248,6 +287,7 @@ export function useApiKeysColumns(now: number): ColumnDef<ApiKey>[] {
         header: () => t('Actions'),
         cell: ({ row }) => <DataTableRowActions row={row} />,
         meta: { pinned: 'right' as const },
+        size: 144,
       },
     ],
     [
@@ -255,6 +295,7 @@ export function useApiKeysColumns(now: number): ColumnDef<ApiKey>[] {
       quotaUnit,
       now,
       groupRatios,
+      groupDescriptions,
       requireExplicitGroup,
       shouldReduceMotion,
       locale,

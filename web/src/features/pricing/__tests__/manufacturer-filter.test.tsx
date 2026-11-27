@@ -243,7 +243,12 @@ it('expands filters by default, excludes remark tags from filters, and renders c
 
   // Default price mode is Your price (RMB with starting suffix)
   const priceModeBtn = screen.getByRole('button', { name: 'Your price' })
-  expect(within(modelACard).getByText('¥1 / ¥3')).toBeVisible()
+  expect(within(modelACard).getByText('Input').parentElement).toHaveTextContent(
+    'Input¥1'
+  )
+  expect(
+    within(modelACard).getByText('Output').parentElement
+  ).toHaveTextContent('Output¥3')
   expect(within(modelACard).getByText('/1M+')).toBeVisible()
 
   const user = userEvent.setup()
@@ -251,7 +256,12 @@ it('expands filters by default, excludes remark tags from filters, and renders c
   // Toggle to Official price (backend 1x USD without starting suffix)
   await user.click(priceModeBtn)
   expect(screen.getByRole('button', { name: 'Official price' })).toBeVisible()
-  expect(within(modelACard).getByText('$2 / $6')).toBeVisible()
+  expect(within(modelACard).getByText('Input').parentElement).toHaveTextContent(
+    'Input$2'
+  )
+  expect(
+    within(modelACard).getByText('Output').parentElement
+  ).toHaveTextContent('Output$6')
   expect(within(modelACard).getByText('/1M')).toBeVisible()
   expect(within(modelACard).queryByText('/1M+')).toBeNull()
 

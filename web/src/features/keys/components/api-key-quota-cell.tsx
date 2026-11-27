@@ -138,6 +138,11 @@ export function ApiKeyQuotaCell(props: ApiKeyQuotaCellProps) {
           </span>
         )}
         <span
+          data-unlimited={
+            props.apiKey.unlimited_quota && props.variant !== 'card'
+              ? 'true'
+              : undefined
+          }
           className={cn(
             'min-w-0 truncate',
             props.variant === 'card'

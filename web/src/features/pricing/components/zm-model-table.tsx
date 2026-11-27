@@ -52,6 +52,7 @@ interface ZmModelTableRowProps {
   showRechargePrice: boolean
   priceMode: PriceMode
   selectedGroup?: string
+  scopedMonitoringGroup?: string
   perf?: PerfModelSummary
   monitoringWindow?: MonitoringWindow
   windowLabel: string
@@ -165,9 +166,17 @@ const ZmModelTableRow = memo(function ZmModelTableRow(
         props.monitoringStatus === 'success' ? samples : undefined,
         props.monitoringStatus === 'success'
           ? props.monitoringWindow
-          : undefined
+          : undefined,
+        undefined,
+        hasMeasuredRate ? successRate : undefined
       ),
-    [props.monitoringStatus, props.monitoringWindow, samples]
+    [
+      hasMeasuredRate,
+      props.monitoringStatus,
+      props.monitoringWindow,
+      samples,
+      successRate,
+    ]
   )
   const hasSampledTicks = monitorSlots.some((slot) => slot.state !== 'empty')
   let statusText = t('Not monitored')
@@ -175,8 +184,15 @@ const ZmModelTableRow = memo(function ZmModelTableRow(
   if (props.monitoringStatus === 'error') {
     statusText = t('Monitoring unavailable')
   }
+  const bestGroupName = props.perf?.best_group
+  let scopeHint = t('Best group')
+  if (props.scopedMonitoringGroup) {
+    scopeHint = props.scopedMonitoringGroup
+  } else if (bestGroupName) {
+    scopeHint = `${t('Best group')}: ${bestGroupName}`
+  }
   const monitoringHint = [
-    t('All visible groups'),
+    scopeHint,
     t(
       'Success rate excludes business rejections and includes the current partial hour.'
     ),
@@ -373,8 +389,13 @@ export const ZmModelTable = memo(function ZmModelTable(
     return props.models.slice(startIndex, startIndex + pageSize)
   }, [currentPage, pageSize, props.models])
 
-  const { perfMap, monitoringWindow, windowLabel, monitoringStatus } =
-    useCatalogPerfMetrics(props.models.length > 0)
+  const {
+    perfMap,
+    monitoringWindow,
+    windowLabel,
+    monitoringStatus,
+    scopedGroup,
+  } = useCatalogPerfMetrics(props.models.length > 0, props.selectedGroup)
 
   return (
     <div className='flex flex-col gap-5'>
@@ -401,6 +422,7 @@ export const ZmModelTable = memo(function ZmModelTable(
                 showRechargePrice={showRechargePrice}
                 priceMode={priceMode}
                 selectedGroup={props.selectedGroup}
+                scopedMonitoringGroup={scopedGroup}
                 perf={perfMap.get(model.model_name || '')}
                 monitoringWindow={monitoringWindow}
                 windowLabel={windowLabel}

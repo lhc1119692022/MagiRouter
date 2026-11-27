@@ -1,4 +1,7 @@
-import { getSuccessRateLevel } from '@/features/performance-metrics/lib/format'
+import {
+  getSuccessRateLevel,
+  shouldAllowCriticalSuccessRate,
+} from '@/features/performance-metrics/lib/format'
 import type { SuccessRatePoint } from '@/features/performance-metrics/types'
 import { formatTimestampToDate } from '@/lib/format'
 
@@ -7,7 +10,7 @@ export type MonitoringWindow = { window_start?: number; window_end?: number }
 const HOUR_SECONDS = 3600
 export const DEFAULT_MONITOR_SLOT_COUNT = 24
 
-export type HourlyMonitorSlotState = 'empty' | 'ok' | 'warn' | 'err'
+export type HourlyMonitorSlotState = 'empty' | 'ok' | 'good' | 'warn' | 'err'
 
 export type HourlyMonitorSlot = {
   key: string
@@ -54,7 +57,8 @@ export function monitoringWindowLabel(window?: MonitoringWindow): string {
 export function buildHourlyMonitorSlots(
   series?: SuccessRatePoint[],
   window?: MonitoringWindow,
-  hours = DEFAULT_MONITOR_SLOT_COUNT
+  hours = DEFAULT_MONITOR_SLOT_COUNT,
+  overallRate?: number
 ): HourlyMonitorSlot[] {
   const slotCount = Math.max(1, Math.floor(hours))
   const observed = observedRequestSamples(series, window)
@@ -71,6 +75,11 @@ export function buildHourlyMonitorSlots(
     const hourTs = Math.floor(point.ts / HOUR_SECONDS) * HOUR_SECONDS
     byHour.set(hourTs, point)
   }
+
+  const allowCritical = shouldAllowCriticalSuccessRate(
+    isMeasuredRate(overallRate) ? overallRate : undefined,
+    observed.map((point) => point.success_rate)
+  )
 
   let startHour: number
   if (
@@ -97,10 +106,12 @@ export function buildHourlyMonitorSlots(
       }
     }
 
-    const level = getSuccessRateLevel(sample.success_rate)
+    const level = getSuccessRateLevel(sample.success_rate, { allowCritical })
     let state: HourlyMonitorSlotState = 'empty'
-    if (level === 'excellent' || level === 'good') {
+    if (level === 'excellent') {
       state = 'ok'
+    } else if (level === 'good') {
+      state = 'good'
     } else if (level === 'warning') {
       state = 'warn'
     } else if (level === 'critical') {

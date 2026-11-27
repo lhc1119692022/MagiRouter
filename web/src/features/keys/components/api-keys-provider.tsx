@@ -41,6 +41,8 @@ type ApiKeysContextType = {
   loadingKeys: Record<number, boolean>
   copiedKeyId: number | null
   markKeyCopied: (id: number) => void
+  totalKeysCount: number | null
+  setTotalKeysCount: React.Dispatch<React.SetStateAction<number | null>>
 }
 
 const ApiKeysContext = React.createContext<ApiKeysContextType | null>(null)
@@ -51,6 +53,7 @@ export function ApiKeysProvider({ children }: { children: React.ReactNode }) {
   const [currentRow, setCurrentRow] = useState<ApiKey | null>(null)
   const [refreshTrigger, setRefreshTrigger] = useState(0)
   const [resolvedKey, setResolvedKey] = useState('')
+  const [totalKeysCount, setTotalKeysCount] = useState<number | null>(null)
 
   const [resolvedKeys, setResolvedKeys] = useState<Record<number, string>>({})
   const [loadingKeys, setLoadingKeys] = useState<Record<number, boolean>>({})
@@ -171,6 +174,8 @@ export function ApiKeysProvider({ children }: { children: React.ReactNode }) {
         loadingKeys,
         copiedKeyId,
         markKeyCopied,
+        totalKeysCount,
+        setTotalKeysCount,
       }}
     >
       {children}

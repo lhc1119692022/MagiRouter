@@ -248,7 +248,7 @@ describe('model cards', () => {
       name: 'Success rate',
     }).children
     expect(samples).toHaveLength(2)
-    expect(samples[0]).toHaveClass('bg-red-500')
+    expect(samples[0]).toHaveClass('bg-amber-500')
     expect(samples[1]).toHaveClass('bg-emerald-500')
     expect(within(idle).getByText('—')).toBeVisible()
     expect(within(idle).getByText('—s')).toBeVisible()
@@ -708,8 +708,8 @@ describe('model cards', () => {
       }).children,
     ]
     expect(spans).toHaveLength(3)
-    expect(spans[0]).toHaveClass('bg-amber-500')
-    expect(spans[1]).toHaveClass('bg-red-500')
+    expect(spans[0]).toHaveClass('bg-emerald-300')
+    expect(spans[1]).toHaveClass('bg-amber-500')
     expect(spans[2]).toHaveClass('bg-emerald-500')
     vi.useRealTimers()
   })
@@ -748,7 +748,34 @@ describe('model cards', () => {
     ]
     expect(spans).toHaveLength(2)
     expect(spans[0]).toHaveClass('bg-emerald-500')
-    expect(spans[1]).toHaveClass('bg-red-500')
+    expect(spans[1]).toHaveClass('bg-amber-500')
+  })
+
+  it('uses red bars when overall availability drops below 30% and shows insufficient throughput samples', () => {
+    const windowStart = Date.parse('2026-09-07T00:00:00.000Z') / 1000
+    render(
+      <ModelCard
+        model={pricingModel()}
+        onClick={vi.fn()}
+        perf={{
+          avg_latency_ms: 1200,
+          avg_tps: 0,
+          tps_insufficient: true,
+          success_rate: 25,
+          window_start: windowStart,
+          recent_success_series: [{ ts: windowStart, success_rate: 25 }],
+        }}
+      />
+    )
+
+    const spans = [
+      ...screen.getByRole('img', {
+        name: 'Success rate',
+      }).children,
+    ]
+    expect(spans).toHaveLength(1)
+    expect(spans[0]).toHaveClass('bg-red-500')
+    expect(screen.getByText('Insufficient samples')).toBeVisible()
   })
 
   it('shows the latest 24 valid samples without requiring hourly window metadata or mutating the series', () => {
@@ -837,7 +864,7 @@ describe('model cards', () => {
       }).children,
     ]
     expect(spans).toHaveLength(1)
-    expect(spans[0]).toHaveClass('bg-amber-500')
+    expect(spans[0]).toHaveClass('bg-emerald-300')
     vi.useRealTimers()
   })
 })

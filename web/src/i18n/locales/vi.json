@@ -9485,6 +9485,17 @@
     "Download all": "Tải xuống tất cả",
     "{{count}} lines": "{{count}} dòng",
     "Download {{filename}}": "Tải xuống {{filename}}",
-    "Manufacturer order (Name: Z to A)": "Theo thứ tự nhà cung cấp (Tên: Z đến A)"
+    "Manufacturer order (Name: Z to A)": "Theo thứ tự nhà cung cấp (Tên: Z đến A)",
+    "Best group": "Nhóm tốt nhất",
+    "Insufficient samples": "Không đủ mẫu",
+    "Created {{count}}": "Đã tạo {{count}}",
+    "Batch Enable": "Bật hàng loạt",
+    "Batch Disable": "Tắt hàng loạt",
+    "Batch Delete": "Xóa hàng loạt",
+    "Enabled {{count}} API key(s)": "Đã bật {{count}} khóa API",
+    "Disabled {{count}} API key(s)": "Đã tắt {{count}} khóa API",
+    "{{count}} key(s) selected": "Đã chọn {{count}} khóa",
+    "Reveal full API key": "Hiện khóa API đầy đủ",
+    "Priority {{rank}}": "Ưu tiên {{rank}}"
   }
 }

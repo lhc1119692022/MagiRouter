@@ -63,7 +63,7 @@ func IsRequestPolicyOption(key string) bool {
 		return true
 	}
 	switch key {
-	case "AutomaticEnableChannelEnabled", "ChannelDisableThreshold", "monitor_setting.auto_test_channel_enabled", "monitor_setting.auto_test_channel_minutes", "monitor_setting.channel_test_concurrency", "monitor_setting.channel_test_mode", "monitor_setting.channel_test_model_strategy", "monitor_setting.channel_test_sample_percent", "monitor_setting.channel_test_exclude_models", "monitor_setting.channel_test_idle_minutes", "RetryTimes", "AutomaticRetryStatusCodes", "AutomaticDisableChannelEnabled", "AutomaticDisableStatusCodes", "AutomaticDisableKeywords":
+	case "AutomaticEnableChannelEnabled", "ChannelDisableThreshold", "monitor_setting.auto_test_channel_enabled", "monitor_setting.auto_test_channel_minutes", "monitor_setting.channel_test_concurrency", "monitor_setting.channel_test_mode", "monitor_setting.channel_test_model_strategy", "monitor_setting.channel_test_sample_percent", "monitor_setting.channel_test_exclude_models", "monitor_setting.channel_test_idle_minutes", "monitor_setting.consecutive_failure_disable_threshold", "monitor_setting.recovery_backoff_max_minutes", "RetryTimes", "AutomaticRetryStatusCodes", "AutomaticDisableChannelEnabled", "AutomaticDisableStatusCodes", "AutomaticDisableKeywords":
 		return true
 	}
 	return false
@@ -152,6 +152,12 @@ func BuildRequestPolicy(options map[string]string) (*RequestPolicySnapshot, erro
 		return nil, err
 	}
 	if err := operation_setting.ValidateChannelTestIdleMinutes(raw["monitor_setting.channel_test_idle_minutes"]); err != nil {
+		return nil, err
+	}
+	if err := operation_setting.ValidateConsecutiveFailureDisableThreshold(raw["monitor_setting.consecutive_failure_disable_threshold"]); err != nil {
+		return nil, err
+	}
+	if err := operation_setting.ValidateRecoveryBackoffMaxMinutes(raw["monitor_setting.recovery_backoff_max_minutes"]); err != nil {
 		return nil, err
 	}
 	if len(raw["monitor_setting.channel_test_exclude_models"]) > 2000 {

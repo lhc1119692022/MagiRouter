@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -34,14 +35,22 @@ func usablePerfMetricGroups(c *gin.Context) []string {
 }
 
 func GetPerfMetricsSummary(c *gin.Context) {
-	getPerfMetricsSummary(c, usablePerfMetricGroups(c))
+	groups := usablePerfMetricGroups(c)
+	if selectedGroup := strings.TrimSpace(c.Query("group")); selectedGroup != "" && selectedGroup != "auto" {
+		if slices.Contains(groups, selectedGroup) {
+			groups = []string{selectedGroup}
+		} else {
+			groups = []string{}
+		}
+	}
+	getPerfMetricsSummary(c, groups, true)
 }
 
 func GetDashboardPerfMetricsSummary(c *gin.Context) {
-	getPerfMetricsSummary(c, append(lo.Keys(ratio_setting.GetGroupRatioCopy()), "auto"))
+	getPerfMetricsSummary(c, append(lo.Keys(ratio_setting.GetGroupRatioCopy()), "auto"), false)
 }
 
-func getPerfMetricsSummary(c *gin.Context, groups []string) {
+func getPerfMetricsSummary(c *gin.Context, groups []string, bestGroupPerModel bool) {
 	hours := 24
 	if rawHours := c.Query("hours"); rawHours != "" {
 		if parsed, err := strconv.Atoi(rawHours); err == nil {
@@ -54,7 +63,15 @@ func getPerfMetricsSummary(c *gin.Context, groups []string) {
 		common.ApiErrorStatus(c, http.StatusBadRequest, common.NewMessage("Invalid parameters"))
 		return
 	}
-	result, err := perfmetrics.QuerySummaryAll(hours, groups, recentModels...)
+	var (
+		result perfmetrics.SummaryAllResult
+		err    error
+	)
+	if bestGroupPerModel {
+		result, err = perfmetrics.QuerySummaryAllBestGroup(hours, groups, recentModels...)
+	} else {
+		result, err = perfmetrics.QuerySummaryAll(hours, groups, recentModels...)
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
@@ -80,6 +97,7 @@ type groupChannelStatusSummary struct {
 	AvgLatencyMs      int64   `json:"avg_latency_ms"`
 	AvgTtftMs         int64   `json:"avg_ttft_ms"`
 	AvgTps            float64 `json:"avg_tps"`
+	TpsInsufficient   bool    `json:"tps_insufficient,omitempty"`
 }
 
 type groupChannelStatusItem struct {
@@ -99,6 +117,7 @@ type groupChannelStatusItem struct {
 	AvgLatencyMs      int64                          `json:"avg_latency_ms"`
 	AvgTtftMs         int64                          `json:"avg_ttft_ms"`
 	AvgTps            float64                        `json:"avg_tps"`
+	TpsInsufficient   bool                           `json:"tps_insufficient,omitempty"`
 	CacheHitRate      *float64                       `json:"cache_hit_rate,omitempty"`
 	Series            []perfmetrics.GroupBucketPoint `json:"series"`
 	TopModels         []perfmetrics.GroupModelMetric `json:"top_models"`
@@ -322,6 +341,7 @@ func GetPerfMetricsGroups(c *gin.Context) {
 			AvgLatencyMs:      snap.AvgLatencyMs,
 			AvgTtftMs:         snap.AvgTtftMs,
 			AvgTps:            snap.AvgTps,
+			TpsInsufficient:   !mediaOnly && snap.TpsInsufficient,
 			CacheHitRate:      snap.CacheHitRate,
 			Series:            series,
 			TopModels:         topModels,
@@ -367,6 +387,13 @@ func GetPerfMetricsGroups(c *gin.Context) {
 	}
 	if tpsWeight > 0 {
 		summary.AvgTps = math.Round(tpsWeighted/float64(tpsWeight)*100) / 100
+	} else if summary.TotalRequests > 0 {
+		for _, item := range items {
+			if item.TpsInsufficient {
+				summary.TpsInsufficient = true
+				break
+			}
+		}
 	}
 
 	var responseCustomOrder []string

@@ -396,6 +396,7 @@ it.each([
   async (status, action, nextStatus, nextLabel) => {
     const { post, put } = await renderKeysPage(status)
     const user = userEvent.setup()
+    const table = screen.getByRole('table')
     const button = screen.getByRole('button', { name: action })
     act(() => button.focus())
     await user.keyboard('{Enter}')
@@ -405,18 +406,19 @@ it.each([
         status: nextStatus,
       })
     )
-    await screen.findByText(nextLabel)
+    await within(table).findByText(nextLabel)
     expect(post).not.toHaveBeenCalled()
   }
 )
 
 it('keeps expired status when the server refuses reactivation', async () => {
   const { put, post } = await renderKeysPage(3)
+  const table = screen.getByRole('table')
   put.mockResolvedValue({ data: { success: false, message: 'Token expired' } })
   await userEvent.click(screen.getByRole('button', { name: 'Enable' }))
   await screen.findByText('Token expired')
-  expect(screen.getByText('Expired')).toBeInTheDocument()
-  expect(screen.queryByText('Enabled')).not.toBeInTheDocument()
+  expect(within(table).getByText('Expired')).toBeInTheDocument()
+  expect(within(table).queryByText('Enabled')).not.toBeInTheDocument()
   expect(post).not.toHaveBeenCalled()
 })
 
@@ -468,8 +470,16 @@ it('keeps full mobile information without group or quota section headings', asyn
     expect(
       screen.queryByText(zh.translation['Group'], { exact: true })
     ).not.toBeInTheDocument()
-    expect(screen.getByText('default')).toBeInTheDocument()
-    expect(screen.getByText('1x')).toBeInTheDocument()
+    const mobileCard = screen
+      .getByText('production')
+      .closest('.keys-mobile-card')
+    expect(mobileCard).not.toBeNull()
+    expect(
+      within(mobileCard as HTMLElement).getByText('default')
+    ).toBeInTheDocument()
+    expect(
+      within(mobileCard as HTMLElement).getByText('1x')
+    ).toBeInTheDocument()
     expect(screen.getByText(zh.translation['Models'])).toBeInTheDocument()
     expect(
       screen.getByText(zh.translation['IP Restriction'])

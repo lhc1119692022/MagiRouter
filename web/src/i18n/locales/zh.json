@@ -9503,6 +9503,17 @@
     "Download all": "全部下载",
     "{{count}} lines": "{{count}} 行",
     "Download {{filename}}": "下载 {{filename}}",
-    "Manufacturer order (Name: Z to A)": "按厂商顺序（同厂商按名称降序）"
+    "Manufacturer order (Name: Z to A)": "按厂商顺序（同厂商按名称降序）",
+    "Best group": "最优分组",
+    "Insufficient samples": "样本不足",
+    "Created {{count}}": "已创建 {{count}}",
+    "Batch Enable": "批量启用",
+    "Batch Disable": "批量禁用",
+    "Batch Delete": "批量删除",
+    "Enabled {{count}} API key(s)": "已启用 {{count}} 个 API 密钥",
+    "Disabled {{count}} API key(s)": "已禁用 {{count}} 个 API 密钥",
+    "{{count}} key(s) selected": "已选 {{count}} 个密钥",
+    "Reveal full API key": "查看完整 API 密钥",
+    "Priority {{rank}}": "优先级 {{rank}}"
   }
 }

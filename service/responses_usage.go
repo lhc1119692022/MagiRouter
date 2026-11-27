@@ -69,6 +69,9 @@ func (a *ResponsesUsageAccumulator) Observe(event *dto.ResponsesStreamResponse, 
 		"response.reasoning_summary_text.delta", "response.reasoning_text.delta", "response.refusal.delta":
 		// Every delta kind here is generated output that upstream bills as
 		// output tokens, so all of them feed the missing-usage estimate.
+		if event.Delta != "" {
+			a.info.ObserveStreamOutputToken()
+		}
 		a.outputText.WriteString(event.Delta)
 	case dto.ResponsesOutputTypeItemDone:
 		if event.Item == nil {

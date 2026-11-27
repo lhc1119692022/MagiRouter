@@ -1496,6 +1496,14 @@ func UpdateChannel(c *gin.Context) {
 	if keyChanged {
 		service.RevokeRemovedChannelCredentials(originChannel, keyBefore, keyAfter)
 	}
+	if keyChanged || !equalStringPtr(channel.BaseURL, originChannel.BaseURL) || proxyChanged {
+		service.ResetChannelFailureCount(channel.Id, "")
+		if originChannel.Status == common.ChannelStatusAutoDisabled {
+			if err := model.ClearChannelRecoveryBackoff(channel.Id); err != nil {
+				common.SysLog(common.LogText("failed to clear recovery backoff after channel update: channel_id=%d, error=%v", channel.Id, err))
+			}
+		}
+	}
 	// 记录变更的字段名（语言无关的字段标识），密钥仅记录"已更换"绝不记录内容。
 	changedFields := make([]string, 0)
 	if channel.Models != originChannel.Models {
@@ -1545,6 +1553,7 @@ func UpdateChannelStatus(c *gin.Context) {
 	}
 	changed := model.UpdateChannelStatus(id, "", req.Status, "manual operation")
 	if changed {
+		service.ResetChannelFailureCount(id, "")
 		model.InitChannelCache()
 		if req.Status != common.ChannelStatusEnabled {
 			closeActiveChannelWebSockets([]int{id})
@@ -1572,6 +1581,7 @@ func BatchUpdateChannelStatus(c *gin.Context) {
 	var disabledIDs []int
 	for _, id := range req.Ids {
 		if model.UpdateChannelStatus(id, "", req.Status, "manual batch operation") {
+			service.ResetChannelFailureCount(id, "")
 			changedCount++
 			if req.Status != common.ChannelStatusEnabled {
 				disabledIDs = append(disabledIDs, id)

@@ -21,7 +21,10 @@ import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { useThemeCustomization } from '@/context/theme-customization-provider'
-import { getSuccessRateColor } from '@/features/performance-metrics/lib/format'
+import {
+  getSuccessRateColor,
+  shouldAllowCriticalSuccessRate,
+} from '@/features/performance-metrics/lib/format'
 import type { SuccessRatePoint } from '@/features/performance-metrics/types'
 import { formatTimestampToDate } from '@/lib/format'
 import { useThemeRadiusPx } from '@/lib/theme-radius'
@@ -185,6 +188,10 @@ export function UptimeTrendChart(props: {
       uptime: point.success_rate,
     }))
     const axisMin = getUptimeAxisMin(data.map((point) => point.uptime))
+    const allowCritical = shouldAllowCriticalSuccessRate(
+      undefined,
+      props.series.map((point) => point.success_rate)
+    )
 
     return {
       type: 'line' as const,
@@ -199,7 +206,7 @@ export function UptimeTrendChart(props: {
           stroke: '#ffffff',
           lineWidth: 1.5,
           fill: (datum: { uptime: number }) =>
-            getSuccessRateColor(datum.uptime),
+            getSuccessRateColor(datum.uptime, { allowCritical }),
         },
       },
       tooltip: {

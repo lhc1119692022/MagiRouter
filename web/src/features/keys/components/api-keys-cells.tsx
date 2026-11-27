@@ -16,13 +16,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Check, Copy, Loader2 } from 'lucide-react'
+import { Check, Copy, Eye, EyeOff, Loader2 } from 'lucide-react'
 import { useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { BadgeCell } from '@/components/data-table'
-import { MaskedValueTrigger } from '@/components/masked-value-display'
-import { StatusBadge } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import {
   Popover,
@@ -85,10 +83,25 @@ export function ApiKeyCell({ apiKey }: { apiKey: ApiKey }) {
   }
 
   return (
-    <div className='flex max-w-full min-w-0 items-center'>
+    <div className='key-secret-cell'>
       <Popover open={popoverOpen} onOpenChange={handlePopoverOpen}>
-        <PopoverTrigger render={<MaskedValueTrigger />}>
-          <span className='truncate'>{maskedKey}</span>
+        <PopoverTrigger
+          render={
+            <button
+              type='button'
+              className='key-secret-trigger'
+              title={t('Reveal full API key')}
+            />
+          }
+        >
+          <span className='key-secret-code'>{maskedKey}</span>
+          <span className='key-icon-btn' aria-hidden='true'>
+            {popoverOpen ? (
+              <EyeOff className='size-3.5' />
+            ) : (
+              <Eye className='size-3.5' />
+            )}
+          </span>
         </PopoverTrigger>
         <PopoverContent
           className='w-auto max-w-[min(90vw,28rem)]'
@@ -118,12 +131,12 @@ export function ApiKeyCell({ apiKey }: { apiKey: ApiKey }) {
       <Tooltip>
         <TooltipTrigger
           render={
-            <Button
-              variant='ghost'
-              size='icon'
-              className='size-7 shrink-0'
+            <button
+              type='button'
+              className='key-icon-btn'
               onClick={handleCopy}
               disabled={isLoading}
+              aria-label={copyTooltip}
             />
           }
         >
@@ -191,14 +204,7 @@ function ApiKeyRestrictionCell(props: {
         </span>
       )
     }
-    return (
-      <StatusBadge
-        label={props.emptyLabel}
-        variant='neutral'
-        copyable={false}
-        className='-ml-1.5'
-      />
-    )
+    return <span className='key-sub-note'>{props.emptyLabel}</span>
   }
 
   const details = (
@@ -237,7 +243,7 @@ function ApiKeyRestrictionCell(props: {
   return (
     <Tooltip>
       <TooltipTrigger render={<BadgeCell />}>
-        <StatusBadge label={props.label} variant='neutral' copyable={false} />
+        <span className='key-limit-chip'>{props.label}</span>
       </TooltipTrigger>
       <TooltipContent side='top' className='max-w-xs'>
         {details}

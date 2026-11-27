@@ -67,7 +67,48 @@ type Channel struct {
 	BalanceDetail *ChannelBalanceDetail `json:"balance_detail,omitempty" gorm:"-"`
 }
 
-const ChannelStatusReasonAllKeysDisabled = "All keys are disabled"
+const (
+	ChannelStatusReasonAllKeysDisabled = "All keys are disabled"
+	ChannelOtherInfoRecoveryFailCount  = "recovery_fail_count"
+	ChannelOtherInfoRecoveryNextTestAt = "recovery_next_test_at"
+)
+
+func ClearChannelRecoveryBackoffInfo(info map[string]any) {
+	if info == nil {
+		return
+	}
+	delete(info, ChannelOtherInfoRecoveryFailCount)
+	delete(info, ChannelOtherInfoRecoveryNextTestAt)
+}
+
+func RecordChannelRecoveryProbeFailure(channelID int, failCount int, nextTestAt int64) error {
+	_, err := UpdateChannelOtherInfo(channelID, func(channel *Channel) (map[string]any, error) {
+		if channel.Status != common.ChannelStatusAutoDisabled {
+			return nil, nil
+		}
+		info := channel.GetOtherInfo()
+		info[ChannelOtherInfoRecoveryFailCount] = failCount
+		info[ChannelOtherInfoRecoveryNextTestAt] = nextTestAt
+		channel.SetOtherInfo(info)
+		return map[string]any{}, nil
+	})
+	return err
+}
+
+func ClearChannelRecoveryBackoff(channelID int) error {
+	_, err := UpdateChannelOtherInfo(channelID, func(channel *Channel) (map[string]any, error) {
+		info := channel.GetOtherInfo()
+		_, hasCount := info[ChannelOtherInfoRecoveryFailCount]
+		_, hasNext := info[ChannelOtherInfoRecoveryNextTestAt]
+		if !hasCount && !hasNext {
+			return nil, nil
+		}
+		ClearChannelRecoveryBackoffInfo(info)
+		channel.SetOtherInfo(info)
+		return map[string]any{}, nil
+	})
+	return err
+}
 
 type ChannelInfo struct {
 	IsMultiKey             bool                  `json:"is_multi_key"`                        // 是否多Key模式
@@ -1057,9 +1098,13 @@ func handlerMultiKeyUpdate(channel *Channel, usingKey string, status int, reason
 			info := channel.GetOtherInfo()
 			info["status_reason"] = ChannelStatusReasonAllKeysDisabled
 			info["status_time"] = common.GetTimestamp()
+			ClearChannelRecoveryBackoffInfo(info)
 			channel.SetOtherInfo(info)
 		} else if status == common.ChannelStatusEnabled {
 			channel.Status = common.ChannelStatusEnabled
+			info := channel.GetOtherInfo()
+			ClearChannelRecoveryBackoffInfo(info)
+			channel.SetOtherInfo(info)
 		}
 	}
 }
@@ -1165,10 +1210,16 @@ func UpdateChannelStatus(channelId int, usingKey string, status int, reason stri
 			beforeStatus := channel.Status
 			handlerMultiKeyUpdate(channel, usingKey, status, reason)
 			shouldUpdateAbilities = beforeStatus != channel.Status
+			if shouldUpdateAbilities {
+				info := channel.GetOtherInfo()
+				ClearChannelRecoveryBackoffInfo(info)
+				channel.SetOtherInfo(info)
+			}
 		} else {
 			info := channel.GetOtherInfo()
 			info["status_reason"] = reason
 			info["status_time"] = common.GetTimestamp()
+			ClearChannelRecoveryBackoffInfo(info)
 			channel.SetOtherInfo(info)
 			channel.Status = status
 			shouldUpdateAbilities = true

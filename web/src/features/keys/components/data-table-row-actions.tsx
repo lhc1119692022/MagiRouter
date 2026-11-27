@@ -19,21 +19,21 @@ For commercial licensing, please contact support@quantumnous.com
 import type { Row } from '@tanstack/react-table'
 import {
   Trash2,
-  Edit,
-  Power,
-  PowerOff,
+  Pencil,
+  Ban,
+  CirclePlay,
   ExternalLink,
   ArrowRightLeft,
   Copy,
   Link,
   Loader2,
+  MoreHorizontal,
 } from 'lucide-react'
 import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { DataTableRowActionMenu } from '@/components/data-table/core/row-action-menu'
-import { Button } from '@/components/ui/button'
 import {
   DropdownMenuItem,
   DropdownMenuSeparator,
@@ -165,29 +165,26 @@ export function DataTableRowActions<TData>({
     }
   }
 
-  let statusIcon = <Power className='size-4' />
+  let statusIcon = <CirclePlay className='size-3.5' aria-hidden='true' />
   if (isTogglingStatus) {
-    statusIcon = <Loader2 className='size-4 animate-spin' />
+    statusIcon = (
+      <Loader2 className='size-3.5 animate-spin' aria-hidden='true' />
+    )
   } else if (isEnabled) {
-    statusIcon = <PowerOff className='size-4' />
+    statusIcon = <Ban className='size-3.5' aria-hidden='true' />
   }
 
   return (
-    <div className='-ml-1.5 flex items-center gap-1'>
+    <div className='key-row-actions'>
       <Tooltip>
         <TooltipTrigger
           render={
-            <Button
-              variant='ghost'
-              size='icon-sm'
+            <button
+              type='button'
               onClick={handleToggleStatus}
               disabled={isTogglingStatus}
               aria-label={toggleLabel}
-              className={
-                isEnabled
-                  ? 'text-destructive hover:text-destructive'
-                  : 'text-emerald-600 hover:text-emerald-600 dark:text-emerald-400 dark:hover:text-emerald-400'
-              }
+              className='key-action-icon-btn'
             />
           }
         >
@@ -199,26 +196,50 @@ export function DataTableRowActions<TData>({
       <Tooltip>
         <TooltipTrigger
           render={
-            <Button
-              variant='ghost'
-              size='icon-sm'
+            <button
+              type='button'
               onClick={() => {
                 setCurrentRow(apiKey)
                 setOpen('update')
               }}
               aria-label={t('Edit')}
+              className='key-action-icon-btn'
             />
           }
         >
-          <Edit />
+          <Pencil className='size-3.5' aria-hidden='true' />
         </TooltipTrigger>
         <TooltipContent>{t('Edit')}</TooltipContent>
+      </Tooltip>
+
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button
+              type='button'
+              onClick={() => {
+                setCurrentRow(apiKey)
+                setOpen('delete')
+              }}
+              aria-label={t('Delete')}
+              className='key-action-icon-btn is-danger'
+            />
+          }
+        >
+          <Trash2 className='size-3.5' aria-hidden='true' />
+        </TooltipTrigger>
+        <TooltipContent>{t('Delete')}</TooltipContent>
       </Tooltip>
 
       <DataTableRowActionMenu
         ariaLabel={t('Open menu')}
         contentClassName='w-[200px]'
         modal={false}
+        trigger={
+          <button type='button' className='key-action-icon-btn'>
+            <MoreHorizontal className='size-3.5' aria-hidden='true' />
+          </button>
+        }
       >
         <DropdownMenuItem
           disabled={isRealKeyLoading}

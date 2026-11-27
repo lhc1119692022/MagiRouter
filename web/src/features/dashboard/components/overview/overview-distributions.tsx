@@ -10,48 +10,30 @@ import { toIntlLocale } from '@/i18n/languages'
 import { formatCompactNumber, formatNumber, formatQuota } from '@/lib/format'
 import { getLobeIcon } from '@/lib/lobe-icon'
 
-const colors = [
-  'var(--ink-strong)',
-  '#10b981',
-  '#3b82f6',
-  '#f59e0b',
-  '#8b5cf6',
-  '#ec4899',
-]
+import { summarizeOverviewModels } from './use-overview-report'
+
 const circumference = 2 * Math.PI * 56
 
 type Spending = { name: string; quota: number; count: number; tokens: number }
 
 function spendingRows(rows: QuotaDataItem[]) {
-  const perModel = new Map<string, Spending>()
-  let total = 0
-  for (const row of rows) {
-    const name = row.model_name?.trim() ?? ''
-    const item = perModel.get(name) ?? { name, quota: 0, count: 0, tokens: 0 }
-    const quota = Number(row.quota) || 0
-    item.quota += quota
-    item.count += Number(row.count) || 0
-    item.tokens += Number(row.token_used) || 0
-    total += quota
-    perModel.set(name, item)
-  }
+  const summaries = summarizeOverviewModels(rows)
+  const total = summaries.reduce((sum, item) => sum + item.quota, 0)
   let offset = 0
-  const models = [...perModel.values()]
-    .sort(
-      (left, right) =>
-        right.quota - left.quota || left.name.localeCompare(right.name)
-    )
-    .map((item, index) => {
-      const share = total > 0 ? item.quota / total : 0
-      const result = {
-        ...item,
-        share,
-        color: colors[index % colors.length],
-        offset,
-      }
-      offset += share * circumference
-      return result
-    })
+  const models = summaries.map((item) => {
+    const share = total > 0 ? item.quota / total : 0
+    const result = {
+      name: item.name,
+      quota: item.quota,
+      count: item.count,
+      tokens: item.token,
+      share,
+      color: item.color,
+      offset,
+    }
+    offset += share * circumference
+    return result
+  })
   return { total, models }
 }
 

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -63,17 +64,52 @@ func ShouldRetryRelayError(c *gin.Context, openaiErr *types.NewAPIError, retryTi
 // HandleChannelError logs the upstream failure on the server and triggers
 // channel auto-disable when applicable, without writing a user-visible DB log.
 func HandleChannelError(c *gin.Context, channelError types.ChannelError, err *types.NewAPIError) {
+	HandleChannelErrorAndReportDisable(c, channelError, err)
+}
+
+// HandleChannelErrorAndReportDisable performs HandleChannelError and reports
+// whether the failure triggered an asynchronous channel auto-disable.
+func HandleChannelErrorAndReportDisable(c *gin.Context, channelError types.ChannelError, err *types.NewAPIError) bool {
 	if err == nil {
-		return
+		return false
 	}
 	upstreamURLs := common.UpstreamAddresses(c)
 	logger.LogError(c, common.LogText("channel error (channel #%d, status code: %d): %s", channelError.ChannelId, err.StatusCode, common.LocalLogPreview(err.MaskSensitiveErrorWithStatusCode(upstreamURLs...))))
-	if ShouldDisableChannel(err) && channelError.AutoBan {
+	if !channelError.AutoBan || !common.AutomaticDisableChannelEnabled {
+		return false
+	}
+	if ShouldDisableChannel(err) {
+		resetKey := ""
+		if channelError.IsMultiKey {
+			resetKey = channelError.UsingKey
+		}
+		ResetChannelFailureCount(channelError.ChannelId, resetKey)
 		reason := err.MaskSensitiveErrorWithStatusCode(upstreamURLs...)
 		gopool.Go(func() {
 			DisableChannel(channelError, reason)
 		})
+		return true
 	}
+	if isClientRequestCanceled(c, err) {
+		return false
+	}
+	threshold := operation_setting.GetMonitorSetting().ConsecutiveFailureDisableThreshold
+	if threshold > 0 && IsConsecutiveDisableEligibleError(err) {
+		count := RecordChannelFailure(channelError.ChannelId, channelError.IsMultiKey, channelError.UsingKey)
+		if count >= threshold {
+			resetKey := ""
+			if channelError.IsMultiKey {
+				resetKey = channelError.UsingKey
+			}
+			ResetChannelFailureCount(channelError.ChannelId, resetKey)
+			reason := fmt.Sprintf("consecutive upstream failures (%d/%d): %s", count, threshold, err.MaskSensitiveErrorWithStatusCode(upstreamURLs...))
+			gopool.Go(func() {
+				DisableChannel(channelError, reason)
+			})
+			return true
+		}
+	}
+	return false
 }
 
 func ProcessChannelError(c *gin.Context, channelError types.ChannelError, err *types.NewAPIError, relayInfo *relaycommon.RelayInfo) {

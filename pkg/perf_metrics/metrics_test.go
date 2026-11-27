@@ -146,6 +146,7 @@ func TestRecordTaskResultSamplesTerminalTasks(t *testing.T) {
 			totalLatencyMs: 180000,
 			outputTokens:   5000,
 			generationMs:   100000,
+			tpsCount:       1,
 		},
 	}, mergedHotBuckets())
 }
@@ -170,7 +171,75 @@ func TestRecordImmediateTaskResultSamplesSuccessOnly(t *testing.T) {
 		totalLatencyMs: got.totalLatencyMs,
 		outputTokens:   4096,
 		generationMs:   got.totalLatencyMs,
+		tpsCount:       1,
 	}, got)
+}
+
+func TestRecordRelayResultThroughputQualification(t *testing.T) {
+	hotBuckets.Clear()
+	t.Cleanup(func() { hotBuckets.Clear() })
+
+	now := time.Now()
+	// 1. Short streaming probe ("Reply with only OK", 2 tokens): availability & TTFT
+	// recorded, but must not pollute throughput counters.
+	RecordRelayResult(context.Background(), &relaycommon.RelayInfo{
+		OriginModelName:         "claude-sonnet-5-5",
+		UsingGroup:              "kiro",
+		IsStream:                true,
+		StartTime:               now.Add(-7 * time.Second),
+		FirstResponseTime:       now.Add(-1 * time.Second),
+		LastResponseTime:        now.Add(-500 * time.Millisecond),
+		StreamFirstTokenTime:    now.Add(-1 * time.Second),
+		StreamLastTokenTime:     now.Add(-500 * time.Millisecond),
+		StreamOutputChunks:      2,
+		PerformanceOutputTokens: 2,
+	}, nil)
+
+	// 2. Non-streaming response (even with 200 output tokens) mixes prefill/TTFT
+	// into total latency and must not pollute streaming decode throughput.
+	RecordRelayResult(context.Background(), &relaycommon.RelayInfo{
+		OriginModelName:         "claude-sonnet-5-5",
+		UsingGroup:              "kiro",
+		IsStream:                false,
+		StartTime:               now.Add(-5 * time.Second),
+		PerformanceOutputTokens: 200,
+	}, nil)
+
+	// 3. Single-chunk streaming burst must not pollute throughput.
+	RecordRelayResult(context.Background(), &relaycommon.RelayInfo{
+		OriginModelName:         "claude-sonnet-5-5",
+		UsingGroup:              "kiro",
+		IsStream:                true,
+		StartTime:               now.Add(-3 * time.Second),
+		FirstResponseTime:       now.Add(-1 * time.Second),
+		StreamFirstTokenTime:    now.Add(-1 * time.Second),
+		StreamLastTokenTime:     now.Add(-1 * time.Second),
+		StreamOutputChunks:      1,
+		PerformanceOutputTokens: 120,
+	}, nil)
+
+	// 4. Sustained streaming generation: 200 tokens over 2.0s decode window,
+	// with 800ms post-stream billing delay excluded from generationMs.
+	RecordRelayResult(context.Background(), &relaycommon.RelayInfo{
+		OriginModelName:         "claude-sonnet-5-5",
+		UsingGroup:              "kiro",
+		IsStream:                true,
+		StartTime:               now.Add(-4 * time.Second),
+		FirstResponseTime:       now.Add(-3200 * time.Millisecond),
+		StreamFirstTokenTime:    now.Add(-2800 * time.Millisecond),
+		StreamLastTokenTime:     now.Add(-800 * time.Millisecond),
+		LastResponseTime:        now.Add(-750 * time.Millisecond),
+		StreamOutputChunks:      24,
+		PerformanceOutputTokens: 200,
+	}, nil)
+
+	merged := mergedHotBuckets()
+	got := merged[bucketKey{model: "claude-sonnet-5-5", group: "kiro"}]
+	assert.Equal(t, int64(4), got.requestCount)
+	assert.Equal(t, int64(4), got.successCount)
+	assert.Equal(t, int64(1), got.tpsCount)
+	assert.Equal(t, int64(200), got.outputTokens)
+	assert.Equal(t, int64(2000), got.generationMs)
 }
 
 func mergedHotBuckets() map[bucketKey]counters {
@@ -228,7 +297,7 @@ func TestPerformanceAggregationAndFlush(t *testing.T) {
 			hour := now.Unix() - now.Unix()%3600 - 3600
 			// Historical counters remain usable without reclassification or migration.
 			for _, row := range []model.PerfMetric{
-				{ModelName: "test-model", Group: "a", BucketTs: hour, RequestCount: 100, SuccessCount: 100, TotalLatencyMs: 100000, TtftCount: 100, TtftSumMs: 10000, OutputTokens: 200, GenerationMs: 40000},
+				{ModelName: "test-model", Group: "a", BucketTs: hour, RequestCount: 100, SuccessCount: 100, TotalLatencyMs: 100000, TtftCount: 100, TtftSumMs: 10000, OutputTokens: 200, GenerationMs: 40000, TpsCount: MinThroughputSamples},
 				{ModelName: "test-model", Group: "inactive", BucketTs: hour, RequestCount: 100},
 				{ModelName: "test-model", Group: "a", BucketTs: start - 3600, RequestCount: 100},
 			} {
@@ -265,6 +334,7 @@ func TestPerformanceAggregationAndFlush(t *testing.T) {
 			require.NoError(t, err)
 			assert.NotContains(t, string(encoded), "request_count")
 			assert.NotContains(t, string(encoded), "success_count")
+			assert.NotContains(t, string(encoded), "tps_count")
 
 			flushCompletedBuckets()
 			flushCompletedBuckets()
@@ -421,6 +491,70 @@ func TestPerformanceAggregationAndFlush(t *testing.T) {
 				modelsByName := lo.KeyBy(summaryAll.Models, func(m ModelSummary) string { return m.ModelName })
 				require.NotNil(t, modelsByName["cache-model"].CacheHitRate)
 				assert.Equal(t, 40.0, *modelsByName["cache-model"].CacheHitRate)
+			})
+
+			t.Run("best group availability and throughput sample sufficiency", func(t *testing.T) {
+				h1 := hour - 2*3600
+				h2 := hour - 3600
+				for _, row := range []model.PerfMetric{
+					// Group "aws" is degraded (60%) with insufficient TPS samples (2 < 5).
+					{ModelName: "claude-sonnet-5-5", Group: "aws", BucketTs: h1, RequestCount: 6, SuccessCount: 6, TotalLatencyMs: 54000, OutputTokens: 160, GenerationMs: 20000, TpsCount: 2},
+					{ModelName: "claude-sonnet-5-5", Group: "aws", BucketTs: h2, RequestCount: 4, SuccessCount: 0, TotalLatencyMs: 36000},
+					// Group "kiro" is 100% across 2 hours, 0 qualified TPS samples (probes only).
+					{ModelName: "claude-sonnet-5-5", Group: "kiro", BucketTs: h1, RequestCount: 7, SuccessCount: 7, TotalLatencyMs: 56000},
+					{ModelName: "claude-sonnet-5-5", Group: "kiro", BucketTs: h2, RequestCount: 7, SuccessCount: 7, TotalLatencyMs: 56000},
+					// Group "max" is 100% across 1 hour with sufficient TPS samples (5).
+					{ModelName: "claude-sonnet-5-5", Group: "max", BucketTs: h1, RequestCount: 5, SuccessCount: 5, TotalLatencyMs: 35000, OutputTokens: 1500, GenerationMs: 20000, TpsCount: MinThroughputSamples},
+					// Media model has traffic without TPS samples: must not be marked insufficient.
+					{ModelName: "gpt-image-1", Group: "aws", BucketTs: h1, RequestCount: 10, SuccessCount: 10, TotalLatencyMs: 50000},
+				} {
+					require.NoError(t, model.UpsertPerfMetric(&row))
+				}
+
+				best, err := QuerySummaryAllBestGroup(24, []string{"aws", "kiro", "max"})
+				require.NoError(t, err)
+				bestByModel := lo.KeyBy(best.Models, func(m ModelSummary) string { return m.ModelName })
+				sonnet := bestByModel["claude-sonnet-5-5"]
+				assert.Equal(t, "kiro", sonnet.BestGroup)
+				assert.Equal(t, 100.0, sonnet.SuccessRate)
+				assert.Equal(t, 0.0, sonnet.AvgTps)
+				assert.True(t, sonnet.TpsInsufficient)
+				require.Len(t, sonnet.RecentSuccessSeries, 2)
+				assert.Equal(t, 100.0, sonnet.RecentSuccessSeries[0].SuccessRate)
+				assert.Equal(t, 100.0, sonnet.RecentSuccessSeries[1].SuccessRate)
+
+				imageSummary := bestByModel["gpt-image-1"]
+				assert.Equal(t, 0.0, imageSummary.AvgTps)
+				assert.False(t, imageSummary.TpsInsufficient)
+
+				encodedBest, err := common.Marshal(best)
+				require.NoError(t, err)
+				assert.NotContains(t, string(encodedBest), "request_count")
+				assert.NotContains(t, string(encodedBest), "success_count")
+				assert.NotContains(t, string(encodedBest), "tps_count")
+
+				// Scoped to a single group returns that group's metrics directly.
+				awsOnly, err := QuerySummaryAllBestGroup(24, []string{"aws"})
+				require.NoError(t, err)
+				awsModels := lo.KeyBy(awsOnly.Models, func(m ModelSummary) string { return m.ModelName })
+				assert.Equal(t, "aws", awsModels["claude-sonnet-5-5"].BestGroup)
+				assert.Equal(t, 60.0, awsModels["claude-sonnet-5-5"].SuccessRate)
+				assert.Equal(t, 0.0, awsModels["claude-sonnet-5-5"].AvgTps)
+				assert.True(t, awsModels["claude-sonnet-5-5"].TpsInsufficient)
+
+				// Per-model Query reports per-group TPS sufficiency accurately.
+				detail, err := Query(QueryParams{Model: "claude-sonnet-5-5", Hours: 24, AllowedGroups: []string{"aws", "kiro", "max"}})
+				require.NoError(t, err)
+				detailByGroup := lo.KeyBy(detail.Groups, func(g GroupResult) string { return g.Group })
+				assert.Equal(t, 0.0, detailByGroup["aws"].AvgTps)
+				assert.True(t, detailByGroup["aws"].TpsInsufficient)
+				assert.Equal(t, 0.0, detailByGroup["kiro"].AvgTps)
+				assert.True(t, detailByGroup["kiro"].TpsInsufficient)
+				assert.Equal(t, 75.0, detailByGroup["max"].AvgTps)
+				assert.False(t, detailByGroup["max"].TpsInsufficient)
+				require.NotNil(t, detail.Summary)
+				assert.False(t, detail.Summary.TpsInsufficient)
+				assert.Equal(t, 41.5, detail.Summary.AvgTps)
 			})
 		})
 	}

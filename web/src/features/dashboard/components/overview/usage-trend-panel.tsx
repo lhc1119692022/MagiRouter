@@ -140,6 +140,7 @@ export function UsageTrendPanel(props: {
               <OverviewTrendChart
                 key={report.range}
                 buckets={report.buckets}
+                models={report.models}
                 range={report.range}
                 metric={metric}
               />
