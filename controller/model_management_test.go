@@ -617,6 +617,7 @@ export function parseTaskResult() { return {}; }
 			db := modelManagementDB(t, dialect.kind, os.Getenv(dialect.env))
 
 			t.Run("official_reference_prices", func(t *testing.T) { testOfficialReferencePrices(t, db) })
+			t.Run("batch_model_endpoints", func(t *testing.T) { testBatchModelEndpoints(t, db) })
 
 			t.Run("playground_chat_controls", func(t *testing.T) {
 				const group = "studio-profile-test"
@@ -933,6 +934,116 @@ export function parseTaskResult() { return {}; }
 				}, "GET", "/api/models/"+strconv.Itoa(records[4].Id), nil, &detail)
 				require.True(t, detail.Success)
 				assert.Equal(t, model.ModelSquarePartial, detail.Data.SquareState)
+			})
+			t.Run("filter_capability_labels", func(t *testing.T) {
+				records := []model.Model{
+					{ModelName: "cap-manual-multi", Tags: "Featured,@mr:catalog:v1=image+video", Status: 1},
+					{ModelName: "cap-manual-none", Tags: "@mr:catalog:v1=none", Endpoints: `{"/v1/chat/completions":{"path":"/v1/chat/completions"}}`, Status: 1},
+					{ModelName: "cap-legacy-stt", Tags: "@mr:tasks:v1=stt", Status: 1},
+					{ModelName: "cap-endpoint-image", Endpoints: `{"/v1/images/generations":{"path":"/v1/images/generations"}}`, Status: 1},
+					{ModelName: "cap-auto-other", Status: 1},
+				}
+				for index := range records {
+					require.NoError(t, records[index].Insert())
+				}
+				channel := model.Channel{
+					Name:   "Capability channel",
+					Type:   1,
+					Key:    "fixture",
+					Models: "cap-channel-chat",
+					Group:  "default",
+					Status: common.ChannelStatusEnabled,
+				}
+				require.NoError(t, channel.Insert())
+				t.Cleanup(func() {
+					require.NoError(t, db.Where("channel_id = ?", channel.Id).Delete(&model.Ability{}).Error)
+					require.NoError(t, db.Where("id = ?", channel.Id).Delete(&model.Channel{}).Error)
+					require.NoError(t, db.Unscoped().Where("model_name LIKE ?", "cap-%").Delete(&model.Model{}).Error)
+					model.RefreshPricing()
+				})
+				model.RefreshPricing()
+
+				type filteredResponse struct {
+					Success bool
+					Data    struct {
+						Items []model.Model
+						Total int
+					}
+				}
+				for _, test := range []struct {
+					name    string
+					handler gin.HandlerFunc
+					query   string
+					names   []string
+				}{
+					{
+						"single_image",
+						SearchModelsMeta,
+						"?include_channel_models=true&keyword=cap-&capability_labels=image",
+						[]string{"cap-manual-multi", "cap-endpoint-image"},
+					},
+					{
+						"multi_comma",
+						SearchModelsMeta,
+						"?include_channel_models=true&keyword=cap-&capability_labels=video,transcription",
+						[]string{"cap-manual-multi", "cap-legacy-stt"},
+					},
+					{
+						"multi_repeated",
+						SearchModelsMeta,
+						"?include_channel_models=true&keyword=cap-&capability_labels=image&capability_labels=transcription",
+						[]string{"cap-manual-multi", "cap-endpoint-image", "cap-legacy-stt"},
+					},
+					{
+						"auto_channel_text_excludes_cleared",
+						SearchModelsMeta,
+						"?include_channel_models=true&keyword=cap-&capability_labels=text",
+						[]string{"cap-channel-chat"},
+					},
+					{
+						"auto_other_excludes_cleared",
+						SearchModelsMeta,
+						"?include_channel_models=true&keyword=cap-&capability_labels=other",
+						[]string{"cap-auto-other"},
+					},
+					{
+						"list_endpoint_also_filters",
+						GetAllModelsMeta,
+						"?include_channel_models=true&capability_labels=transcription",
+						[]string{"cap-legacy-stt"},
+					},
+				} {
+					t.Run(test.name, func(t *testing.T) {
+						var result filteredResponse
+						modelManagementRequest(t, test.handler, "GET", "/api/models/"+test.query+"&page_size=100", nil, &result)
+						require.True(t, result.Success)
+						names := make([]string, 0, len(result.Data.Items))
+						for _, row := range result.Data.Items {
+							names = append(names, row.ModelName)
+						}
+						assert.Equal(t, len(test.names), result.Data.Total)
+						assert.ElementsMatch(t, test.names, names)
+					})
+				}
+
+				var page1, page2 filteredResponse
+				modelManagementRequest(t, SearchModelsMeta, "GET", "/api/models/search?include_channel_models=true&keyword=cap-&capability_labels=image,transcription&page_size=2&p=1", nil, &page1)
+				modelManagementRequest(t, SearchModelsMeta, "GET", "/api/models/search?include_channel_models=true&keyword=cap-&capability_labels=image,transcription&page_size=2&p=2", nil, &page2)
+				require.True(t, page1.Success)
+				require.True(t, page2.Success)
+				assert.Equal(t, 3, page1.Data.Total)
+				assert.Equal(t, 3, page2.Data.Total)
+				assert.Len(t, page1.Data.Items, 2)
+				assert.Len(t, page2.Data.Items, 1)
+
+				for _, invalidQuery := range []string{"capability_labels=unknown", "capability_labels=image,unknown", "capability_labels=,"} {
+					for _, handler := range []gin.HandlerFunc{GetAllModelsMeta, SearchModelsMeta} {
+						var result filteredResponse
+						recorder := modelManagementRequest(t, handler, "GET", "/api/models/?"+invalidQuery, nil, &result)
+						assert.Equal(t, http.StatusBadRequest, recorder.Code)
+						assert.False(t, result.Success)
+					}
+				}
 			})
 			t.Run("channel_model_listing", func(t *testing.T) {
 				exact := model.Model{ModelName: "listing-exact", Status: 1, SyncOfficial: 1}

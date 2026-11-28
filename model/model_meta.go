@@ -2,11 +2,15 @@ package model
 
 import (
 	"errors"
+	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 
 	"gorm.io/gorm"
 )
@@ -641,6 +645,268 @@ type ModelBatchUpdateRequest struct {
 	Tags                 string   `json:"tags"`
 	CapabilityLabelsMode string   `json:"capability_labels_mode"`
 	CapabilityLabels     []string `json:"capability_labels"`
+	EndpointsMode        string   `json:"endpoints_mode"`
+	Endpoints            string   `json:"endpoints"`
+	EndpointKeys         []string `json:"endpoint_keys"`
+}
+
+var batchEndpointFallbackDefaults = map[string]common.EndpointInfo{
+	"openai-completions":   {Path: "/v1/completions", Method: "POST"},
+	"image-edits":          {Path: "/v1/images/edits", Method: "POST"},
+	"openai-video":         {Path: "/v1/videos", Method: "POST"},
+	"audio-speech":         {Path: "/v1/audio/speech", Method: "POST"},
+	"audio-transcriptions": {Path: "/v1/audio/transcriptions", Method: "POST"},
+	"audio-translations":   {Path: "/v1/audio/translations", Method: "POST"},
+	"moderations":          {Path: "/v1/moderations", Method: "POST"},
+	"openai-realtime":      {Path: "/v1/realtime", Method: "GET"},
+}
+
+func batchEndpointDefaultInfo(key string) (common.EndpointInfo, bool) {
+	if info, ok := common.GetDefaultEndpointInfo(constant.EndpointType(key)); ok {
+		return info, true
+	}
+	info, ok := batchEndpointFallbackDefaults[key]
+	return info, ok
+}
+
+func normalizeBatchEndpointKeys(keys []string) []string {
+	seen := make(map[string]struct{}, len(keys))
+	result := make([]string, 0, len(keys))
+	for _, raw := range keys {
+		key := strings.TrimSpace(raw)
+		if key == "" {
+			continue
+		}
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		result = append(result, key)
+	}
+	return result
+}
+
+func parseNormalizedEndpoints(raw string) (map[string]any, []string, bool, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return nil, nil, false, nil
+	}
+	if err := ValidateModelEndpoints(trimmed); err != nil {
+		return nil, nil, false, err
+	}
+	var decoded any
+	if err := common.UnmarshalJsonStr(trimmed, &decoded); err != nil {
+		return nil, nil, false, fmt.Errorf("invalid endpoints: %w", err)
+	}
+	switch typed := decoded.(type) {
+	case map[string]any:
+		normalized := make(map[string]any, len(typed))
+		for key, value := range typed {
+			trimmedKey := strings.TrimSpace(key)
+			if trimmedKey == "" {
+				return nil, nil, false, errors.New("endpoint type is required")
+			}
+			normalized[trimmedKey] = value
+		}
+		return normalized, nil, false, nil
+	case []any:
+		items := make([]string, 0, len(typed))
+		for _, item := range typed {
+			text, _ := item.(string)
+			trimmedItem := strings.TrimSpace(text)
+			if trimmedItem == "" || slices.Contains(items, trimmedItem) {
+				continue
+			}
+			items = append(items, trimmedItem)
+		}
+		return nil, items, true, nil
+	default:
+		return nil, nil, false, errors.New("endpoints must be a JSON object or array")
+	}
+}
+
+func validateBatchModelEndpointsRequest(mode, endpointsRaw string, endpointKeys []string) error {
+	switch mode {
+	case "", "clear":
+		return nil
+	case "replace", "append":
+		endpointMap, endpointList, isArray, err := parseNormalizedEndpoints(endpointsRaw)
+		if err != nil {
+			return err
+		}
+		if (isArray && len(endpointList) == 0) || (!isArray && len(endpointMap) == 0) {
+			return errors.New("endpoints configuration cannot be empty")
+		}
+		return nil
+	case "remove":
+		if len(normalizeBatchEndpointKeys(endpointKeys)) == 0 {
+			return errors.New("select at least one endpoint to remove")
+		}
+		return nil
+	default:
+		return errors.New("invalid endpoints update mode")
+	}
+}
+
+func applyBatchModelEndpointsUpdate(
+	existing string,
+	mode string,
+	incomingRaw string,
+	removeKeys []string,
+) (string, error) {
+	switch mode {
+	case "":
+		return existing, nil
+	case "clear":
+		return "", nil
+	case "replace":
+		incomingMap, incomingList, incomingIsArray, err := parseNormalizedEndpoints(incomingRaw)
+		if err != nil {
+			return "", err
+		}
+		if incomingIsArray {
+			if len(incomingList) == 0 {
+				return "", errors.New("endpoints configuration cannot be empty")
+			}
+			encoded, err := common.Marshal(incomingList)
+			if err != nil {
+				return "", err
+			}
+			return string(encoded), nil
+		}
+		if len(incomingMap) == 0 {
+			return "", errors.New("endpoints configuration cannot be empty")
+		}
+		encoded, err := common.Marshal(incomingMap)
+		if err != nil {
+			return "", err
+		}
+		return string(encoded), nil
+	case "append":
+		incomingMap, incomingList, incomingIsArray, err := parseNormalizedEndpoints(incomingRaw)
+		if err != nil {
+			return "", err
+		}
+		if (incomingIsArray && len(incomingList) == 0) || (!incomingIsArray && len(incomingMap) == 0) {
+			return "", errors.New("endpoints configuration cannot be empty")
+		}
+		if strings.TrimSpace(existing) == "" {
+			if incomingIsArray {
+				encoded, err := common.Marshal(incomingList)
+				if err != nil {
+					return "", err
+				}
+				return string(encoded), nil
+			}
+			encoded, err := common.Marshal(incomingMap)
+			if err != nil {
+				return "", err
+			}
+			return string(encoded), nil
+		}
+		existingMap, existingList, existingIsArray, err := parseNormalizedEndpoints(existing)
+		if err != nil {
+			return "", err
+		}
+		if existingIsArray && incomingIsArray {
+			mergedList := slices.Clone(existingList)
+			for _, item := range incomingList {
+				if !slices.Contains(mergedList, item) {
+					mergedList = append(mergedList, item)
+				}
+			}
+			encoded, err := common.Marshal(mergedList)
+			if err != nil {
+				return "", err
+			}
+			return string(encoded), nil
+		}
+		if incomingIsArray {
+			incomingMap = make(map[string]any, len(incomingList))
+			for _, key := range incomingList {
+				info, ok := batchEndpointDefaultInfo(key)
+				if !ok {
+					return "", fmt.Errorf("endpoint %q requires a path when merging with object endpoints", key)
+				}
+				incomingMap[key] = map[string]any{
+					"path":   info.Path,
+					"method": info.Method,
+				}
+			}
+		}
+		mergedMap := make(map[string]any, len(existingMap)+len(existingList)+len(incomingMap))
+		if existingIsArray {
+			for _, key := range existingList {
+				if _, overridden := incomingMap[key]; overridden {
+					continue
+				}
+				info, ok := batchEndpointDefaultInfo(key)
+				if !ok {
+					return "", fmt.Errorf("cannot merge endpoints into array-form endpoint %q without a default path", key)
+				}
+				mergedMap[key] = map[string]any{
+					"path":   info.Path,
+					"method": info.Method,
+				}
+			}
+		} else {
+			maps.Copy(mergedMap, existingMap)
+		}
+		maps.Copy(mergedMap, incomingMap)
+		encoded, err := common.Marshal(mergedMap)
+		if err != nil {
+			return "", err
+		}
+		return string(encoded), nil
+	case "remove":
+		keys := normalizeBatchEndpointKeys(removeKeys)
+		if len(keys) == 0 {
+			return "", errors.New("select at least one endpoint to remove")
+		}
+		if strings.TrimSpace(existing) == "" {
+			return "", nil
+		}
+		existingMap, existingList, existingIsArray, err := parseNormalizedEndpoints(existing)
+		if err != nil {
+			return "", err
+		}
+		removeSet := make(map[string]struct{}, len(keys))
+		for _, key := range keys {
+			removeSet[key] = struct{}{}
+		}
+		if existingIsArray {
+			remaining := make([]string, 0, len(existingList))
+			for _, item := range existingList {
+				if _, remove := removeSet[item]; !remove {
+					remaining = append(remaining, item)
+				}
+			}
+			if len(remaining) == 0 {
+				return "", nil
+			}
+			encoded, err := common.Marshal(remaining)
+			if err != nil {
+				return "", err
+			}
+			return string(encoded), nil
+		}
+		remaining := make(map[string]any, len(existingMap))
+		for key, value := range existingMap {
+			if _, remove := removeSet[key]; !remove {
+				remaining[key] = value
+			}
+		}
+		if len(remaining) == 0 {
+			return "", nil
+		}
+		encoded, err := common.Marshal(remaining)
+		if err != nil {
+			return "", err
+		}
+		return string(encoded), nil
+	default:
+		return "", errors.New("invalid endpoints update mode")
+	}
 }
 
 type ModelBatchUpdateResult struct {
@@ -755,6 +1021,9 @@ func BatchUpdateModels(req ModelBatchUpdateRequest) (ModelBatchUpdateResult, err
 	if req.CapabilityLabelsMode != "" && req.CapabilityLabelsMode != "set" && req.CapabilityLabelsMode != "auto" {
 		return ModelBatchUpdateResult{}, errors.New("invalid capability labels mode")
 	}
+	if err := validateBatchModelEndpointsRequest(req.EndpointsMode, req.Endpoints, req.EndpointKeys); err != nil {
+		return ModelBatchUpdateResult{}, err
+	}
 
 	var result ModelBatchUpdateResult
 	err := metadataTransaction(func(tx *gorm.DB) error {
@@ -787,6 +1056,18 @@ func BatchUpdateModels(req ModelBatchUpdateRequest) (ModelBatchUpdateResult, err
 				}
 				record.Tags = updatedTags
 			}
+			if req.EndpointsMode != "" {
+				updatedEndpoints, err := applyBatchModelEndpointsUpdate(
+					record.Endpoints,
+					req.EndpointsMode,
+					req.Endpoints,
+					req.EndpointKeys,
+				)
+				if err != nil {
+					return err
+				}
+				record.Endpoints = updatedEndpoints
+			}
 			if err := ValidateMetadataValues(MetadataValues{
 				Tags:      record.Tags,
 				Endpoints: record.Endpoints,
@@ -816,6 +1097,9 @@ func BatchUpdateModels(req ModelBatchUpdateRequest) (ModelBatchUpdateResult, err
 					"sync_official": record.SyncOfficial,
 					"tags":          record.Tags,
 					"updated_time":  record.UpdatedTime,
+				}
+				if req.EndpointsMode != "" {
+					updates["endpoints"] = record.Endpoints
 				}
 				if err := tx.Model(&Model{}).Where("id = ?", record.Id).Updates(updates).Error; err != nil {
 					return err
@@ -848,6 +1132,9 @@ func BatchUpdateModels(req ModelBatchUpdateRequest) (ModelBatchUpdateResult, err
 						"sync_official": record.SyncOfficial,
 						"tags":          record.Tags,
 						"updated_time":  record.UpdatedTime,
+					}
+					if req.EndpointsMode != "" {
+						updates["endpoints"] = record.Endpoints
 					}
 					if err := tx.Model(&Model{}).Where("id = ?", record.Id).Updates(updates).Error; err != nil {
 						return err

@@ -501,6 +501,7 @@ export function filterAndSortModels(
   filters: {
     search: string
     vendor: string | readonly string[]
+    tasks?: readonly TaskCapabilityFilter[]
     group: string
     quotaType: string
     endpointType: string
@@ -513,6 +514,9 @@ export function filterAndSortModels(
 ): PricingModel[] {
   let result = filterBySearch(models, filters.search)
   result = filterByVendor(result, filters.vendor)
+  if (filters.tasks?.length) {
+    result = filterByTasks(result, filters.tasks)
+  }
   result = filterByGroup(result, filters.group)
   result = filterByQuotaType(result, filters.quotaType)
   result = filterByEndpointType(result, filters.endpointType)
@@ -620,6 +624,17 @@ export function matchesTaskFilter(
   const categories = getModelCategories(model)
   return expandTaskFilters([task]).some((category) =>
     categories.includes(category)
+  )
+}
+
+export function filterByTasks(
+  models: PricingModel[],
+  tasks: readonly TaskCapabilityFilter[]
+): PricingModel[] {
+  const selected = expandTaskFilters(tasks)
+  if (!selected.length) return models
+  return models.filter((model) =>
+    getModelCategories(model).some((category) => selected.includes(category))
   )
 }
 

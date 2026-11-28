@@ -13,11 +13,7 @@ import (
 )
 
 const channelFailureStaleWindow = 6 * time.Hour
-
-type channelFailureKey struct {
-	channelID int
-	usingKey  string
-}
+const channelFailurePruneThreshold = 256
 
 type channelFailureState struct {
 	count    int
@@ -25,18 +21,30 @@ type channelFailureState struct {
 }
 
 var (
-	channelFailureMu     sync.Mutex
-	channelFailureStates = make(map[channelFailureKey]channelFailureState)
-	channelCircuitNow    = time.Now
+	channelFailureMu        sync.Mutex
+	channelFailureStates    = make(map[int]map[string]channelFailureState)
+	channelFailureActiveIDs sync.Map
+	channelCircuitNow       = time.Now
 )
 
-func normalizeChannelFailureKey(channelID int, isMultiKey bool, usingKey string) channelFailureKey {
+func normalizeChannelFailureUsingKey(isMultiKey bool, usingKey string) string {
 	if !isMultiKey {
-		usingKey = ""
+		return ""
 	}
-	return channelFailureKey{
-		channelID: channelID,
-		usingKey:  usingKey,
+	return usingKey
+}
+
+func pruneStaleChannelFailuresLocked(now time.Time) {
+	for chID, keyStates := range channelFailureStates {
+		for keyName, entry := range keyStates {
+			if !entry.lastFail.IsZero() && now.Sub(entry.lastFail) > channelFailureStaleWindow {
+				delete(keyStates, keyName)
+			}
+		}
+		if len(keyStates) == 0 {
+			delete(channelFailureStates, chID)
+			channelFailureActiveIDs.Delete(chID)
+		}
 	}
 }
 
@@ -122,19 +130,28 @@ func RecordChannelFailure(channelID int, isMultiKey bool, usingKey string) int {
 	if channelID <= 0 {
 		return 0
 	}
-	key := normalizeChannelFailureKey(channelID, isMultiKey, usingKey)
+	keyName := normalizeChannelFailureUsingKey(isMultiKey, usingKey)
 	now := channelCircuitNow()
 
 	channelFailureMu.Lock()
 	defer channelFailureMu.Unlock()
 
-	state := channelFailureStates[key]
+	if len(channelFailureStates) > channelFailurePruneThreshold {
+		pruneStaleChannelFailuresLocked(now)
+	}
+	keyStates := channelFailureStates[channelID]
+	if keyStates == nil {
+		keyStates = make(map[string]channelFailureState)
+		channelFailureStates[channelID] = keyStates
+	}
+	state := keyStates[keyName]
 	if state.count > 0 && !state.lastFail.IsZero() && now.Sub(state.lastFail) > channelFailureStaleWindow {
 		state.count = 0
 	}
 	state.count++
 	state.lastFail = now
-	channelFailureStates[key] = state
+	keyStates[keyName] = state
+	channelFailureActiveIDs.Store(channelID, struct{}{})
 	return state.count
 }
 
@@ -142,37 +159,58 @@ func ResetChannelFailureCount(channelID int, usingKey string) {
 	if channelID <= 0 {
 		return
 	}
+	if _, active := channelFailureActiveIDs.Load(channelID); !active {
+		return
+	}
 	channelFailureMu.Lock()
 	defer channelFailureMu.Unlock()
 
-	if usingKey == "" {
-		for key := range channelFailureStates {
-			if key.channelID == channelID {
-				delete(channelFailureStates, key)
-			}
-		}
+	keyStates, exists := channelFailureStates[channelID]
+	if !exists {
+		channelFailureActiveIDs.Delete(channelID)
 		return
 	}
-	delete(channelFailureStates, channelFailureKey{channelID: channelID, usingKey: usingKey})
-	delete(channelFailureStates, channelFailureKey{channelID: channelID, usingKey: ""})
+	if usingKey == "" {
+		delete(channelFailureStates, channelID)
+		channelFailureActiveIDs.Delete(channelID)
+		return
+	}
+	delete(keyStates, usingKey)
+	delete(keyStates, "")
+	if len(keyStates) == 0 {
+		delete(channelFailureStates, channelID)
+		channelFailureActiveIDs.Delete(channelID)
+	}
 }
 
 func GetChannelFailureCount(channelID int, isMultiKey bool, usingKey string) int {
 	if channelID <= 0 {
 		return 0
 	}
-	key := normalizeChannelFailureKey(channelID, isMultiKey, usingKey)
+	if _, active := channelFailureActiveIDs.Load(channelID); !active {
+		return 0
+	}
+	keyName := normalizeChannelFailureUsingKey(isMultiKey, usingKey)
 	now := channelCircuitNow()
 
 	channelFailureMu.Lock()
 	defer channelFailureMu.Unlock()
 
-	state, exists := channelFailureStates[key]
+	keyStates, exists := channelFailureStates[channelID]
+	if !exists {
+		channelFailureActiveIDs.Delete(channelID)
+		return 0
+	}
+	state, exists := keyStates[keyName]
 	if !exists {
 		return 0
 	}
 	if !state.lastFail.IsZero() && now.Sub(state.lastFail) > channelFailureStaleWindow {
-		delete(channelFailureStates, key)
+		delete(keyStates, keyName)
+		if len(keyStates) == 0 {
+			delete(channelFailureStates, channelID)
+			channelFailureActiveIDs.Delete(channelID)
+		}
 		return 0
 	}
 	return state.count
@@ -182,4 +220,8 @@ func ResetAllChannelFailureCountsForTest() {
 	channelFailureMu.Lock()
 	defer channelFailureMu.Unlock()
 	clear(channelFailureStates)
+	channelFailureActiveIDs.Range(func(key, _ any) bool {
+		channelFailureActiveIDs.Delete(key)
+		return true
+	})
 }

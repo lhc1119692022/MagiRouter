@@ -1,12 +1,15 @@
 package controller
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	perfmetrics "github.com/QuantumNous/new-api/pkg/perf_metrics"
 	"github.com/QuantumNous/new-api/setting"
@@ -85,11 +88,130 @@ func TestChannelTestCooldownAndInFlightCooperation(t *testing.T) {
 	passive := filterChannelsByScheduledCooldown(channels, operation_setting.ChannelTestModePassiveRecovery, 30, now)
 	assert.Len(t, passive, 3)
 
-	require.True(t, tryAcquireChannelTestSlot(9999))
-	assert.False(t, tryAcquireChannelTestSlot(9999))
-	releaseChannelTestSlot(9999)
-	assert.True(t, tryAcquireChannelTestSlot(9999))
-	releaseChannelTestSlot(9999)
+	resetChannelTestSlotsForTest()
+	t.Cleanup(resetChannelTestSlotsForTest)
+
+	require.Equal(t, channelTestRejectNone, tryAcquireChannelModelTestSlot(9999, "gpt-image-2.5-sunburst"))
+	assert.Equal(t, channelTestRejectModelBusy, tryAcquireChannelModelTestSlot(9999, " GPT-IMAGE-2.5-SUNBURST "))
+	assert.False(t, tryAcquireChannelHealthCheckSlot(9999, "gpt-image-2"))
+	releaseChannelModelTestSlot(9999, "gpt-image-2.5-sunburst")
+
+	require.True(t, tryAcquireChannelHealthCheckSlot(9999, "gpt-image-2"))
+	assert.False(t, tryAcquireChannelHealthCheckSlot(9999, "gpt-image-2.6-flare"))
+	assert.Equal(t, channelTestRejectModelBusy, tryAcquireChannelModelTestSlot(9999, "gpt-image-2"))
+	assert.Equal(t, channelTestRejectNone, tryAcquireChannelModelTestSlot(9999, "gpt-image-2.6-flare"))
+	releaseChannelModelTestSlot(9999, "gpt-image-2.6-flare")
+	releaseChannelHealthCheckSlot(9999, "gpt-image-2")
+}
+
+func TestChannelModelTestSlotsAllowBatchModelsAndEnforceLimits(t *testing.T) {
+	resetChannelTestSlotsForTest()
+	t.Cleanup(resetChannelTestSlotsForTest)
+
+	batchModels := []string{
+		"gpt-image-2.6-sunburst",
+		"gpt-image-2.5-sunburst",
+		"gpt-image-2.6-flare",
+		"gpt-image-2.5-flare",
+		"gpt-image-2",
+	}
+	for _, modelName := range batchModels {
+		require.Equal(t, channelTestRejectNone, tryAcquireChannelModelTestSlot(1001, modelName))
+	}
+
+	assert.Equal(t, channelTestRejectModelBusy, tryAcquireChannelModelTestSlot(1001, "gpt-image-2"))
+	assert.Equal(t, channelTestRejectTooManyConcurrent, tryAcquireChannelModelTestSlot(1001, "gpt-image-extra"))
+	assert.False(t, tryAcquireChannelHealthCheckSlot(1001, "gpt-image-health"))
+
+	for _, modelName := range batchModels {
+		releaseChannelModelTestSlot(1001, modelName)
+	}
+
+	for slotIdx := range maxConcurrentManualTestsGlobal {
+		channelID := 2000 + slotIdx/maxConcurrentManualTestsPerChannel
+		modelName := fmt.Sprintf("model-%d", slotIdx)
+		require.Equal(t, channelTestRejectNone, tryAcquireChannelModelTestSlot(channelID, modelName))
+	}
+	assert.Equal(t, channelTestRejectTooManyConcurrent, tryAcquireChannelModelTestSlot(99999, "overflow-model"))
+
+	resetChannelTestSlotsForTest()
+
+	var workers sync.WaitGroup
+	for workerIdx := range 16 {
+		workers.Add(1)
+		go func(id int) {
+			defer workers.Done()
+			modelName := fmt.Sprintf("concurrent-model-%d", id%4)
+			for range 25 {
+				if tryAcquireChannelModelTestSlot(3001, modelName) == channelTestRejectNone {
+					releaseChannelModelTestSlot(3001, modelName)
+				}
+				if tryAcquireChannelHealthCheckSlot(3001, "health-model") {
+					releaseChannelHealthCheckSlot(3001, "health-model")
+				}
+			}
+		}(workerIdx)
+	}
+	workers.Wait()
+
+	assert.True(t, tryAcquireChannelHealthCheckSlot(3001, "health-model"))
+	releaseChannelHealthCheckSlot(3001, "health-model")
+}
+
+func TestTestChannelRejectsDuplicateModelAndPerChannelOverflow(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	resetChannelTestSlotsForTest()
+	t.Cleanup(resetChannelTestSlotsForTest)
+
+	prevDB := model.DB
+	prevCache := common.MemoryCacheEnabled
+	db, err := gorm.Open(sqlite.Open("file:test_channel_slot_http?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&model.Channel{}, &model.User{}))
+	model.DB = db
+	common.MemoryCacheEnabled = false
+	t.Cleanup(func() {
+		model.DB = prevDB
+		common.MemoryCacheEnabled = prevCache
+		if sqlDB, err := db.DB(); err == nil {
+			_ = sqlDB.Close()
+		}
+	})
+
+	channel := &model.Channel{
+		Id:     401,
+		Type:   constant.ChannelTypeOpenAI,
+		Key:    "sk-test",
+		Status: common.ChannelStatusEnabled,
+		Name:   "OpenAI Image",
+		Models: "gpt-image-2.6-sunburst,gpt-image-2.5-sunburst,gpt-image-2.6-flare,gpt-image-2.5-flare,gpt-image-2,gpt-image-extra",
+		Group:  "default",
+	}
+	require.NoError(t, db.Create(channel).Error)
+
+	require.Equal(t, channelTestRejectNone, tryAcquireChannelModelTestSlot(401, "gpt-image-2"))
+
+	duplicateRecorder := httptest.NewRecorder()
+	duplicateCtx, _ := gin.CreateTestContext(duplicateRecorder)
+	duplicateCtx.Set("id", 1)
+	duplicateCtx.Params = gin.Params{{Key: "id", Value: "401"}}
+	duplicateCtx.Request = httptest.NewRequest(http.MethodGet, "/api/channel/test/401?model=gpt-image-2", nil)
+	TestChannel(duplicateCtx)
+	assert.Equal(t, http.StatusConflict, duplicateRecorder.Code)
+	assert.Contains(t, duplicateRecorder.Body.String(), "Channel model is currently being tested")
+
+	for _, modelName := range []string{"gpt-image-2.6-sunburst", "gpt-image-2.5-sunburst", "gpt-image-2.6-flare", "gpt-image-2.5-flare"} {
+		require.Equal(t, channelTestRejectNone, tryAcquireChannelModelTestSlot(401, modelName))
+	}
+
+	overflowRecorder := httptest.NewRecorder()
+	overflowCtx, _ := gin.CreateTestContext(overflowRecorder)
+	overflowCtx.Set("id", 1)
+	overflowCtx.Params = gin.Params{{Key: "id", Value: "401"}}
+	overflowCtx.Request = httptest.NewRequest(http.MethodGet, "/api/channel/test/401?model=gpt-image-extra", nil)
+	TestChannel(overflowCtx)
+	assert.Equal(t, http.StatusTooManyRequests, overflowRecorder.Code)
+	assert.Contains(t, overflowRecorder.Body.String(), "Too many concurrent channel tests, please try again later")
 }
 
 func setupChannelStatusTestDB(t *testing.T) {

@@ -3,8 +3,10 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -222,4 +224,40 @@ func TestClassifyChannelAttemptOutcome(t *testing.T) {
 	err502 := types.NewOpenAIError(errors.New("bad gateway"), types.ErrorCodeBadResponseStatusCode, http.StatusBadGateway)
 	ignore, _, _ = ClassifyChannelAttemptOutcome(canceledGin, err502)
 	assert.True(t, ignore)
+}
+
+func TestChannelCircuitConcurrentHighThroughputSafety(t *testing.T) {
+	ResetAllChannelFailureCountsForTest()
+	t.Cleanup(ResetAllChannelFailureCountsForTest)
+
+	var workers sync.WaitGroup
+	for workerIdx := range 16 {
+		workers.Add(1)
+		go func(id int) {
+			defer workers.Done()
+			for step := range 100 {
+				healthyID := 1000 + (id % 4)
+				ResetChannelFailureCount(healthyID, "")
+				assert.Equal(t, 0, GetChannelFailureCount(healthyID, false, ""))
+
+				flakyID := 2000 + (id % 3)
+				keyName := fmt.Sprintf("key-%d", step%3)
+				RecordChannelFailure(flakyID, true, keyName)
+				_ = GetChannelFailureCount(flakyID, true, keyName)
+				if step%2 == 0 {
+					ResetChannelFailureCount(flakyID, keyName)
+				} else {
+					ResetChannelFailureCount(flakyID, "")
+				}
+			}
+		}(workerIdx)
+	}
+	workers.Wait()
+
+	ResetChannelFailureCount(2000, "")
+	ResetChannelFailureCount(2001, "")
+	ResetChannelFailureCount(2002, "")
+	assert.Equal(t, 0, GetChannelFailureCount(2000, true, "key-0"))
+	assert.Equal(t, 0, GetChannelFailureCount(2001, true, "key-1"))
+	assert.Equal(t, 0, GetChannelFailureCount(2002, true, "key-2"))
 }

@@ -41,6 +41,12 @@ const modelsSearchSchema = z.object({
     .array(z.enum(['visible', 'unavailable', 'hidden', 'partial']))
     .optional()
     .catch([]),
+  capability_labels: z
+    .array(
+      z.enum(['text', 'image', 'video', 'audio', 'transcription', 'other'])
+    )
+    .optional()
+    .catch([]),
   sync: z.array(z.string()).optional().catch([]),
   dPage: z.number().optional().catch(1),
   dPageSize: z.number().optional().catch(10),

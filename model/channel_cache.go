@@ -152,7 +152,12 @@ func GetRandomSatisfiedChannel(
 	}
 
 	channelSyncLock.RLock()
-	defer channelSyncLock.RUnlock()
+	lockHeld := true
+	defer func() {
+		if lockHeld {
+			channelSyncLock.RUnlock()
+		}
+	}()
 
 	// First, try to find channels with the exact model name.
 	channels, _ := filterCandidateIDs(group2model2channels[group][model], model, filters)
@@ -232,6 +237,8 @@ func GetRandomSatisfiedChannel(
 			Weight:    channel.GetWeight(),
 		}
 	}
+	lockHeld = false
+	channelSyncLock.RUnlock()
 	selectedIdx := channelrouting.SelectCandidate(candidates)
 	if selectedIdx >= 0 && selectedIdx < len(targetChannels) {
 		return targetChannels[selectedIdx], nil

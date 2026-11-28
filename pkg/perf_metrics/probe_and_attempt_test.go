@@ -2,9 +2,11 @@ package perfmetrics
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -53,4 +55,49 @@ func TestRecordRelayResultUsesAttemptStartTime(t *testing.T) {
 	// Attempt TTFT is ~200ms (not 19.7s from the earlier failed attempt).
 	assert.Less(t, snap.ttftSumMs, int64(2000))
 	assert.Less(t, snap.totalLatencyMs, int64(2000))
+}
+
+func TestRecordAndTrafficTrackingConcurrentSafety(t *testing.T) {
+	prevRedis := common.RedisEnabled
+	common.RedisEnabled = false
+	ResetChannelTrafficForTest()
+	t.Cleanup(func() {
+		common.RedisEnabled = prevRedis
+		ResetChannelTrafficForTest()
+	})
+
+	now := time.Now()
+	bucketTs := bucketStart(now.Unix())
+	key := bucketKey{model: "gpt-concurrent-perf", group: "default", bucketTs: bucketTs}
+	t.Cleanup(func() {
+		hotBuckets.Delete(key)
+		redisPendingBuckets.Delete(key)
+	})
+
+	var workers sync.WaitGroup
+	for workerIdx := range 12 {
+		workers.Add(1)
+		go func(id int) {
+			defer workers.Done()
+			for step := range 50 {
+				RecordChannelTraffic(801, now.Unix()+int64(step%3))
+				Record(Sample{
+					Model:     "gpt-concurrent-perf",
+					Group:     "default",
+					LatencyMs: int64(100 + id),
+					TtftMs:    int64(40 + id),
+					HasTtft:   true,
+					Success:   true,
+				})
+			}
+		}(workerIdx)
+	}
+	workers.Wait()
+
+	raw, ok := hotBuckets.Load(key)
+	require.True(t, ok)
+	assert.Equal(t, int64(600), raw.(*atomicBucket).snapshot().requestCount)
+	assert.GreaterOrEqual(t, GetChannelLastTrafficTime(801), now.Unix())
+	_, pendingExists := redisPendingBuckets.Load(key)
+	assert.False(t, pendingExists)
 }

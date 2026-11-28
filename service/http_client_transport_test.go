@@ -95,7 +95,7 @@ func TestShardedRoundTripperPerOriginRotation(t *testing.T) {
 func TestShardedRoundTripperAvoidsBusyShard(t *testing.T) {
 	s := &shardedRoundTripper{
 		n:        3,
-		inFlight: make([]atomic.Int64, 3),
+		inFlight: make([]paddedAtomicInt64, 3),
 	}
 	origin := "https://busy.example:443"
 	// Mark shard 0 and shard 2 as busy; shard 1 is idle.

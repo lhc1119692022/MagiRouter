@@ -106,6 +106,7 @@ export interface PrefillGroup {
  */
 export interface GetModelsParams {
   square_state?: ModelSquareState
+  capability_labels?: string
   include_channel_models?: boolean
   p?: number
   page_size?: number
@@ -121,6 +122,7 @@ export interface GetModelsParams {
  */
 export interface SearchModelsParams {
   square_state?: ModelSquareState
+  capability_labels?: string
   include_channel_models?: boolean
   keyword?: string
   vendor?: string // vendor ID to filter by
@@ -132,6 +134,8 @@ export interface SearchModelsParams {
   page_size?: number
 }
 
+export type BatchEndpointsMode = 'replace' | 'append' | 'remove' | 'clear'
+
 export interface BatchUpdateModelsRequest {
   model_ids?: number[]
   channel_models?: string[]
@@ -142,6 +146,9 @@ export interface BatchUpdateModelsRequest {
   tags?: string
   capability_labels_mode?: 'set' | 'auto'
   capability_labels?: string[]
+  endpoints_mode?: BatchEndpointsMode
+  endpoints?: string
+  endpoint_keys?: string[]
 }
 
 export interface BatchUpdateModelsResult {

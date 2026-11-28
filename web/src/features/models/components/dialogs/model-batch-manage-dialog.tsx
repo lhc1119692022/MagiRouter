@@ -20,9 +20,15 @@ import type { ModelCapabilityCategory } from '@/lib/model-task-capabilities'
 import { requireServerSuccess } from '@/lib/server-error-message'
 
 import { batchUpdateModels, getVendors } from '../../api'
-import { vendorsQueryKeys } from '../../lib'
+import {
+  normalizeEndpointKeyList,
+  validateBatchEndpointsInput,
+  vendorsQueryKeys,
+  type EndpointsActionMode,
+} from '../../lib'
 import type { BatchUpdateModelsRequest, Model } from '../../types'
 import { invalidateVendorData } from '../../vendor-api'
+import { BatchEndpointsSection } from '../batch-endpoints-section'
 import { ModelTaskCapabilityField } from '../model-task-capability-field'
 
 const UNCHANGED = '__unchanged__'
@@ -48,6 +54,10 @@ export function ModelBatchManageDialog(props: {
   const [capabilityLabels, setCapabilityLabels] = useState<
     ModelCapabilityCategory[]
   >([])
+  const [endpointsMode, setEndpointsMode] =
+    useState<EndpointsActionMode>('unchanged')
+  const [endpointsValue, setEndpointsValue] = useState('')
+  const [removeEndpointKeys, setRemoveEndpointKeys] = useState<string[]>([])
 
   const vendorsQuery = useQuery({
     queryKey: vendorsQueryKeys.list(),
@@ -72,13 +82,24 @@ export function ModelBatchManageDialog(props: {
     [props.models]
   )
 
+  const endpointsValidation = useMemo(
+    () =>
+      validateBatchEndpointsInput(
+        endpointsMode,
+        endpointsValue,
+        removeEndpointKeys
+      ),
+    [endpointsMode, endpointsValue, removeEndpointKeys]
+  )
   const hasFieldChange =
     vendorValue !== UNCHANGED ||
     statusValue !== UNCHANGED ||
     syncValue !== UNCHANGED ||
     tagsMode !== 'unchanged' ||
-    capabilityMode !== 'unchanged'
-  const canSubmit = hasFieldChange || channelModels.length > 0
+    capabilityMode !== 'unchanged' ||
+    endpointsMode !== 'unchanged'
+  const canSubmit =
+    (hasFieldChange || channelModels.length > 0) && endpointsValidation.valid
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -106,6 +127,14 @@ export function ModelBatchManageDialog(props: {
         payload.capability_labels = capabilityLabels
       } else if (capabilityMode === 'auto') {
         payload.capability_labels_mode = 'auto'
+      }
+      if (endpointsMode !== 'unchanged') {
+        payload.endpoints_mode = endpointsMode
+        if (endpointsMode === 'append' || endpointsMode === 'replace') {
+          payload.endpoints = endpointsValue.trim()
+        } else if (endpointsMode === 'remove') {
+          payload.endpoint_keys = normalizeEndpointKeyList(removeEndpointKeys)
+        }
       }
       return requireServerSuccess(await batchUpdateModels(payload))
     },
@@ -179,7 +208,7 @@ export function ModelBatchManageDialog(props: {
         'Apply settings to {{count}} selected models at once. Fields left unchanged keep each model’s existing value.',
         { count: props.models.length }
       )}
-      size='lg'
+      contentClassName='sm:max-w-3xl'
       footer={
         <>
           <Button
@@ -349,6 +378,21 @@ export function ModelBatchManageDialog(props: {
               }}
             />
           )}
+        </div>
+
+        <div className='space-y-3 rounded-lg border p-3'>
+          <BatchEndpointsSection
+            models={props.models}
+            mode={endpointsMode}
+            onModeChange={setEndpointsMode}
+            endpointsValue={endpointsValue}
+            onEndpointsValueChange={setEndpointsValue}
+            removeKeys={removeEndpointKeys}
+            onRemoveKeysChange={setRemoveEndpointKeys}
+            allowUnchanged
+            disabled={mutation.isPending}
+            open={props.open}
+          />
         </div>
       </div>
     </Dialog>

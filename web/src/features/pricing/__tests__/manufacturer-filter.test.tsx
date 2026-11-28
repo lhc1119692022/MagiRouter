@@ -576,3 +576,208 @@ it('honors manual filter order configured via status.pricing_filter_order', asyn
     .map((card) => within(card).getByRole('heading').textContent)
   expect(cardHeadings).toEqual(['gpt-6.2', 'gemini-4', 'claude-5.5'])
 })
+
+async function visitTaskCatalog(url: string, catalogAvailable = true) {
+  vi.spyOn(api, 'get').mockImplementation(async (path) => {
+    if (path === '/api/pricing') throw new Error('catalog unavailable')
+    return { data: { success: true, data: { models: [] } } }
+  })
+  client = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+  })
+  client.setQueryData(['status'], {})
+  if (catalogAvailable) {
+    client.setQueryData(['pricing'], {
+      success: true,
+      vendors: [
+        { id: 1, name: 'OpenAI' },
+        { id: 2, name: 'Google' },
+        { id: 3, name: 'Anthropic' },
+      ],
+      data: [
+        {
+          id: 1,
+          vendor_id: 1,
+          model_name: 'gpt-text',
+          tags: '@mr:catalog:v1=text',
+          enable_groups: ['shared', 'gpt-only'],
+          quota_type: 0,
+          model_ratio: 1,
+          completion_ratio: 1,
+        },
+        {
+          id: 2,
+          vendor_id: 1,
+          model_name: 'gpt-image',
+          tags: '@mr:catalog:v1=image',
+          enable_groups: ['image-deal', 'openai-image'],
+          quota_type: 0,
+          model_ratio: 1,
+          completion_ratio: 1,
+        },
+        {
+          id: 3,
+          vendor_id: 2,
+          model_name: 'gemini-image',
+          tags: '@mr:catalog:v1=image',
+          enable_groups: ['shared', 'image-deal', 'gemini-image'],
+          quota_type: 0,
+          model_ratio: 1,
+          completion_ratio: 1,
+        },
+        {
+          id: 4,
+          vendor_id: 3,
+          model_name: 'claude-text',
+          tags: '@mr:catalog:v1=text',
+          enable_groups: ['claude-only'],
+          quota_type: 0,
+          model_ratio: 1,
+          completion_ratio: 1,
+        },
+      ],
+      usable_group: {
+        shared: {},
+        'gpt-only': {},
+        'image-deal': {},
+        'openai-image': {},
+        'gemini-image': {},
+        'claude-only': {},
+      },
+    })
+  }
+  const root = createRootRoute()
+  const pricing = createRoute({
+    getParentRoute: () => root,
+    path: 'pricing/',
+    component: Pricing,
+    validateSearch: pricingRoute.options.validateSearch,
+  })
+  const router = createRouter({
+    routeTree: root.addChildren([pricing]),
+    history: createMemoryHistory({ initialEntries: [url] }),
+  })
+  await router.load()
+  render(
+    <QueryClientProvider client={client}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>
+  )
+  return router
+}
+
+it('scopes multiplier groups by selected task capabilities, drops unsupported groups and restores history', async () => {
+  const router = await visitTaskCatalog('/pricing?task=text&group=claude-only')
+  const user = userEvent.setup()
+  const tasks = within(
+    await screen.findByRole('group', { name: 'Task capabilities' })
+  )
+  const groups = within(
+    screen.getByRole('group', { name: 'Multiplier groups' })
+  )
+
+  expect(
+    groups.getByRole('button', { name: 'claude-only', pressed: true })
+  ).toBeVisible()
+  expect(groups.getByRole('button', { name: 'gpt-only' })).toBeVisible()
+  expect(groups.getByRole('button', { name: 'shared' })).toBeVisible()
+  expect(groups.queryByRole('button', { name: 'image-deal' })).toBeNull()
+  expect(groups.queryByRole('button', { name: 'openai-image' })).toBeNull()
+  expect(groups.queryByRole('button', { name: 'gemini-image' })).toBeNull()
+
+  await user.click(tasks.getByRole('button', { name: 'Image Generation' }))
+  expect(
+    await groups.findByRole('button', { name: 'image-deal' })
+  ).toBeVisible()
+  expect(groups.getByRole('button', { name: 'openai-image' })).toBeVisible()
+  expect(groups.getByRole('button', { name: 'gemini-image' })).toBeVisible()
+  expect(router.state.location.search).toEqual({
+    task: ['text', 'image'],
+    group: 'claude-only',
+  })
+
+  await user.click(tasks.getByRole('button', { name: 'Reasoning generation' }))
+  await waitFor(() =>
+    expect(groups.queryByRole('button', { name: 'claude-only' })).toBeNull()
+  )
+  expect(groups.queryByRole('button', { name: 'gpt-only' })).toBeNull()
+  expect(groups.getByRole('button', { name: 'image-deal' })).toBeVisible()
+  expect(groups.getByRole('button', { name: 'openai-image' })).toBeVisible()
+  expect(groups.getByRole('button', { name: 'gemini-image' })).toBeVisible()
+  expect(groups.getByRole('button', { name: 'shared' })).toBeVisible()
+  expect(router.state.location.search).toEqual({ task: 'image' })
+  expect(screen.queryByRole('heading', { name: 'claude-text' })).toBeNull()
+
+  act(() => router.history.back())
+  expect(
+    await groups.findByRole('button', { name: 'claude-only', pressed: true })
+  ).toBeVisible()
+  expect(router.state.location.search).toEqual({
+    task: ['text', 'image'],
+    group: 'claude-only',
+  })
+})
+
+it('intersects manufacturer and task capability filters when deriving multiplier groups', async () => {
+  const router = await visitTaskCatalog('/pricing?task=image&group=shared')
+  const user = userEvent.setup()
+  const manufacturers = within(
+    await screen.findByRole('group', { name: 'Model manufacturers' })
+  )
+  const groups = within(
+    screen.getByRole('group', { name: 'Multiplier groups' })
+  )
+
+  expect(
+    groups.getByRole('button', { name: 'shared', pressed: true })
+  ).toBeVisible()
+
+  await user.click(manufacturers.getByRole('button', { name: 'OpenAI' }))
+  await waitFor(() =>
+    expect(groups.queryByRole('button', { name: 'shared' })).toBeNull()
+  )
+  expect(groups.queryByRole('button', { name: 'gemini-image' })).toBeNull()
+  expect(groups.queryByRole('button', { name: 'gpt-only' })).toBeNull()
+  expect(groups.getByRole('button', { name: 'image-deal' })).toBeVisible()
+  expect(groups.getByRole('button', { name: 'openai-image' })).toBeVisible()
+  expect(router.state.location.search).toEqual({
+    task: 'image',
+    vendor: 'OpenAI',
+  })
+
+  await user.click(manufacturers.getByRole('button', { name: 'Anthropic' }))
+  await user.click(manufacturers.getByRole('button', { name: 'OpenAI' }))
+  await waitFor(() =>
+    expect(
+      screen.queryByRole('group', { name: 'Multiplier groups' })
+    ).toBeNull()
+  )
+})
+
+it('drops an unsupported group for legacy task links once the catalog loads', async () => {
+  const loadedRouter = await visitTaskCatalog(
+    '/pricing?task=creative&group=claude-only'
+  )
+  const groups = within(
+    await screen.findByRole('group', { name: 'Multiplier groups' })
+  )
+  expect(groups.queryByRole('button', { name: 'claude-only' })).toBeNull()
+  expect(groups.getByRole('button', { name: 'image-deal' })).toBeVisible()
+  await waitFor(() =>
+    expect(loadedRouter.state.location.search).toEqual({ task: 'creative' })
+  )
+})
+
+it('preserves a bookmarked group for a task link while the catalog cannot be loaded', async () => {
+  const failedRouter = await visitTaskCatalog(
+    '/pricing?task=image&group=claude-only',
+    false
+  )
+  await waitFor(() =>
+    expect(client.getQueryState(['pricing'])?.status).toBe('error')
+  )
+  expect(failedRouter.state.location.search).toEqual({
+    task: 'image',
+    group: 'claude-only',
+  })
+})

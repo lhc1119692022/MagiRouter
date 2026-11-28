@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"math"
 	"math/rand/v2"
 	"net/http"
@@ -37,6 +38,7 @@ import (
 	hosttypes "github.com/QuantumNous/new-api/types"
 
 	"github.com/MoeForge/moego/ojson"
+	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/samber/lo"
 
 	"github.com/gin-gonic/gin"
@@ -881,21 +883,139 @@ func buildTestRequest(model string, endpointType string, channel *model.Channel,
 	return testRequest
 }
 
-var inFlightChannelTests sync.Map
+const (
+	maxConcurrentManualTestsPerChannel = 5
+	maxConcurrentManualTestsGlobal     = 32
+)
 
-func tryAcquireChannelTestSlot(channelID int) bool {
-	if channelID <= 0 {
-		return true
-	}
-	_, loaded := inFlightChannelTests.LoadOrStore(channelID, struct{}{})
-	return !loaded
+type channelTestSlotKey struct {
+	channelID int
+	model     string
 }
 
-func releaseChannelTestSlot(channelID int) {
+type channelTestRejectReason int
+
+const (
+	channelTestRejectNone channelTestRejectReason = iota
+	channelTestRejectModelBusy
+	channelTestRejectTooManyConcurrent
+)
+
+type channelTestCoordinator struct {
+	mu                 sync.Mutex
+	modelInFlight      map[channelTestSlotKey]struct{}
+	channelActiveCount map[int]int
+	channelManualCount map[int]int
+	globalManualCount  int
+}
+
+var inFlightChannelTests = &channelTestCoordinator{
+	modelInFlight:      make(map[channelTestSlotKey]struct{}),
+	channelActiveCount: make(map[int]int),
+	channelManualCount: make(map[int]int),
+}
+
+func normalizeChannelTestSlotKey(channelID int, modelName string) channelTestSlotKey {
+	return channelTestSlotKey{
+		channelID: channelID,
+		model:     strings.ToLower(strings.TrimSpace(modelName)),
+	}
+}
+
+func tryAcquireChannelModelTestSlot(channelID int, modelName string) channelTestRejectReason {
+	if channelID <= 0 {
+		return channelTestRejectNone
+	}
+	slotKey := normalizeChannelTestSlotKey(channelID, modelName)
+	inFlightChannelTests.mu.Lock()
+	defer inFlightChannelTests.mu.Unlock()
+
+	if _, exists := inFlightChannelTests.modelInFlight[slotKey]; exists {
+		return channelTestRejectModelBusy
+	}
+	if inFlightChannelTests.channelManualCount[channelID] >= maxConcurrentManualTestsPerChannel ||
+		inFlightChannelTests.globalManualCount >= maxConcurrentManualTestsGlobal {
+		return channelTestRejectTooManyConcurrent
+	}
+	inFlightChannelTests.modelInFlight[slotKey] = struct{}{}
+	inFlightChannelTests.channelActiveCount[channelID]++
+	inFlightChannelTests.channelManualCount[channelID]++
+	inFlightChannelTests.globalManualCount++
+	return channelTestRejectNone
+}
+
+func releaseChannelModelTestSlot(channelID int, modelName string) {
 	if channelID <= 0 {
 		return
 	}
-	inFlightChannelTests.Delete(channelID)
+	slotKey := normalizeChannelTestSlotKey(channelID, modelName)
+	inFlightChannelTests.mu.Lock()
+	defer inFlightChannelTests.mu.Unlock()
+
+	if _, exists := inFlightChannelTests.modelInFlight[slotKey]; !exists {
+		return
+	}
+	delete(inFlightChannelTests.modelInFlight, slotKey)
+	if active := inFlightChannelTests.channelActiveCount[channelID] - 1; active > 0 {
+		inFlightChannelTests.channelActiveCount[channelID] = active
+	} else {
+		delete(inFlightChannelTests.channelActiveCount, channelID)
+	}
+	if manual := inFlightChannelTests.channelManualCount[channelID] - 1; manual > 0 {
+		inFlightChannelTests.channelManualCount[channelID] = manual
+	} else {
+		delete(inFlightChannelTests.channelManualCount, channelID)
+	}
+	if inFlightChannelTests.globalManualCount > 0 {
+		inFlightChannelTests.globalManualCount--
+	}
+}
+
+func tryAcquireChannelHealthCheckSlot(channelID int, modelName string) bool {
+	if channelID <= 0 {
+		return true
+	}
+	slotKey := normalizeChannelTestSlotKey(channelID, modelName)
+	inFlightChannelTests.mu.Lock()
+	defer inFlightChannelTests.mu.Unlock()
+
+	if inFlightChannelTests.channelActiveCount[channelID] > 0 {
+		return false
+	}
+	if _, exists := inFlightChannelTests.modelInFlight[slotKey]; exists {
+		return false
+	}
+	inFlightChannelTests.modelInFlight[slotKey] = struct{}{}
+	inFlightChannelTests.channelActiveCount[channelID]++
+	return true
+}
+
+func releaseChannelHealthCheckSlot(channelID int, modelName string) {
+	if channelID <= 0 {
+		return
+	}
+	slotKey := normalizeChannelTestSlotKey(channelID, modelName)
+	inFlightChannelTests.mu.Lock()
+	defer inFlightChannelTests.mu.Unlock()
+
+	if _, exists := inFlightChannelTests.modelInFlight[slotKey]; !exists {
+		return
+	}
+	delete(inFlightChannelTests.modelInFlight, slotKey)
+	if active := inFlightChannelTests.channelActiveCount[channelID] - 1; active > 0 {
+		inFlightChannelTests.channelActiveCount[channelID] = active
+	} else {
+		delete(inFlightChannelTests.channelActiveCount, channelID)
+	}
+}
+
+func resetChannelTestSlotsForTest() {
+	inFlightChannelTests.mu.Lock()
+	defer inFlightChannelTests.mu.Unlock()
+	clear(inFlightChannelTests.modelInFlight)
+	clear(inFlightChannelTests.channelActiveCount)
+	clear(inFlightChannelTests.channelManualCount)
+	inFlightChannelTests.globalManualCount = 0
 }
 
 func TestChannel(c *gin.Context) {
@@ -926,14 +1046,27 @@ func TestChannel(c *gin.Context) {
 		return
 	}
 	resolvedModel := selectChannelTestModel(channel, testModel, operation_setting.ChannelTestModelStrategyFixed, "")
-	if !tryAcquireChannelTestSlot(channel.Id) {
-		c.JSON(http.StatusConflict, gin.H{
+	switch tryAcquireChannelModelTestSlot(channel.Id, resolvedModel) {
+	case channelTestRejectModelBusy:
+		msg := common.NewMessage("Channel model is currently being tested")
+		body := gin.H{
 			"success": false,
-			"message": "Channel is currently being tested",
-		})
+			"message": msg.Error(),
+		}
+		maps.Copy(body, msg.Fields())
+		c.JSON(http.StatusConflict, body)
+		return
+	case channelTestRejectTooManyConcurrent:
+		msg := common.NewMessage("Too many concurrent channel tests, please try again later")
+		body := gin.H{
+			"success": false,
+			"message": msg.Error(),
+		}
+		maps.Copy(body, msg.Fields())
+		c.JSON(http.StatusTooManyRequests, body)
 		return
 	}
-	defer releaseChannelTestSlot(channel.Id)
+	defer releaseChannelModelTestSlot(channel.Id, resolvedModel)
 	tik := time.Now()
 	requestCtx := context.Background()
 	if c.Request != nil {
@@ -955,9 +1088,13 @@ func TestChannel(c *gin.Context) {
 	tok := time.Now()
 	milliseconds := tok.Sub(tik).Milliseconds()
 	if result.newAPIError == nil {
-		go channel.UpdateResponseTime(milliseconds)
+		gopool.Go(func() {
+			channel.UpdateResponseTime(milliseconds)
+		})
 	} else {
-		go channel.UpdateTestTimeOnly()
+		gopool.Go(func() {
+			channel.UpdateTestTimeOnly()
+		})
 	}
 	if channel.Status == common.ChannelStatusEnabled || result.newAPIError == nil {
 		perfmetrics.RecordChannelProbe(channel.GetGroups(), perfmetrics.ProbeSample{
@@ -977,7 +1114,11 @@ func TestChannel(c *gin.Context) {
 		})
 		return
 	}
-	service.ResetChannelFailureCount(channel.Id, "")
+	resetKey := ""
+	if channel.ChannelInfo.IsMultiKey {
+		resetKey = common.GetContextKeyString(result.context, constant.ContextKeyChannelKey)
+	}
+	service.ResetChannelFailureCount(channel.Id, resetKey)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
@@ -997,10 +1138,6 @@ type channelTestSummary struct {
 
 func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, testUserID int, allowDisable bool, recordRecoveryBackoff bool, disableThreshold int64) channelTestSummary {
 	summary := channelTestSummary{}
-	if !tryAcquireChannelTestSlot(channel.Id) {
-		return summary
-	}
-	defer releaseChannelTestSlot(channel.Id)
 	isChannelEnabled := channel.Status == common.ChannelStatusEnabled
 	monitorSetting := operation_setting.GetMonitorSetting()
 	chosenModel := selectChannelTestModel(
@@ -1009,6 +1146,10 @@ func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, test
 		monitorSetting.ChannelTestModelStrategy,
 		monitorSetting.ChannelTestExcludeModels,
 	)
+	if !tryAcquireChannelHealthCheckSlot(channel.Id, chosenModel) {
+		return summary
+	}
+	defer releaseChannelHealthCheckSlot(channel.Id, chosenModel)
 	tik := time.Now()
 	result := testChannel(ctx, channel, testUserID, chosenModel, "", shouldUseStreamForAutomaticChannelTest(channel))
 	milliseconds := time.Since(tik).Milliseconds()

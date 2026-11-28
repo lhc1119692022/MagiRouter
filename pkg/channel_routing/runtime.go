@@ -53,8 +53,17 @@ type RuntimeSnapshot struct {
 	LastUpdated      int64   `json:"last_updated,omitempty"`
 }
 
+type channelTelemetrySnapshot struct {
+	ewmaTtftMs       float64
+	ewmaErrRate      float64
+	sampleCount      int64
+	softDemotedUntil time.Time
+	lastUpdated      time.Time
+}
+
 type channelState struct {
-	inFlight atomic.Int64
+	inFlight  atomic.Int64
+	telemetry atomic.Pointer[channelTelemetrySnapshot]
 
 	mu               sync.Mutex
 	ewmaTtftMs       float64
@@ -115,8 +124,14 @@ func AcquireInFlight(channelID int) func() {
 	var once sync.Once
 	return func() {
 		once.Do(func() {
-			if state.inFlight.Add(-1) < 0 {
-				state.inFlight.Store(0)
+			for {
+				current := state.inFlight.Load()
+				if current <= 0 {
+					return
+				}
+				if state.inFlight.CompareAndSwap(current, current-1) {
+					return
+				}
 			}
 		})
 	}
@@ -216,6 +231,14 @@ func RecordAttempt(channelID int, sample AttemptSample) {
 			state.consecutiveSlow--
 		}
 	}
+
+	state.telemetry.Store(&channelTelemetrySnapshot{
+		ewmaTtftMs:       state.ewmaTtftMs,
+		ewmaErrRate:      state.ewmaErrRate,
+		sampleCount:      state.sampleCount,
+		softDemotedUntil: state.softDemotedUntil,
+		lastUpdated:      state.lastUpdated,
+	})
 }
 
 func applySoftDemotionLocked(state *channelState, now time.Time) {
@@ -238,15 +261,12 @@ func PeerMedianTtftMs(channelIDs []int) int64 {
 		if !ok {
 			continue
 		}
-		state.mu.Lock()
-		fresh := !state.lastUpdated.IsZero() && now.Sub(state.lastUpdated) <= staleTelemetryWindow
-		ewma := state.ewmaTtftMs
-		state.mu.Unlock()
-		if fresh && ewma > 0 {
-			values = append(values, ewma)
+		snap := state.telemetry.Load()
+		if snap != nil && !snap.lastUpdated.IsZero() && now.Sub(snap.lastUpdated) <= staleTelemetryWindow && snap.ewmaTtftMs > 0 {
+			values = append(values, snap.ewmaTtftMs)
 		}
 	}
-	return int64(math.Round(medianFloat64(values)))
+	return int64(math.Round(medianFloat64InPlace(values)))
 }
 
 // SelectCandidate picks one candidate index from candidates using static
@@ -278,16 +298,13 @@ func selectCandidateWithRNG(
 		}
 		if state, ok := loadState(candidate.ChannelID); ok {
 			view.inFlight = state.inFlight.Load()
-			state.mu.Lock()
-			fresh := !state.lastUpdated.IsZero() && now.Sub(state.lastUpdated) <= staleTelemetryWindow
-			if fresh {
-				view.hasFresh = state.ewmaTtftMs > 0 || state.sampleCount > 0
-				view.ewmaMs = state.ewmaTtftMs
-				view.errRate = state.ewmaErrRate
-				view.sampleCount = state.sampleCount
-				view.softDemoted = !state.softDemotedUntil.IsZero() && now.Before(state.softDemotedUntil)
+			if snap := state.telemetry.Load(); snap != nil && !snap.lastUpdated.IsZero() && now.Sub(snap.lastUpdated) <= staleTelemetryWindow {
+				view.hasFresh = snap.ewmaTtftMs > 0 || snap.sampleCount > 0
+				view.ewmaMs = snap.ewmaTtftMs
+				view.errRate = snap.ewmaErrRate
+				view.sampleCount = snap.sampleCount
+				view.softDemoted = !snap.softDemotedUntil.IsZero() && now.Before(snap.softDemotedUntil)
 			}
-			state.mu.Unlock()
 			if view.hasFresh || view.inFlight > 0 || view.softDemoted {
 				hasAnyTelemetry = true
 			}
@@ -302,7 +319,7 @@ func selectCandidateWithRNG(
 		return weightedPickView(views, rngIntN).index
 	}
 
-	peerMedianMs := medianFloat64(freshLatencies)
+	peerMedianMs := medianFloat64InPlace(freshLatencies)
 	baselineMs := peerMedianMs
 	if baselineMs <= 0 {
 		baselineMs = defaultColdBaselineMs
@@ -471,17 +488,16 @@ func ResetForTest() {
 	nowFunc = time.Now
 }
 
-func medianFloat64(values []float64) float64 {
+func medianFloat64InPlace(values []float64) float64 {
 	if len(values) == 0 {
 		return 0
 	}
-	sorted := slices.Clone(values)
-	slices.Sort(sorted)
-	mid := len(sorted) / 2
-	if len(sorted)%2 == 1 {
-		return sorted[mid]
+	slices.Sort(values)
+	mid := len(values) / 2
+	if len(values)%2 == 1 {
+		return values[mid]
 	}
-	return (sorted[mid-1] + sorted[mid]) / 2
+	return (values[mid-1] + values[mid]) / 2
 }
 
 func percentileInt64(sorted []int64, p float64) int64 {

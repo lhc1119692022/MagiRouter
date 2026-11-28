@@ -1,6 +1,7 @@
 package channelrouting
 
 import (
+	"sync"
 	"testing"
 	"time"
 
@@ -121,4 +122,51 @@ func TestColdFallbackPreservesWeightedRandom(t *testing.T) {
 	}
 	assert.Equal(t, 0, selectCandidateWithRNG(candidates, func(n int) int { return 5 }, func() float64 { return 0.5 }))
 	assert.Equal(t, 1, selectCandidateWithRNG(candidates, func(n int) int { return 50 }, func() float64 { return 0.5 }))
+}
+
+func TestChannelRoutingConcurrentSelectAndRecordRaceFree(t *testing.T) {
+	ResetForTest()
+	t.Cleanup(ResetForTest)
+
+	candidates := []Candidate{
+		{ChannelID: 101, Weight: 100},
+		{ChannelID: 102, Weight: 100},
+		{ChannelID: 103, Weight: 100},
+	}
+	peerIDs := []int{101, 102, 103}
+
+	var workers sync.WaitGroup
+	for workerIdx := range 16 {
+		workers.Add(1)
+		go func(id int) {
+			defer workers.Done()
+			for step := range 100 {
+				selected := SelectCandidate(candidates)
+				assert.GreaterOrEqual(t, selected, 0)
+				assert.Less(t, selected, len(candidates))
+
+				channelID := candidates[selected].ChannelID
+				release := AcquireInFlight(channelID)
+				peerMedian := PeerMedianTtftMs(peerIDs)
+				RecordAttempt(channelID, AttemptSample{
+					TtftMs:       int64(200 + (id+step)%400),
+					LatencyMs:    int64(500 + (id+step)%800),
+					Success:      step%7 != 0,
+					IsTimeout:    step%19 == 0,
+					PeerMedianMs: peerMedian,
+				})
+				release()
+				release()
+				_, _ = GetSnapshot(channelID)
+			}
+		}(workerIdx)
+	}
+	workers.Wait()
+
+	for _, channelID := range peerIDs {
+		snap, ok := GetSnapshot(channelID)
+		require.True(t, ok)
+		assert.Equal(t, int64(0), snap.InFlight)
+		assert.Greater(t, snap.SampleCount, int64(0))
+	}
 }

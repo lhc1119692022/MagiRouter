@@ -25,6 +25,7 @@ import {
   DollarSign,
   Eye,
   EyeOff,
+  Plug,
   SlidersHorizontal,
   Trash2,
   Unlink,
@@ -48,6 +49,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { handleBatchSetModelVisibility } from '../lib'
 import type { Model } from '../types'
 import type { VendorOperation } from '../vendor-api'
+import { ModelBatchEndpointsDialog } from './dialogs/model-batch-endpoints-dialog'
 import { ModelBatchManageDialog } from './dialogs/model-batch-manage-dialog'
 import { ModelBatchPricingDialog } from './dialogs/model-batch-pricing-dialog'
 import { ModelDeleteDialog } from './dialogs/model-delete-dialog'
@@ -72,6 +74,7 @@ export function DataTableBulkActions<TData>({
     useState<VendorOperation | null>(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [showBatchManage, setShowBatchManage] = useState(false)
+  const [showBatchEndpoints, setShowBatchEndpoints] = useState(false)
   const [showBatchPricing, setShowBatchPricing] = useState(false)
 
   const selectedRows = table.getFilteredSelectedRowModel().rows
@@ -149,6 +152,18 @@ export function DataTableBulkActions<TData>({
         >
           <SlidersHorizontal className='size-3.5' aria-hidden='true' />
           <span>{t('Batch manage')}</span>
+        </Button>
+
+        <Button
+          variant='outline'
+          size='sm'
+          className='h-8 gap-1.5 px-2.5 text-xs'
+          title={t('Batch endpoints')}
+          aria-label={t('Batch endpoints')}
+          onClick={() => setShowBatchEndpoints(true)}
+        >
+          <Plug className='size-3.5' aria-hidden='true' />
+          <span className='hidden sm:inline'>{t('Batch endpoints')}</span>
         </Button>
 
         {canPrice && exactSelectedModels.length > 0 && (
@@ -305,6 +320,15 @@ export function DataTableBulkActions<TData>({
           models={selectedModels}
           open={showBatchManage}
           onOpenChange={setShowBatchManage}
+          onSuccess={handleClearSelection}
+        />
+      )}
+
+      {showBatchEndpoints && (
+        <ModelBatchEndpointsDialog
+          models={selectedModels}
+          open={showBatchEndpoints}
+          onOpenChange={setShowBatchEndpoints}
           onSuccess={handleClearSelection}
         />
       )}

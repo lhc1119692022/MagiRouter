@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useNavigate, useSearch } from '@tanstack/react-router'
+import { useNavigate } from '@tanstack/react-router'
 import {
   ArrowDownAZ,
   ArrowDownWideNarrow,
@@ -41,10 +41,6 @@ import { PublicLayout } from '@/components/layout'
 import { BrandFooter } from '@/features/magirouter-home/components/brand-footer'
 import { useStatus } from '@/hooks/use-status'
 import { getLobeIcon } from '@/lib/lobe-icon'
-import {
-  getModelCategories,
-  type ModelCapabilityCategory,
-} from '@/lib/model-task-capabilities'
 import { useAuthStore } from '@/stores/auth-store'
 
 import { LoadingSkeleton, ModelDetailsDrawer } from './components'
@@ -73,11 +69,7 @@ import {
   parsePricingFilterOrderConfig,
   sortCatalogVendors,
 } from './lib/filter-order-config'
-import {
-  getCatalogFacets,
-  expandTaskFilters,
-  getModelPlaygroundModes,
-} from './lib/filters'
+import { getCatalogFacets, getModelPlaygroundModes } from './lib/filters'
 
 function renderCatalogSortIcon(icon: CatalogSortIconKind, className: string) {
   switch (icon) {
@@ -114,31 +106,6 @@ export function Pricing() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [extraFiltersOpen, setExtraFiltersOpen] = useState(true)
   const [sortMenuOpen, setSortMenuOpen] = useState(false)
-  const taskFilter = useSearch({
-    from: '/pricing/',
-    select: (search) => search.task,
-  })
-  const taskFilters = useMemo(
-    () => (!taskFilter ? [] : [taskFilter].flat()),
-    [taskFilter]
-  )
-  const selectedTasks = useMemo(
-    () => expandTaskFilters(taskFilters),
-    [taskFilters]
-  )
-  const setTaskFilter = useCallback(
-    (tasks: ModelCapabilityCategory[]) => {
-      void navigate({
-        to: '/pricing',
-        search: (previous) => ({
-          ...previous,
-          task: tasks.length > 1 ? tasks : tasks[0],
-        }),
-        resetScroll: false,
-      })
-    },
-    [navigate]
-  )
   const [bannerSlide, setBannerSlide] = useState(0)
   const sortDropdownRef = useRef<HTMLDivElement>(null)
 
@@ -188,6 +155,7 @@ export function Pricing() {
     searchInput,
     sortBy,
     selectedVendors,
+    selectedTasks,
     availableGroups,
     groupFilter,
     quotaTypeFilter,
@@ -198,6 +166,7 @@ export function Pricing() {
     setSearchInput,
     setSortBy,
     toggleVendor,
+    setTaskFilter,
     setGroupFilter,
     setQuotaTypeFilter,
     setViewMode,
@@ -212,15 +181,6 @@ export function Pricing() {
     filterOrder,
     modelOrder,
   })
-
-  const displayedModels = useMemo(() => {
-    if (!selectedTasks.length) return filteredModels
-    return filteredModels.filter((model) =>
-      getModelCategories(model).some((category) =>
-        selectedTasks.includes(category)
-      )
-    )
-  }, [filteredModels, selectedTasks])
 
   const handleModelClick = useCallback((modelName: string) => {
     setSelectedModelName(modelName)
@@ -255,8 +215,7 @@ export function Pricing() {
     [groupFilter, quotaTypeFilter]
   )
 
-  const anyFilterActive =
-    hasActiveFilters || taskFilters.length > 0 || Boolean(searchInput.trim())
+  const anyFilterActive = hasActiveFilters || Boolean(searchInput.trim())
 
   const handleClearAll = useCallback(() => {
     clearFilters()
@@ -395,7 +354,7 @@ export function Pricing() {
     if (viewMode === VIEW_MODES.CARD) {
       return (
         <ZmModelCardGrid
-          models={displayedModels}
+          models={filteredModels}
           onModelClick={handleModelClick}
           priceRate={priceRate}
           usdExchangeRate={usdExchangeRate}
@@ -408,7 +367,7 @@ export function Pricing() {
       )
     }
 
-    if (displayedModels.length === 0) {
+    if (filteredModels.length === 0) {
       return (
         <div className='sr-empty-state'>
           <div
@@ -437,7 +396,7 @@ export function Pricing() {
 
     return (
       <ZmModelTable
-        models={displayedModels}
+        models={filteredModels}
         priceRate={priceRate}
         usdExchangeRate={usdExchangeRate}
         tokenUnit={tokenUnit}
@@ -576,7 +535,7 @@ export function Pricing() {
                 <div className='catalog-title-group'>
                   <h1 className='catalog-h1'>全部模型</h1>
                   <span className='catalog-count tabular-nums'>
-                    {displayedModels.length} {t('models')}
+                    {filteredModels.length} {t('models')}
                   </span>
                 </div>
 

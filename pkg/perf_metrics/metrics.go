@@ -14,11 +14,13 @@ import (
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/setting/perf_metrics_setting"
-
-	"github.com/bytedance/gopkg/util/gopool"
 )
 
-var hotBuckets sync.Map
+var (
+	hotBuckets          sync.Map
+	redisPendingBuckets sync.Map
+	redisFlushOnce      sync.Once
+)
 
 // seriesSchema is a stable client cache/schema marker. Do not change it when
 // hiding fields or making response-only privacy hardening changes.
@@ -171,11 +173,12 @@ func Record(sample Sample) {
 		group:    sample.Group,
 		bucketTs: bucketStart(time.Now().Unix()),
 	}
-	actual, _ := hotBuckets.LoadOrStore(key, &atomicBucket{})
+	actual, ok := hotBuckets.Load(key)
+	if !ok {
+		actual, _ = hotBuckets.LoadOrStore(key, &atomicBucket{})
+	}
 	actual.(*atomicBucket).add(sample)
-	gopool.Go(func() {
-		recordRedis(key, sample)
-	})
+	enqueueRedisSample(key, sample)
 }
 
 // queryWindow covers the current partial hour plus the preceding complete
@@ -976,40 +979,93 @@ func cacheHitRate(value counters) *float64 {
 	return &rate
 }
 
-func recordRedis(key bucketKey, sample Sample) {
+func enqueueRedisSample(key bucketKey, sample Sample) {
 	if !common.RedisEnabled || common.RDB == nil {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	entry, ok := redisPendingBuckets.Load(key)
+	if !ok {
+		entry, _ = redisPendingBuckets.LoadOrStore(key, &atomicBucket{})
+	}
+	entry.(*atomicBucket).add(sample)
+	redisFlushOnce.Do(func() {
+		go redisFlushLoop()
+	})
+}
+
+func redisFlushLoop() {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for range ticker.C {
+		flushRedisPendingBuckets()
+	}
+}
+
+func flushRedisPendingBuckets() {
+	if !common.RedisEnabled || common.RDB == nil {
+		return
+	}
+	currentBucket := bucketStart(time.Now().Unix())
+	type pendingDelta struct {
+		key    bucketKey
+		bucket *atomicBucket
+		delta  counters
+	}
+	var batch []pendingDelta
+	redisPendingBuckets.Range(func(rawKey, value any) bool {
+		key := rawKey.(bucketKey)
+		bucket := value.(*atomicBucket)
+		delta := bucket.drain()
+		if delta.requestCount == 0 {
+			if key.bucketTs < currentBucket {
+				redisPendingBuckets.Delete(rawKey)
+			}
+			return true
+		}
+		batch = append(batch, pendingDelta{key: key, bucket: bucket, delta: delta})
+		return true
+	})
+	if len(batch) == 0 {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	redisKey := redisBucketKey(key)
-	pipe := common.RDB.TxPipeline()
-	pipe.HIncrBy(ctx, redisKey, "req", 1)
-	if sample.Success {
-		pipe.HIncrBy(ctx, redisKey, "ok", 1)
+	pipe := common.RDB.Pipeline()
+	for _, item := range batch {
+		redisKey := redisBucketKey(item.key)
+		delta := item.delta
+		pipe.HIncrBy(ctx, redisKey, "req", delta.requestCount)
+		if delta.successCount > 0 {
+			pipe.HIncrBy(ctx, redisKey, "ok", delta.successCount)
+		}
+		if delta.totalLatencyMs > 0 {
+			pipe.HIncrBy(ctx, redisKey, "lat", delta.totalLatencyMs)
+		}
+		if delta.ttftCount > 0 {
+			pipe.HIncrBy(ctx, redisKey, "ttft", delta.ttftSumMs)
+			pipe.HIncrBy(ctx, redisKey, "ttft_n", delta.ttftCount)
+		}
+		if delta.tpsCount > 0 && delta.outputTokens > 0 && delta.generationMs > 0 {
+			pipe.HIncrBy(ctx, redisKey, "out", delta.outputTokens)
+			pipe.HIncrBy(ctx, redisKey, "gen_ms", delta.generationMs)
+			pipe.HIncrBy(ctx, redisKey, "tps_n", delta.tpsCount)
+		}
+		if delta.promptTokens > 0 {
+			pipe.HIncrBy(ctx, redisKey, "in", delta.promptTokens)
+			if delta.cachedTokens > 0 {
+				pipe.HIncrBy(ctx, redisKey, "cache_in", delta.cachedTokens)
+			}
+		}
+		pipe.Expire(ctx, redisKey, time.Hour)
 	}
-	if sample.LatencyMs > 0 {
-		pipe.HIncrBy(ctx, redisKey, "lat", sample.LatencyMs)
-	}
-	if sample.HasTtft && sample.TtftMs >= 0 {
-		pipe.HIncrBy(ctx, redisKey, "ttft", sample.TtftMs)
-		pipe.HIncrBy(ctx, redisKey, "ttft_n", 1)
-	}
-	if sample.OutputTokens > 0 && sample.GenerationMs > 0 {
-		pipe.HIncrBy(ctx, redisKey, "out", sample.OutputTokens)
-		pipe.HIncrBy(ctx, redisKey, "gen_ms", sample.GenerationMs)
-		pipe.HIncrBy(ctx, redisKey, "tps_n", 1)
-	}
-	if sample.PromptTokens > 0 {
-		cached := min(max(sample.CachedTokens, 0), sample.PromptTokens)
-		pipe.HIncrBy(ctx, redisKey, "in", sample.PromptTokens)
-		if cached > 0 {
-			pipe.HIncrBy(ctx, redisKey, "cache_in", cached)
+	if _, err := pipe.Exec(ctx); err != nil {
+		for _, item := range batch {
+			if item.key.bucketTs >= currentBucket {
+				item.bucket.addCounters(item.delta)
+			}
 		}
 	}
-	pipe.Expire(ctx, redisKey, time.Hour)
-	_, _ = pipe.Exec(ctx)
 }
 
 func mergeRedisActiveBuckets(merged map[bucketKey]counters, params QueryParams, startTs int64, endTs int64) {

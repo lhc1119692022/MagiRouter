@@ -3,6 +3,7 @@ package model
 import (
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -171,4 +172,120 @@ func TestGetEnabledKeyWithPreferredPinsAndFallsBack(t *testing.T) {
 	require.Nil(t, apiErr)
 	assert.Contains(t, []string{"sk-key-0", "sk-key-1"}, key)
 	assert.NotEqual(t, 2, idx)
+}
+
+func TestUpdateResponseTimeAndTestTimeOnlyDoNotMutateSharedCachedChannel(t *testing.T) {
+	db := setupChannelSelectRuntimeDB(t)
+	priority := int64(100)
+	ch := &Channel{
+		Id:           751,
+		Type:         constant.ChannelTypeOpenAI,
+		Key:          "sk-cached",
+		Status:       common.ChannelStatusEnabled,
+		Name:         "cached-channel",
+		Models:       "gpt-4o-mini",
+		Group:        "default",
+		ResponseTime: 100,
+		TestTime:     1000,
+	}
+	require.NoError(t, db.Create(ch).Error)
+	require.NoError(t, db.Create(&Ability{
+		Group:     "default",
+		Model:     "gpt-4o-mini",
+		ChannelId: 751,
+		Enabled:   true,
+		Priority:  &priority,
+		Weight:    100,
+	}).Error)
+
+	common.MemoryCacheEnabled = true
+	InitChannelCache()
+
+	cached, err := CacheGetChannel(751)
+	require.NoError(t, err)
+
+	var workers sync.WaitGroup
+	for workerIdx := range 8 {
+		workers.Add(1)
+		go func(idx int) {
+			defer workers.Done()
+			for range 10 {
+				_ = cached.ResponseTime
+				_ = cached.TestTime
+				if idx%2 == 0 {
+					cached.UpdateResponseTime(int64(250 + idx))
+				} else {
+					cached.UpdateTestTimeOnly()
+				}
+			}
+		}(workerIdx)
+	}
+	workers.Wait()
+
+	assert.Equal(t, 100, cached.ResponseTime)
+	assert.Equal(t, int64(1000), cached.TestTime)
+
+	var stored Channel
+	require.NoError(t, db.First(&stored, 751).Error)
+	assert.GreaterOrEqual(t, stored.ResponseTime, 250)
+	assert.Greater(t, stored.TestTime, int64(1000))
+}
+
+func TestGetEnabledKeyWithPreferredPollingAdvancesCachedIndexConcurrently(t *testing.T) {
+	db := setupChannelSelectRuntimeDB(t)
+	priority := int64(100)
+	ch := &Channel{
+		Id:     752,
+		Type:   constant.ChannelTypeOpenAI,
+		Key:    "sk-poll-0\nsk-poll-1\nsk-poll-2",
+		Status: common.ChannelStatusEnabled,
+		Name:   "polling-channel",
+		Models: "gpt-4o-mini",
+		Group:  "default",
+		ChannelInfo: ChannelInfo{
+			IsMultiKey:   true,
+			MultiKeyMode: constant.MultiKeyModePolling,
+			MultiKeyStatusList: map[int]int{
+				0: common.ChannelStatusEnabled,
+				1: common.ChannelStatusEnabled,
+				2: common.ChannelStatusEnabled,
+			},
+		},
+	}
+	require.NoError(t, db.Create(ch).Error)
+	require.NoError(t, db.Create(&Ability{
+		Group:     "default",
+		Model:     "gpt-4o-mini",
+		ChannelId: 752,
+		Enabled:   true,
+		Priority:  &priority,
+		Weight:    100,
+	}).Error)
+
+	common.MemoryCacheEnabled = true
+	InitChannelCache()
+
+	staleCopy := *ch
+	counts := make([]int, 3)
+	var countsMu sync.Mutex
+	var workers sync.WaitGroup
+	for range 6 {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			localCopy := staleCopy
+			for range 15 {
+				_, idx, apiErr := localCopy.GetEnabledKeyWithPreferred(-1)
+				require.Nil(t, apiErr)
+				countsMu.Lock()
+				counts[idx]++
+				countsMu.Unlock()
+			}
+		}()
+	}
+	workers.Wait()
+
+	assert.Equal(t, 30, counts[0])
+	assert.Equal(t, 30, counts[1])
+	assert.Equal(t, 30, counts[2])
 }

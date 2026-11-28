@@ -669,8 +669,18 @@ func GetPreferredChannelByAffinity(c *gin.Context, modelName string, usingGroup 
 		if found {
 			if c != nil {
 				c.Set(ginKeyChannelAffinityChannelID, channelID)
-				if keyIdx, keyFound, keyErr := getChannelAffinityKeyIndexCache().Get(cacheKeySuffix); keyErr == nil && keyFound && keyIdx >= 0 {
-					c.Set(ginKeyChannelAffinityKeyIndex, keyIdx)
+				needKeyIndexLookup := true
+				if common.MemoryCacheEnabled {
+					if ch, chErr := model.CacheGetChannel(channelID); chErr == nil && ch != nil && !ch.ChannelInfo.IsMultiKey {
+						needKeyIndexLookup = false
+					}
+				}
+				if needKeyIndexLookup {
+					if keyIdx, keyFound, keyErr := getChannelAffinityKeyIndexCache().Get(cacheKeySuffix); keyErr == nil && keyFound && keyIdx >= 0 {
+						c.Set(ginKeyChannelAffinityKeyIndex, keyIdx)
+					} else {
+						c.Set(ginKeyChannelAffinityKeyIndex, -1)
+					}
 				} else {
 					c.Set(ginKeyChannelAffinityKeyIndex, -1)
 				}
@@ -848,7 +858,12 @@ func RecordChannelAffinity(c *gin.Context, channelID int) {
 				c.Set(ginKeyChannelAffinityKeyIndex, keyIdx)
 			}
 		} else {
-			_, _ = keyCache.DeleteMany([]string{suffix})
+			if prevVal, exists := c.Get(ginKeyChannelAffinityKeyIndex); exists {
+				if prevIdx, ok := prevVal.(int); ok && prevIdx >= 0 {
+					_, _ = keyCache.DeleteMany([]string{suffix})
+					c.Set(ginKeyChannelAffinityKeyIndex, -1)
+				}
+			}
 		}
 	}
 }

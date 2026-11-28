@@ -977,4 +977,15 @@ export const STATIC_I18N_KEYS = [
   '7d',
   '30d',
   '90d',
+  // Batch model endpoint validation & API errors.
+  'Endpoints must be valid JSON',
+  'Endpoint types must be non-empty strings',
+  'Endpoints must be a JSON object or array',
+  'Endpoint type is required',
+  'Endpoint paths must start with /',
+  'Invalid endpoint HTTP method',
+  'Endpoint configuration must be a path or object',
+  'endpoints configuration cannot be empty',
+  'select at least one endpoint to remove',
+  'invalid endpoints update mode',
 ] as const

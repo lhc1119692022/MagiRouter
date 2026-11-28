@@ -492,7 +492,14 @@ func (channel *Channel) GetEnabledKeyWithPreferred(preferredIndex int) (string, 
 
 	lock := GetChannelPollingLock(channel.Id)
 	lock.Lock()
-	defer lock.Unlock()
+	lockHeld := true
+	unlockPolling := func() {
+		if lockHeld {
+			lockHeld = false
+			lock.Unlock()
+		}
+	}
+	defer unlockPolling()
 
 	statusList := channel.ChannelInfo.MultiKeyStatusList
 	// helper to get key status, default to enabled when missing
@@ -536,26 +543,24 @@ func (channel *Channel) GetEnabledKeyWithPreferred(preferredIndex int) (string, 
 		if err != nil {
 			return "", 0, types.NewError(err, types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
 		}
-		defer func() {
-			if common.DebugEnabled {
-				logger.LogDebug(nil, "channel %d polling index: %d", channel.Id, channel.ChannelInfo.MultiKeyPollingIndex)
-			}
-			if !common.MemoryCacheEnabled {
-				_ = channel.SaveChannelInfo()
-			} else {
-				// CacheUpdateChannel(channel)
-			}
-		}()
 		// Start from the saved polling index and look for the next enabled key
 		start := channelInfo.MultiKeyPollingIndex
 		if start < 0 || start >= len(keys) {
 			start = 0
 		}
-		for i := range keys {
-			idx := (start + i) % len(keys)
+		for offset := range keys {
+			idx := (start + offset) % len(keys)
 			if getStatus(idx) == common.ChannelStatusEnabled {
-				// update polling index for next call (point to the next position)
-				channel.ChannelInfo.MultiKeyPollingIndex = (idx + 1) % len(keys)
+				nextIdx := (idx + 1) % len(keys)
+				channelInfo.MultiKeyPollingIndex = nextIdx
+				channel.ChannelInfo.MultiKeyPollingIndex = nextIdx
+				unlockPolling()
+				if common.DebugEnabled {
+					logger.LogDebug(nil, "channel %d polling index: %d", channel.Id, nextIdx)
+				}
+				if !common.MemoryCacheEnabled {
+					_ = channel.SaveChannelInfo()
+				}
 				return keys[idx], idx, nil
 			}
 		}
@@ -938,9 +943,12 @@ func (channel *Channel) Update() error {
 }
 
 func (channel *Channel) UpdateResponseTime(responseTime int64) {
-	err := DB.Model(channel).Select("response_time", "test_time").Updates(Channel{
-		TestTime:     common.GetTimestamp(),
-		ResponseTime: int(responseTime),
+	if channel == nil || channel.Id <= 0 {
+		return
+	}
+	err := DB.Model(&Channel{}).Where("id = ?", channel.Id).Updates(map[string]any{
+		"test_time":     common.GetTimestamp(),
+		"response_time": int(responseTime),
 	}).Error
 	if err != nil {
 		common.SysLog(common.LogText("failed to update response time: channel_id=%d, error=%v", channel.Id, err))
@@ -948,8 +956,11 @@ func (channel *Channel) UpdateResponseTime(responseTime int64) {
 }
 
 func (channel *Channel) UpdateTestTimeOnly() {
-	err := DB.Model(channel).Select("test_time").Updates(Channel{
-		TestTime: common.GetTimestamp(),
+	if channel == nil || channel.Id <= 0 {
+		return
+	}
+	err := DB.Model(&Channel{}).Where("id = ?", channel.Id).Updates(map[string]any{
+		"test_time": common.GetTimestamp(),
 	}).Error
 	if err != nil {
 		common.SysLog(common.LogText("failed to update test time: channel_id=%d, error=%v", channel.Id, err))

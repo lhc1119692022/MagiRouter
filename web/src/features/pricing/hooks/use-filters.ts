@@ -20,6 +20,7 @@ import { useNavigate, useSearch } from '@tanstack/react-router'
 import { useMemo, useCallback, useEffect, useState } from 'react'
 
 import { useDebounce } from '@/hooks/use-debounce'
+import type { ModelCapabilityCategory } from '@/lib/model-task-capabilities'
 
 import {
   DEFAULT_CATALOG_SORT,
@@ -32,7 +33,9 @@ import {
   type ViewMode,
 } from '../constants'
 import {
+  expandTaskFilters,
   filterAndSortModels,
+  filterByTasks,
   filterByVendor,
   getCatalogFacets,
   type CatalogFacetsOptions,
@@ -97,18 +100,26 @@ export function useFilters(
     ],
     [search.vendor]
   )
-  const vendorModels = useMemo(
-    () => filterByVendor(models, selectedVendors),
-    [models, selectedVendors]
+  const taskFilters = useMemo(
+    () => (!search.task ? [] : [search.task].flat()),
+    [search.task]
+  )
+  const selectedTasks = useMemo(
+    () => expandTaskFilters(taskFilters),
+    [taskFilters]
+  )
+  const groupScopeModels = useMemo(
+    () => filterByTasks(filterByVendor(models, selectedVendors), selectedTasks),
+    [models, selectedTasks, selectedVendors]
   )
   const availableGroups = useMemo(
     () =>
-      getCatalogFacets(vendorModels, usableGroups, {
+      getCatalogFacets(groupScopeModels, usableGroups, {
         groupRatio,
         vendors,
         filterOrder,
       }).groups,
-    [vendorModels, usableGroups, groupRatio, vendors, filterOrder]
+    [groupScopeModels, usableGroups, groupRatio, vendors, filterOrder]
   )
   const groupFilter =
     search.group && availableGroups.includes(search.group)
@@ -162,13 +173,33 @@ export function useFilters(
         ? selectedVendors.filter((vendor) => vendor !== name)
         : [...selectedVendors, name]
       const nextGroups = getCatalogFacets(
-        filterByVendor(models, next),
+        filterByTasks(filterByVendor(models, next), selectedTasks),
         usableGroups
       ).groups
       void navigate({
         search: (previous) => ({
           ...previous,
           vendor: next.length > 1 ? next : next[0],
+          group:
+            previous.group && nextGroups.includes(previous.group)
+              ? previous.group
+              : undefined,
+        }),
+        resetScroll: false,
+      })
+    },
+    [models, navigate, selectedTasks, selectedVendors, usableGroups]
+  )
+  const setTaskFilter = useCallback(
+    (tasks: ModelCapabilityCategory[]) => {
+      const nextGroups = getCatalogFacets(
+        filterByTasks(filterByVendor(models, selectedVendors), tasks),
+        usableGroups
+      ).groups
+      void navigate({
+        search: (previous) => ({
+          ...previous,
+          task: tasks.length > 1 ? tasks : tasks[0],
           group:
             previous.group && nextGroups.includes(previous.group)
               ? previous.group
@@ -236,6 +267,7 @@ export function useFilters(
     return filterAndSortModels(models, {
       search: debouncedSearchInput,
       vendor: selectedVendors,
+      tasks: selectedTasks,
       group: groupFilter,
       quotaType: quotaTypeFilter,
       endpointType: endpointTypeFilter,
@@ -250,6 +282,7 @@ export function useFilters(
     modelOrder,
     debouncedSearchInput,
     selectedVendors,
+    selectedTasks,
     groupFilter,
     quotaTypeFilter,
     endpointTypeFilter,
@@ -261,19 +294,33 @@ export function useFilters(
   const hasActiveFilters = useMemo(
     () =>
       selectedVendors.length > 0 ||
+      taskFilters.length > 0 ||
       groupFilter !== FILTER_ALL ||
       quotaTypeFilter !== QUOTA_TYPES.ALL ||
       endpointTypeFilter !== ENDPOINT_TYPES.ALL,
-    [selectedVendors.length, groupFilter, quotaTypeFilter, endpointTypeFilter]
+    [
+      selectedVendors.length,
+      taskFilters.length,
+      groupFilter,
+      quotaTypeFilter,
+      endpointTypeFilter,
+    ]
   )
 
   const activeFilterCount = useMemo(
     () =>
       selectedVendors.length +
+      selectedTasks.length +
       (groupFilter !== FILTER_ALL ? 1 : 0) +
       (quotaTypeFilter !== QUOTA_TYPES.ALL ? 1 : 0) +
       (endpointTypeFilter !== ENDPOINT_TYPES.ALL ? 1 : 0),
-    [selectedVendors.length, groupFilter, quotaTypeFilter, endpointTypeFilter]
+    [
+      selectedVendors.length,
+      selectedTasks.length,
+      groupFilter,
+      quotaTypeFilter,
+      endpointTypeFilter,
+    ]
   )
 
   const clearFilters = useCallback(() => {
@@ -291,6 +338,7 @@ export function useFilters(
     searchInput,
     sortBy,
     selectedVendors,
+    selectedTasks,
     availableGroups,
     groupFilter,
     quotaTypeFilter,
@@ -302,6 +350,7 @@ export function useFilters(
     setSearchInput,
     setSortBy,
     toggleVendor,
+    setTaskFilter,
     setGroupFilter,
     setQuotaTypeFilter,
     setEndpointTypeFilter,

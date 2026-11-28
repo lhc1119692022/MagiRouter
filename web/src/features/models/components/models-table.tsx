@@ -32,6 +32,10 @@ import {
 import { useMediaQuery } from '@/hooks'
 import { useTableUrlState } from '@/hooks/use-table-url-state'
 import {
+  CATEGORY_LABEL_KEYS,
+  MODEL_CAPABILITY_CATEGORIES,
+} from '@/lib/model-task-capabilities'
+import {
   getServerMessage,
   requireServerSuccess,
 } from '@/lib/server-error-message'
@@ -78,6 +82,11 @@ export function ModelsTable() {
     columnFilters: [
       { columnId: 'status', searchKey: 'status', type: 'array' },
       { columnId: 'square_state', searchKey: 'square_state', type: 'array' },
+      {
+        columnId: 'capability_labels',
+        searchKey: 'capability_labels',
+        type: 'array',
+      },
       { columnId: 'vendor_id', searchKey: 'vendor', type: 'array' },
       { columnId: 'sync_official', searchKey: 'sync', type: 'array' },
     ],
@@ -91,6 +100,9 @@ export function ModelsTable() {
       | ModelSquareState[]
       | undefined
   )?.[0]
+  const capabilityFilter =
+    (columnFilters.find((f) => f.id === 'capability_labels')
+      ?.value as string[]) || []
   const vendorFilter =
     (columnFilters.find((f) => f.id === 'vendor_id')?.value as string[]) || []
   const syncFilter =
@@ -127,6 +139,10 @@ export function ModelsTable() {
     statusFilter.length > 0 && !statusFilter.includes('all')
       ? statusFilter[0]
       : undefined
+  const capabilityFilterValue =
+    MODEL_CAPABILITY_CATEGORIES.filter((category) =>
+      capabilityFilter.includes(category)
+    ).join(',') || undefined
   const syncFilterValue =
     syncFilter.length > 0 && !syncFilter.includes('all')
       ? syncFilter[0]
@@ -138,6 +154,7 @@ export function ModelsTable() {
     activeVendorFilter ||
     statusFilterValue ||
     squareState ||
+    capabilityFilterValue ||
     syncFilterValue
   )
   const sortParams =
@@ -157,6 +174,7 @@ export function ModelsTable() {
       vendor: activeVendorFilter,
       status: statusFilterValue,
       square_state: squareState,
+      capability_labels: capabilityFilterValue,
       sync_official: syncFilterValue,
       ...sortParams,
       p: pagination.pageIndex + 1,
@@ -171,6 +189,7 @@ export function ModelsTable() {
             vendor: activeVendorFilter,
             status: statusFilterValue,
             square_state: squareState,
+            capability_labels: capabilityFilterValue,
             sync_official: syncFilterValue,
             ...sortParams,
             p: pagination.pageIndex + 1,
@@ -218,11 +237,10 @@ export function ModelsTable() {
     let pricingReviewCount = 0
     let missingVendorCount = 0
     for (const item of models) {
-      const report = evaluateModelHealth(
-        item,
-        priceMap.get(item.model_name),
-        { canPrice, pricingLoaded }
-      )
+      const report = evaluateModelHealth(item, priceMap.get(item.model_name), {
+        canPrice,
+        pricingLoaded,
+      })
       if (report.warningCount > 0) {
         warningRowIds.push(
           item.id > 0 ? `metadata:${item.id}` : `channel:${item.model_name}`
@@ -435,6 +453,14 @@ export function ModelsTable() {
             title: t('Vendor'),
             options: vendorFilterOptions,
             singleSelect: true,
+          },
+          {
+            columnId: 'capability_labels',
+            title: t('Capability labels'),
+            options: MODEL_CAPABILITY_CATEGORIES.map((category) => ({
+              label: t(CATEGORY_LABEL_KEYS[category]),
+              value: category,
+            })),
           },
           {
             columnId: 'sync_official',

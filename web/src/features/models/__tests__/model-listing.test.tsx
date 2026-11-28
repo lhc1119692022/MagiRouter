@@ -278,6 +278,7 @@ it('keeps channel rows individually selectable and enables batch management acti
   const toolbar = screen.getByRole('toolbar', { name: /Bulk actions/ })
   for (const name of [
     'Batch manage',
+    'Batch endpoints',
     'Change vendor',
     'Clear vendor',
     'Show selected models in model square',
@@ -870,6 +871,69 @@ it('keeps an active visibility filter when its server result is empty', async ()
   ).toBeVisible()
   expect(get).toHaveBeenCalledWith('/api/models/search', {
     params: expect.objectContaining({ square_state: 'unavailable', p: 1 }),
+  })
+})
+
+it('filters by one or more capability labels and syncs selection with URL search', async () => {
+  const { get, router } = await renderList([channel], {
+    initialUrl: '/models/metadata?page=2&status=%5B%22enabled%22%5D',
+    total: 50,
+  })
+  const user = userEvent.setup()
+
+  await user.click(screen.getByRole('button', { name: 'Capability labels' }))
+  await user.click(screen.getByRole('option', { name: 'Image Generation' }))
+  await waitFor(() =>
+    expect(get).toHaveBeenCalledWith('/api/models/search', {
+      params: expect.objectContaining({
+        status: 'enabled',
+        capability_labels: 'image',
+        p: 1,
+      }),
+    })
+  )
+  expect(router.state.location.search).toMatchObject({
+    status: ['enabled'],
+    capability_labels: ['image'],
+  })
+
+  await user.click(screen.getByRole('option', { name: 'Video Generation' }))
+  await waitFor(() =>
+    expect(get).toHaveBeenCalledWith('/api/models/search', {
+      params: expect.objectContaining({
+        status: 'enabled',
+        capability_labels: 'image,video',
+        p: 1,
+      }),
+    })
+  )
+  expect(router.state.location.search).toMatchObject({
+    status: ['enabled'],
+    capability_labels: ['image', 'video'],
+  })
+
+  await user.click(screen.getByRole('option', { name: 'Clear filters' }))
+  await waitFor(() =>
+    expect(router.state.location.search).not.toHaveProperty('capability_labels')
+  )
+  expect(router.state.location.search).toMatchObject({ status: ['enabled'] })
+})
+
+it('restores capability label filters from URL search params in canonical order', async () => {
+  const { get } = await renderList([], {
+    initialUrl:
+      '/models/metadata?capability_labels=%5B%22audio%22%2C%22text%22%5D',
+  })
+  expect(
+    screen.getByRole('button', {
+      name: /Capability labels.*Reasoning generation.*Audio generation/,
+    })
+  ).toBeVisible()
+  expect(get).toHaveBeenCalledWith('/api/models/search', {
+    params: expect.objectContaining({
+      capability_labels: 'text,audio',
+      p: 1,
+    }),
   })
 })
 

@@ -15,9 +15,14 @@ import (
 
 // shardedRoundTripper fans requests for each origin across N independent
 // transports so each origin can keep N reusable HTTP/2 connections.
+type paddedAtomicInt64 struct {
+	atomic.Int64
+	_ [56]byte
+}
+
 type shardedRoundTripper struct {
 	shards   []http.RoundTripper
-	inFlight []atomic.Int64
+	inFlight []paddedAtomicInt64
 	n        uint32
 	policy   HTTPTransportPolicy
 	counters sync.Map // origin -> *atomic.Uint32
@@ -34,7 +39,7 @@ func newShardedRoundTripper(policy HTTPTransportPolicy, factory func() *http.Tra
 	}
 	return &shardedRoundTripper{
 		shards:   shards,
-		inFlight: make([]atomic.Int64, n),
+		inFlight: make([]paddedAtomicInt64, n),
 		n:        uint32(n),
 		policy:   policy,
 	}
@@ -51,7 +56,10 @@ func (s *shardedRoundTripper) pickShard(origin string) uint32 {
 	if s.n <= 1 {
 		return 0
 	}
-	counterAny, _ := s.counters.LoadOrStore(origin, &atomic.Uint32{})
+	counterAny, ok := s.counters.Load(origin)
+	if !ok {
+		counterAny, _ = s.counters.LoadOrStore(origin, &atomic.Uint32{})
+	}
 	counter := counterAny.(*atomic.Uint32)
 	start := (counter.Add(1) - 1) % s.n
 	if len(s.inFlight) < int(s.n) {
@@ -72,6 +80,18 @@ func (s *shardedRoundTripper) pickShard(origin string) uint32 {
 	return bestIdx
 }
 
+func decrementAtomicNonNegative(counter *atomic.Int64) {
+	for {
+		current := counter.Load()
+		if current <= 0 {
+			return
+		}
+		if counter.CompareAndSwap(current, current-1) {
+			return
+		}
+	}
+}
+
 type shardInFlightBody struct {
 	io.ReadCloser
 	counter *atomic.Int64
@@ -81,9 +101,7 @@ type shardInFlightBody struct {
 func (b *shardInFlightBody) Close() error {
 	err := b.ReadCloser.Close()
 	b.once.Do(func() {
-		if b.counter.Add(-1) < 0 {
-			b.counter.Store(0)
-		}
+		decrementAtomicNonNegative(b.counter)
 	})
 	return err
 }
@@ -93,15 +111,13 @@ func (s *shardedRoundTripper) RoundTrip(req *http.Request) (*http.Response, erro
 	idx := s.pickShard(origin)
 	var counter *atomic.Int64
 	if int(idx) < len(s.inFlight) {
-		counter = &s.inFlight[idx]
+		counter = &s.inFlight[idx].Int64
 		counter.Add(1)
 	}
 	resp, err := s.shards[idx].RoundTrip(req)
 	if counter != nil {
 		if err != nil || resp == nil || resp.Body == nil {
-			if counter.Add(-1) < 0 {
-				counter.Store(0)
-			}
+			decrementAtomicNonNegative(counter)
 		} else {
 			resp.Body = &shardInFlightBody{
 				ReadCloser: resp.Body,

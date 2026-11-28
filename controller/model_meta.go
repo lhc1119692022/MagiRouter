@@ -30,6 +30,11 @@ func listModelsMeta(c *gin.Context, keyword, vendor string) {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "Invalid model square state"})
 		return
 	}
+	capabilityLabels, ok := parseModelCapabilityFilters(c.QueryArray("capability_labels"))
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "Invalid capability label"})
+		return
+	}
 
 	sortBy := strings.ToLower(strings.TrimSpace(c.Query("sort_by")))
 	sortOrder := strings.ToLower(strings.TrimSpace(c.Query("sort_order")))
@@ -51,7 +56,7 @@ func listModelsMeta(c *gin.Context, keyword, vendor string) {
 	}
 
 	pageInfo := common.GetPageQuery(c)
-	needsFullEnrich := squareState != "" || sortBy != ""
+	needsFullEnrich := squareState != "" || len(capabilityLabels) > 0 || sortBy != ""
 	if needsFullEnrich && (pageInfo.GetPage() < 1 || pageInfo.GetPageSize() < 1) {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "Invalid pagination"})
 		return
@@ -84,6 +89,15 @@ func listModelsMeta(c *gin.Context, keyword, vendor string) {
 		}
 		modelsMeta = filtered
 	}
+	if len(capabilityLabels) > 0 {
+		filtered := make([]*model.Model, 0, len(modelsMeta))
+		for _, metadata := range modelsMeta {
+			if model.ModelMatchesCapabilityLabels(metadata, capabilityLabels) {
+				filtered = append(filtered, metadata)
+			}
+		}
+		modelsMeta = filtered
+	}
 	if sortBy != "" {
 		var vendorNames map[int]string
 		if sortBy == "vendor" {
@@ -111,6 +125,36 @@ func listModelsMeta(c *gin.Context, keyword, vendor string) {
 		"page_size":     pageInfo.GetPageSize(),
 		"vendor_counts": vendorCounts,
 	})
+}
+
+func parseModelCapabilityFilters(rawValues []string) ([]string, bool) {
+	seen := make(map[string]bool)
+	var parsed []string
+	for _, raw := range rawValues {
+		trimmed := strings.TrimSpace(raw)
+		if trimmed == "" {
+			continue
+		}
+		foundInParam := false
+		for part := range strings.SplitSeq(trimmed, ",") {
+			code := strings.ToLower(strings.TrimSpace(part))
+			if code == "" {
+				continue
+			}
+			if !model.IsModelCapabilityCategory(code) {
+				return nil, false
+			}
+			foundInParam = true
+			if !seen[code] {
+				seen[code] = true
+				parsed = append(parsed, code)
+			}
+		}
+		if !foundInParam {
+			return nil, false
+		}
+	}
+	return parsed, true
 }
 
 // GetModelMeta 根据 ID 获取单条模型信息
@@ -313,6 +357,9 @@ func BatchUpdateModelMeta(c *gin.Context) {
 	}
 	if len(request.ChannelModels) > 0 {
 		auditPayload["channel_models"] = request.ChannelModels
+	}
+	if request.EndpointsMode != "" {
+		auditPayload["endpoints_mode"] = request.EndpointsMode
 	}
 	recordManageAudit(c, "model.update_batch", auditPayload)
 	common.ApiSuccess(c, result)

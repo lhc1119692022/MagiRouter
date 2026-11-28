@@ -300,6 +300,7 @@ export function useModelsColumns(
         meta: { label: t('Capability labels') },
         size: 190,
         enableSorting: false,
+        enableColumnFilter: true,
         cell: ({ row }) => {
           const model = row.original
           const configured = getConfiguredModelCategories(model.tags)

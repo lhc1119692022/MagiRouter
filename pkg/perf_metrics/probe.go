@@ -46,7 +46,10 @@ func RecordChannelTraffic(channelID int, timestamp int64) {
 	if timestamp <= 0 {
 		timestamp = time.Now().Unix()
 	}
-	entry, _ := channelLastTraffic.LoadOrStore(channelID, &atomic.Int64{})
+	entry, ok := channelLastTraffic.Load(channelID)
+	if !ok {
+		entry, _ = channelLastTraffic.LoadOrStore(channelID, &atomic.Int64{})
+	}
 	counter := entry.(*atomic.Int64)
 	for {
 		prev := counter.Load()
