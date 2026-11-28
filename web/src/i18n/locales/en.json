@@ -10027,6 +10027,21 @@
     "Invalid system notice images format": "Invalid system notice images format",
     "System notice cannot exceed {{max}} images": "System notice cannot exceed {{max}} images",
     "System notice has an invalid image source": "System notice has an invalid image source",
-    "System notice image is too large": "System notice image is too large"
+    "System notice image is too large": "System notice image is too large",
+    "TTFT": "TTFT",
+    "Probe": "Probe",
+    "Demoted": "Demoted",
+    "P50 / P95 TTFT": "P50 / P95 TTFT",
+    "EWMA TTFT": "EWMA TTFT",
+    "In-flight": "In-flight",
+    "Last test": "Last test",
+    "Temporarily soft-demoted due to high latency or timeouts": "Temporarily soft-demoted due to high latency or timeouts",
+    "Add group pricing": "Add group pricing",
+    "Group pricing scope": "Group pricing scope",
+    "Default pricing": "Default pricing",
+    "Group pricing multiplies by group ratio ({{ratio}}x) on settlement.": "Group pricing multiplies by group ratio ({{ratio}}x) on settlement.",
+    "Remove group pricing": "Remove group pricing",
+    "Group pricing overrides": "Group pricing overrides",
+    "{{count}} group rules": "{{count}} group rules"
   }
 }

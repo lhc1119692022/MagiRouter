@@ -37,7 +37,8 @@ import {
   isUnconfiguredTaskUsageModel,
 } from '../lib/dynamic-price'
 import { parseTags } from '../lib/filters'
-import { isTokenBasedModel } from '../lib/model-helpers'
+import { withGroupPricing } from '../lib/group-pricing'
+import { isTokenBasedModel, resolveDisplayGroup } from '../lib/model-helpers'
 import { withBasePricing } from '../lib/plugin-pricing'
 import { formatPrice, formatRequestPrice } from '../lib/price'
 import { taskPriceLabel, taskUsageUnitLabel } from '../lib/task-price-display'
@@ -63,7 +64,15 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
   const usdExchangeRate = props.usdExchangeRate ?? 1
   const showRechargePrice = props.showRechargePrice ?? false
   // Prices summarise the model-level price when ordinary requests pay it.
-  const model = useMemo(() => withBasePricing(props.model), [props.model])
+  const baseModel = useMemo(() => withBasePricing(props.model), [props.model])
+  const displayGroup = useMemo(
+    () => resolveDisplayGroup(baseModel, props.selectedGroup),
+    [baseModel, props.selectedGroup]
+  )
+  const model = useMemo(
+    () => withGroupPricing(baseModel, displayGroup.group),
+    [baseModel, displayGroup.group]
+  )
   const isTokenBased = isTokenBasedModel(model)
   const tokenUnitLabel = tokenUnit === 'K' ? '1K' : '1M'
   const tags = parseTags(props.model.tags)
@@ -333,7 +342,7 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
           aria-label={t('Pricing')}
           className='mt-auto flex min-w-0 flex-col gap-1.5'
         >
-          <ModelBillingModeBadge model={props.model} appearance='caption' />
+          <ModelBillingModeBadge model={model} appearance='caption' />
           {dynamicSummary?.providerCount && (
             <span className='text-muted-foreground text-xs break-words'>
               {t('{{count}} providers', {

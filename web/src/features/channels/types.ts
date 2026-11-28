@@ -63,6 +63,22 @@ export type ChannelBalanceWindow = z.infer<typeof channelBalanceWindowSchema>
 export type ChannelBalanceResult = z.infer<typeof channelBalanceResultSchema>
 export type ChannelBalanceDetail = z.infer<typeof channelBalanceDetailSchema>
 
+export const channelRuntimeMetricsSchema = z.object({
+  channel_id: z.number(),
+  ewma_ttft_ms: z.number(),
+  ewma_latency_ms: z.number(),
+  p50_ttft_ms: z.number(),
+  p95_ttft_ms: z.number(),
+  in_flight: z.number(),
+  sample_count: z.number(),
+  error_rate: z.number(),
+  soft_demoted: z.boolean(),
+  soft_demoted_until: z.number().optional(),
+  last_updated: z.number().optional(),
+})
+
+export type ChannelRuntimeMetrics = z.infer<typeof channelRuntimeMetricsSchema>
+
 export const channelSchema = z.object({
   id: z.number(),
   type: z.number(),
@@ -80,6 +96,7 @@ export const channelSchema = z.object({
   balance: z.number().default(0), // in USD
   balance_updated_time: z.number(),
   balance_detail: channelBalanceDetailSchema.nullish(),
+  runtime_metrics: channelRuntimeMetricsSchema.nullish(),
   models: z.string().default(''),
   group: z.string().default('default'),
   used_quota: z.number().default(0),

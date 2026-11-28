@@ -23,22 +23,25 @@ const (
 	BillingModeField        = "billing_mode"
 	BillingExprField        = "billing_expr"
 	PluginBillingExprOption = "billing_setting.plugin_billing_expr"
+	GroupBillingExprOption  = "billing_setting.group_billing_expr"
 	maxTaskExprSmokeTests   = 64
 )
 
 // BillingSetting is managed by config.GlobalConfig.Register.
 // DB keys: billing_setting.billing_mode, billing_setting.billing_expr,
-// billing_setting.plugin_billing_expr
+// billing_setting.plugin_billing_expr, billing_setting.group_billing_expr
 type BillingSetting struct {
 	BillingMode       map[string]string `json:"billing_mode"`
 	BillingExpr       map[string]string `json:"billing_expr"`
 	PluginBillingExpr map[string]string `json:"plugin_billing_expr"`
+	GroupBillingExpr  map[string]string `json:"group_billing_expr"`
 }
 
 var billingSetting = BillingSetting{
 	BillingMode:       make(map[string]string),
 	BillingExpr:       make(map[string]string),
 	PluginBillingExpr: make(map[string]string),
+	GroupBillingExpr:  make(map[string]string),
 }
 
 func init() {
@@ -104,10 +107,126 @@ func GetPluginBillingExpr(pluginKey, model string) (string, bool) {
 	return expression, ok
 }
 
+func ValidBillingGroupName(group string) bool {
+	trimmed := strings.TrimSpace(group)
+	if trimmed == "" || trimmed != group {
+		return false
+	}
+	if trimmed == "auto" || trimmed == "all" {
+		return false
+	}
+	return !strings.Contains(trimmed, "::")
+}
+
+func GroupBillingExprKey(group, model string) string {
+	return group + "::" + model
+}
+
+func SplitGroupBillingExprKey(key string) (group, model string, ok bool) {
+	group, model, ok = strings.Cut(key, "::")
+	if !ok || !ValidBillingGroupName(group) || strings.TrimSpace(model) == "" {
+		return "", "", false
+	}
+	return group, model, true
+}
+
+func GetGroupBillingExprCopy() map[string]string {
+	return maps.Clone(billingSetting.GroupBillingExpr)
+}
+
+func GetGroupBillingExpr(group, model string) (string, bool) {
+	if !ValidBillingGroupName(group) || strings.TrimSpace(model) == "" {
+		return "", false
+	}
+	expression, ok := billingSetting.GroupBillingExpr[GroupBillingExprKey(group, model)]
+	if !ok || strings.TrimSpace(expression) == "" {
+		return "", false
+	}
+	return expression, true
+}
+
+func ResolveGroupBillingExpr(group, model string) (string, bool) {
+	if expr, ok := GetGroupBillingExpr(group, model); ok {
+		return expr, true
+	}
+	formatted := ratio_setting.FormatMatchingModelName(model)
+	if formatted != "" && formatted != model {
+		return GetGroupBillingExpr(group, formatted)
+	}
+	return "", false
+}
+
+func HasGroupBillingExprForModel(model string) bool {
+	if strings.TrimSpace(model) == "" {
+		return false
+	}
+	formatted := ratio_setting.FormatMatchingModelName(model)
+	for key, expr := range billingSetting.GroupBillingExpr {
+		if strings.TrimSpace(expr) == "" {
+			continue
+		}
+		_, entryModel, ok := SplitGroupBillingExprKey(key)
+		if !ok {
+			continue
+		}
+		if entryModel == model || (formatted != "" && entryModel == formatted) {
+			return true
+		}
+	}
+	return false
+}
+
+func GetGroupBillingExprsForModel(model string) map[string]string {
+	if strings.TrimSpace(model) == "" {
+		return nil
+	}
+	formatted := ratio_setting.FormatMatchingModelName(model)
+	var result map[string]string
+	for key, expr := range billingSetting.GroupBillingExpr {
+		if strings.TrimSpace(expr) == "" {
+			continue
+		}
+		group, entryModel, ok := SplitGroupBillingExprKey(key)
+		if !ok {
+			continue
+		}
+		if entryModel == model {
+			if result == nil {
+				result = make(map[string]string)
+			}
+			result[group] = expr
+		}
+	}
+	if formatted != "" && formatted != model {
+		for key, expr := range billingSetting.GroupBillingExpr {
+			if strings.TrimSpace(expr) == "" {
+				continue
+			}
+			group, entryModel, ok := SplitGroupBillingExprKey(key)
+			if !ok || entryModel != formatted {
+				continue
+			}
+			if result == nil {
+				result = make(map[string]string)
+			}
+			if _, exists := result[group]; !exists {
+				result[group] = expr
+			}
+		}
+	}
+	return result
+}
+
 // ResolveTaskBillingExpr selects the executing plugin's override before the
 // model expression, retaining the model alias fallback and explicit modes.
 // overridden reports that the expression is the plugin's own price.
 func ResolveTaskBillingExpr(pluginKey, model, mappedModel string) (expression string, overridden, ok bool) {
+	return ResolveTaskBillingExprForGroup(pluginKey, "", model, mappedModel)
+}
+
+// ResolveTaskBillingExprForGroup selects the executing plugin's override first,
+// then a group-level override when applicable, and finally the model default.
+func ResolveTaskBillingExprForGroup(pluginKey, group, model, mappedModel string) (expression string, overridden, ok bool) {
 	if pluginKey != "" {
 		if expr, found := GetPluginBillingExpr(pluginKey, model); found {
 			return expr, true, true
@@ -115,6 +234,16 @@ func ResolveTaskBillingExpr(pluginKey, model, mappedModel string) (expression st
 		if mappedModel != "" && mappedModel != model {
 			if expr, found := GetPluginBillingExpr(pluginKey, mappedModel); found {
 				return expr, true, true
+			}
+		}
+	}
+	if group != "" {
+		if expr, found := ResolveGroupBillingExpr(group, model); found {
+			return expr, false, true
+		}
+		if mappedModel != "" && mappedModel != model {
+			if expr, found := ResolveGroupBillingExpr(group, mappedModel); found {
+				return expr, false, true
 			}
 		}
 	}

@@ -11,6 +11,7 @@ import (
 	"math/rand/v2"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -953,7 +954,11 @@ func TestChannel(c *gin.Context) {
 	}
 	tok := time.Now()
 	milliseconds := tok.Sub(tik).Milliseconds()
-	go channel.UpdateResponseTime(milliseconds)
+	if result.newAPIError == nil {
+		go channel.UpdateResponseTime(milliseconds)
+	} else {
+		go channel.UpdateTestTimeOnly()
+	}
 	if channel.Status == common.ChannelStatusEnabled || result.newAPIError == nil {
 		perfmetrics.RecordChannelProbe(channel.GetGroups(), perfmetrics.ProbeSample{
 			Timestamp: tok.Unix(),
@@ -1075,8 +1080,63 @@ func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, test
 		}
 	}
 
-	channel.UpdateResponseTime(milliseconds)
+	if newAPIError == nil {
+		recordedMs := milliseconds
+		if channel.ResponseTime > 0 {
+			recordedMs = int64(math.Round(0.5*float64(milliseconds) + 0.5*float64(channel.ResponseTime)))
+		}
+		channel.UpdateResponseTime(recordedMs)
+	} else {
+		channel.UpdateTestTimeOnly()
+	}
 	return summary
+}
+
+const maxConcurrentTestsPerUpstreamHost = 2
+
+func channelUpstreamHostKey(channel *model.Channel) string {
+	if channel == nil {
+		return ""
+	}
+	raw := strings.TrimSpace(channel.GetBaseURL())
+	if raw == "" {
+		return ""
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Host == "" {
+		return strings.ToLower(raw)
+	}
+	return strings.ToLower(parsed.Host)
+}
+
+func interleaveChannelsByHost(channels []*model.Channel) []*model.Channel {
+	if len(channels) <= 2 {
+		return channels
+	}
+	byHost := make(map[string][]*model.Channel)
+	hostOrder := make([]string, 0)
+	for _, ch := range channels {
+		host := channelUpstreamHostKey(ch)
+		if _, seen := byHost[host]; !seen {
+			hostOrder = append(hostOrder, host)
+		}
+		byHost[host] = append(byHost[host], ch)
+	}
+	if len(hostOrder) <= 1 {
+		return channels
+	}
+	ordered := make([]*model.Channel, 0, len(channels))
+	for len(ordered) < len(channels) {
+		for _, host := range hostOrder {
+			queue := byHost[host]
+			if len(queue) == 0 {
+				continue
+			}
+			ordered = append(ordered, queue[0])
+			byHost[host] = queue[1:]
+		}
+	}
+	return ordered
 }
 
 // runChannelTestWorkers executes independent channel tests with bounded
@@ -1101,6 +1161,28 @@ func runChannelTestWorkers(
 	}
 
 	workerCount := min(operation_setting.NormalizeChannelTestConcurrency(concurrency), total)
+	scheduledChannels := interleaveChannelsByHost(channels)
+	hostLimit := min(maxConcurrentTestsPerUpstreamHost, workerCount)
+	var hostSemMu sync.Mutex
+	hostSems := make(map[string]chan struct{})
+	acquireHostSlot := func(host string) func() {
+		if host == "" || hostLimit <= 0 || hostLimit >= workerCount {
+			return func() {}
+		}
+		hostSemMu.Lock()
+		sem, ok := hostSems[host]
+		if !ok {
+			sem = make(chan struct{}, hostLimit)
+			hostSems[host] = sem
+		}
+		hostSemMu.Unlock()
+		select {
+		case sem <- struct{}{}:
+			return func() { <-sem }
+		case <-ctx.Done():
+			return nil
+		}
+	}
 	jobs := make(chan *model.Channel)
 	results := make(chan channelTestSummary)
 
@@ -1123,7 +1205,12 @@ func runChannelTestWorkers(
 
 					result := channelTestSummary{}
 					if channel != nil && channel.Status != common.ChannelStatusManuallyDisabled {
+						releaseHost := acquireHostSlot(channelUpstreamHostKey(channel))
+						if releaseHost == nil {
+							return
+						}
 						result = run(ctx, channel)
+						releaseHost()
 					}
 
 					results <- result
@@ -1142,7 +1229,7 @@ func runChannelTestWorkers(
 
 	go func() {
 		defer close(jobs)
-		for _, channel := range channels {
+		for _, channel := range scheduledChannels {
 			select {
 			case <-ctx.Done():
 				return

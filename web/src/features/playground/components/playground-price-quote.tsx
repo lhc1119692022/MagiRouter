@@ -6,6 +6,10 @@ import {
   getDynamicPricingSummary,
   isUnconfiguredTaskUsageModel,
 } from '@/features/pricing/lib/dynamic-price'
+import {
+  getGroupBillingExpr,
+  withGroupPricing,
+} from '@/features/pricing/lib/group-pricing'
 import { officialPrice } from '@/features/pricing/lib/official-price'
 import { calculateTokenPrice } from '@/features/pricing/lib/price'
 import { taskUsageUnitLabel } from '@/features/pricing/lib/task-price-display'
@@ -83,7 +87,9 @@ export function PlaygroundPriceQuote(props: {
 }) {
   const { t, i18n } = useTranslation()
   const { status } = useStatus()
-  const { model, group, compact = false, minimal = false } = props
+  const { group, compact = false, minimal = false } = props
+  const hasGroupOverride = Boolean(getGroupBillingExpr(props.model, group))
+  const model = props.model ? withGroupPricing(props.model, group) : undefined
   const renderFallback = (label: string) => {
     if (minimal) {
       return (
@@ -123,7 +129,7 @@ export function PlaygroundPriceQuote(props: {
   }
   if (
     !model ||
-    model.price_unconfigured ||
+    (!hasGroupOverride && model.price_unconfigured) ||
     !validAmount(multiplier) ||
     !model.enable_groups.some((name) => name === group || name === 'all')
   ) {

@@ -26,6 +26,16 @@ const (
 	apiHeartbeatPath = "/api/status-page/heartbeat/"
 )
 
+var uptimeKumaHTTPClient = &http.Client{
+	Timeout: httpTimeout,
+	Transport: &http.Transport{
+		Proxy:               http.ProxyFromEnvironment,
+		MaxIdleConns:        64,
+		MaxIdleConnsPerHost: 16,
+		IdleConnTimeout:     90 * time.Second,
+	},
+}
+
 type Monitor struct {
 	Name        string   `json:"name"`
 	Uptime      float64  `json:"uptime"`
@@ -161,13 +171,12 @@ func GetUptimeKumaStatus(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), requestTimeout)
 	defer cancel()
 
-	client := &http.Client{Timeout: httpTimeout}
 	results := make([]UptimeGroupResult, len(groups))
 
 	g, gCtx := errgroup.WithContext(ctx)
 	for i, group := range groups {
 		g.Go(func() error {
-			results[i] = fetchGroupData(gCtx, client, group)
+			results[i] = fetchGroupData(gCtx, uptimeKumaHTTPClient, group)
 			return nil
 		})
 	}

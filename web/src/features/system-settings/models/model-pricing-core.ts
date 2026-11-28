@@ -69,6 +69,7 @@ export type LaneKey =
 
 export type ModelRatioData = {
   pluginBillingExpr?: Record<string, string>
+  groupBillingExpr?: Record<string, string>
   name: string
   price?: string
   ratio?: string

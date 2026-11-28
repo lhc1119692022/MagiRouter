@@ -32,8 +32,24 @@ var upstreamLeakKeywords = []string{
 	"credit balance is too low",
 	"insufficient_quota",
 	"insufficient quota",
+	"insufficient_user_quota",
+	"insufficient user quota",
+	"insufficient_balance",
+	"insufficient balance",
+	"pre_consume_token_quota_failed",
+	"quota is not enough",
+	"user quota is not enough",
+	"balance is not enough",
+	"balance not enough",
+	"out of credits",
 	"exceeded your current quota",
 	"billing hard limit",
+	"额度不足",
+	"余额不足",
+	"剩余额度",
+	"预扣费",
+	"new_api_error",
+	"one_api_error",
 	"account is not active",
 	"organization has been disabled",
 	"invalid_api_key",
@@ -197,37 +213,7 @@ func isLocalGatewayError(apiErr *types.NewAPIError) bool {
 	if !types.IsRecordErrorLog(apiErr) {
 		return true
 	}
-	switch apiErr.GetErrorCode() {
-	case types.ErrorCodeInsufficientUserQuota,
-		types.ErrorCodePreConsumeTokenQuotaFailed,
-		types.ErrorCodeAccessDenied,
-		types.ErrorCodeSensitiveWordsDetected,
-		types.ErrorCodeRequestRejected,
-		types.ErrorCodeRequestPluginFailed,
-		types.ErrorCodeResponseRejected,
-		types.ErrorCodeViolationFeeGrokCSAM,
-		types.ErrorCodeCountTokenFailed,
-		types.ErrorCodeModelPriceError,
-		types.ErrorCodeReadRequestBodyFailed,
-		types.ErrorCodeConvertRequestFailed,
-		types.ErrorCodeBadRequestBody,
-		types.ErrorCodeGetChannelFailed,
-		types.ErrorCodeGenRelayInfoFailed,
-		types.ErrorCodeInvalidApiType:
-		return true
-	case types.ErrorCodeDoRequestFailed,
-		types.ErrorCodeReadResponseBodyFailed,
-		types.ErrorCodeBadResponseStatusCode,
-		types.ErrorCodeBadResponse,
-		types.ErrorCodeBadResponseBody,
-		types.ErrorCodeEmptyResponse,
-		types.ErrorCodeAwsInvokeError:
-		return false
-	}
-	if apiErr.GetErrorType() == types.ErrorTypeNewAPIError {
-		return true
-	}
-	return false
+	return RelayErrorSource(apiErr) == "local"
 }
 
 func shouldGeneralizeStatusOrMessage(statusCode int, errorCode types.ErrorCode, message string) bool {
@@ -252,7 +238,7 @@ func shouldGeneralizeStatusOrMessage(statusCode int, errorCode types.ErrorCode, 
 		statusCode == http.StatusTooManyRequests:
 		return true
 	}
-	return containsUpstreamLeakKeyword(message)
+	return containsUpstreamLeakKeyword(message) || containsUpstreamLeakKeyword(string(errorCode))
 }
 
 func containsUpstreamLeakKeyword(message string) bool {
@@ -397,12 +383,14 @@ func SanitizeTaskErrorForClient(taskErr *taskdto.TaskError, upstreamURLs ...stri
 	}
 	rawMessage := taskErr.Message
 	generalized := shouldGeneralizeStatusOrMessage(taskErr.StatusCode, types.ErrorCode(taskErr.Code), rawMessage)
-	taskErr.Message = SanitizeTaskErrorMessage(taskErr.StatusCode, rawMessage, false, upstreamURLs...)
 	if generalized {
+		taskErr.Message = genericMessageForStatus(taskErr.StatusCode, types.ErrorCode(taskErr.Code))
 		if taskErr.StatusCode == http.StatusTooManyRequests {
 			taskErr.Code = "rate_limit_exceeded"
 		} else {
 			taskErr.Code = "upstream_error"
 		}
+		return
 	}
+	taskErr.Message = SanitizeTaskErrorMessage(taskErr.StatusCode, rawMessage, false, upstreamURLs...)
 }

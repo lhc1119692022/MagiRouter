@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { splitBillingExprAndRequestRules } from '@/features/pricing/lib/billing-expr'
+import { splitGroupBillingExprKey } from '@/features/pricing/lib/group-pricing'
 import { splitPluginBillingExprKey } from '@/features/pricing/lib/plugin-pricing'
 
 import { safeJsonParse } from '../utils/json-parser'
@@ -34,10 +35,12 @@ export type ModelPricingSnapshotInput = {
   billingMode: string
   billingExpr: string
   pluginBillingExpr?: string
+  groupBillingExpr?: string
 }
 
 export type ModelPricingSnapshot = {
   pluginBillingExpr?: Record<string, string>
+  groupBillingExpr?: Record<string, string>
   name: string
   price?: string
   ratio?: string
@@ -159,6 +162,7 @@ export const buildModelSnapshots = ({
   billingMode,
   billingExpr,
   pluginBillingExpr = '{}',
+  groupBillingExpr = '{}',
 }: ModelPricingSnapshotInput): ModelPricingSnapshot[] => {
   const priceMap = safeJsonParse<Record<string, number>>(modelPrice, {
     fallback: {},
@@ -215,8 +219,23 @@ export const buildModelSnapshots = ({
       [plugin]: expression,
     })
   }
+  const groupExprMap = safeJsonParse<Record<string, string>>(groupBillingExpr, {
+    fallback: {},
+    context: 'group billing expressions',
+  })
+  const groupExpressionsByModel = new Map<string, Record<string, string>>()
+  for (const [key, expression] of Object.entries(groupExprMap)) {
+    const parts = splitGroupBillingExprKey(key)
+    if (!parts) continue
+    const [group, model] = parts
+    groupExpressionsByModel.set(model, {
+      ...groupExpressionsByModel.get(model),
+      [group]: expression,
+    })
+  }
   const modelNames = new Set([
     ...pluginExpressionsByModel.keys(),
+    ...groupExpressionsByModel.keys(),
     ...Object.keys(priceMap),
     ...Object.keys(ratioMap),
     ...Object.keys(cacheMap),
@@ -247,6 +266,7 @@ export const buildModelSnapshots = ({
       return {
         name,
         pluginBillingExpr: pluginExpressionsByModel.get(name),
+        groupBillingExpr: groupExpressionsByModel.get(name),
         billingMode: 'tiered_expr',
         billingExpr: pureExpr,
         requestRuleExpr,
@@ -265,6 +285,7 @@ export const buildModelSnapshots = ({
     return {
       name,
       pluginBillingExpr: pluginExpressionsByModel.get(name),
+      groupBillingExpr: groupExpressionsByModel.get(name),
       price,
       ratio,
       cacheRatio: cache,
@@ -302,6 +323,9 @@ export const getSnapshotSignature = (snapshot?: ModelPricingSnapshot) => {
     billingExpr: snapshot.billingExpr || '',
     requestRuleExpr: snapshot.requestRuleExpr || '',
     pluginBillingExpr: Object.entries(snapshot.pluginBillingExpr ?? {}).sort(
+      ([a], [b]) => a.localeCompare(b)
+    ),
+    groupBillingExpr: Object.entries(snapshot.groupBillingExpr ?? {}).sort(
       ([a], [b]) => a.localeCompare(b)
     ),
   })

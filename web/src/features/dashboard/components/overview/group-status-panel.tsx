@@ -46,11 +46,18 @@ function RealGroupStatusRow({ item }: { item: GroupChannelStatusItem }) {
   let metrics = '—'
   if (item.request_count > 0) {
     metrics = `${item.success_rate.toFixed(2)}%`
-    if (item.avg_latency_ms > 0) {
+    if (!item.media_only && item.avg_ttft_ms > 0) {
+      metrics += ` · ${t('TTFT')} ${formatNumber(Math.round(item.avg_ttft_ms), locale)} ${t('ms')}`
+    } else if (item.avg_latency_ms > 0) {
       metrics += ` · ${formatNumber(Math.round(item.avg_latency_ms), locale)} ${t('ms')}`
     }
   } else if (item.recent_probe) {
-    metrics = `${item.recent_probe.recent_success_rate.toFixed(1)}% · ${formatNumber(Math.round(item.recent_probe.latency_ms), locale)} ${t('ms')}`
+    const probeLatencyMs =
+      item.recent_probe.median_latency_ms &&
+      item.recent_probe.median_latency_ms > 0
+        ? item.recent_probe.median_latency_ms
+        : item.recent_probe.latency_ms
+    metrics = `${item.recent_probe.recent_success_rate.toFixed(1)}% · ${t('Probe')} ${formatNumber(Math.round(probeLatencyMs), locale)} ${t('ms')}`
   }
   return (
     <Link

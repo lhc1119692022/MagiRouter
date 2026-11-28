@@ -55,12 +55,16 @@ func RecordRelayResult(ctx context.Context, info *relaycommon.RelayInfo, apiErr 
 		return
 	}
 	now := time.Now()
+	attemptStart := info.EffectiveAttemptStartTime()
 	hasTtft := info.IsStream && info.HasSendResponse()
 	ttftMs := int64(0)
-	if hasTtft {
-		ttftMs = info.FirstResponseTime.Sub(info.StartTime).Milliseconds()
+	if hasTtft && !attemptStart.IsZero() {
+		ttftMs = max(int64(0), info.FirstResponseTime.Sub(attemptStart).Milliseconds())
 	}
-	latencyMs := now.Sub(info.StartTime).Milliseconds()
+	latencyMs := int64(0)
+	if !attemptStart.IsZero() {
+		latencyMs = max(int64(0), now.Sub(attemptStart).Milliseconds())
+	}
 	var outputTokens, generationMs int64
 	if outcome == OutcomeSuccess && info.IsStream && info.PerformanceOutputTokens >= MinThroughputOutputTokens {
 		var decodeMs int64

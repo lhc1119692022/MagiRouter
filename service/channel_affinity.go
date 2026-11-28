@@ -28,14 +28,20 @@ const (
 	ginKeyChannelAffinityLogInfo     = "channel_affinity_log_info"
 	ginKeyChannelAffinitySkipRetry   = "channel_affinity_skip_retry_on_failure"
 	ginKeyChannelAffinityRetryOffset = "channel_affinity_retry_offset"
+	ginKeyChannelAffinityChannelID   = "channel_affinity_preferred_channel_id"
+	ginKeyChannelAffinityKeyIndex    = "channel_affinity_preferred_key_index"
 
 	channelAffinityCacheNamespace           = "new-api:channel_affinity:v1"
+	channelAffinityKeyIndexCacheNamespace   = "new-api:channel_affinity_key_idx:v1"
 	channelAffinityUsageCacheStatsNamespace = "new-api:channel_affinity_usage_cache_stats:v1"
 )
 
 var (
 	channelAffinityCacheOnce sync.Once
 	channelAffinityCache     *cachex.HybridCache[int]
+
+	channelAffinityKeyIndexCacheOnce sync.Once
+	channelAffinityKeyIndexCache     *cachex.HybridCache[int]
 
 	channelAffinityUsageCacheStatsOnce  sync.Once
 	channelAffinityUsageCacheStatsCache *cachex.HybridCache[ChannelAffinityUsageCacheCounters]
@@ -109,6 +115,39 @@ func getChannelAffinityCache() *cachex.HybridCache[int] {
 		})
 	})
 	return channelAffinityCache
+}
+
+func getChannelAffinityKeyIndexCache() *cachex.HybridCache[int] {
+	channelAffinityKeyIndexCacheOnce.Do(func() {
+		setting := operation_setting.GetChannelAffinitySetting()
+		capacity := setting.MaxEntries
+		if capacity <= 0 {
+			capacity = 100_000
+		}
+		defaultTTLSeconds := setting.DefaultTTLSeconds
+		if defaultTTLSeconds <= 0 {
+			defaultTTLSeconds = 3600
+		}
+		channelAffinityKeyIndexCache = cachex.NewHybridCache[int](cachex.HybridCacheConfig[int]{
+			Namespace: cachex.Namespace(channelAffinityKeyIndexCacheNamespace),
+			Redis:     common.RDB,
+			RedisEnabled: func() bool {
+				return common.RedisEnabled && common.RDB != nil
+			},
+			RedisCodec: cachex.IntCodec{},
+			Memory: func() *hot.HotCache[string, int] {
+				return hot.NewHotCache[string, int](hot.LRU, capacity).
+					WithTTL(time.Duration(defaultTTLSeconds) * time.Second).
+					WithJanitor().
+					Build()
+			},
+		})
+	})
+	return channelAffinityKeyIndexCache
+}
+
+func affinityCacheKeySuffix(cacheKey string) string {
+	return strings.TrimPrefix(cacheKey, channelAffinityCacheNamespace+":")
 }
 
 func GetChannelAffinityCacheStats() ChannelAffinityCacheStats {
@@ -209,6 +248,10 @@ func ClearChannelAffinityCacheAll() int {
 		if _, err := cache.DeleteMany(keys); err != nil {
 			common.SysError(common.LogText("channel affinity cache delete many failed: err=%v", err))
 		}
+	}
+	keyCache := getChannelAffinityKeyIndexCache()
+	if idxKeys, idxErr := keyCache.Keys(); idxErr == nil && len(idxKeys) > 0 {
+		_, _ = keyCache.DeleteMany(idxKeys)
 	}
 	return len(keys)
 }
@@ -624,6 +667,14 @@ func GetPreferredChannelByAffinity(c *gin.Context, modelName string, usingGroup 
 			return 0, false
 		}
 		if found {
+			if c != nil {
+				c.Set(ginKeyChannelAffinityChannelID, channelID)
+				if keyIdx, keyFound, keyErr := getChannelAffinityKeyIndexCache().Get(cacheKeySuffix); keyErr == nil && keyFound && keyIdx >= 0 {
+					c.Set(ginKeyChannelAffinityKeyIndex, keyIdx)
+				} else {
+					c.Set(ginKeyChannelAffinityKeyIndex, -1)
+				}
+			}
 			return channelID, true
 		}
 		return 0, false
@@ -664,7 +715,10 @@ func ClearCurrentChannelAffinityCache(c *gin.Context) bool {
 		common.SysError(common.LogText("channel affinity cache delete current failed: err=%v", err))
 		return false
 	}
+	_, _ = getChannelAffinityKeyIndexCache().DeleteMany([]string{affinityCacheKeySuffix(cacheKey)})
 	c.Set(ginKeyChannelAffinitySkipRetry, false)
+	c.Set(ginKeyChannelAffinityChannelID, 0)
+	c.Set(ginKeyChannelAffinityKeyIndex, -1)
 	for _, ok := range deleted {
 		if ok {
 			return true
@@ -707,6 +761,27 @@ func MarkChannelAffinityUsed(c *gin.Context, selectedGroup string, channelID int
 		"key_fp":         meta.KeyFingerprint,
 	}
 	c.Set(ginKeyChannelAffinityLogInfo, info)
+}
+
+// GetPreferredMultiKeyIndexByAffinity returns the session-pinned multi-key
+// index when the selected channel matches the affinity-bound channel.
+func GetPreferredMultiKeyIndexByAffinity(c *gin.Context, channelID int) (int, bool) {
+	if c == nil || channelID <= 0 {
+		return -1, false
+	}
+	boundChannelID := c.GetInt(ginKeyChannelAffinityChannelID)
+	if boundChannelID != channelID {
+		return -1, false
+	}
+	val, exists := c.Get(ginKeyChannelAffinityKeyIndex)
+	if !exists {
+		return -1, false
+	}
+	idx, ok := val.(int)
+	if !ok || idx < 0 {
+		return -1, false
+	}
+	return idx, true
 }
 
 func AppendChannelAffinityAdminInfo(c *gin.Context, other *model.LogOther) {
@@ -761,6 +836,20 @@ func RecordChannelAffinity(c *gin.Context, channelID int) {
 	cache := getChannelAffinityCache()
 	if err := cache.SetWithTTL(cacheKey, channelID, time.Duration(ttlSeconds)*time.Second); err != nil {
 		common.SysError(common.LogText("channel affinity cache set failed: key=%s, err=%v", cacheKey, err))
+	}
+	if c != nil {
+		suffix := affinityCacheKeySuffix(cacheKey)
+		keyCache := getChannelAffinityKeyIndexCache()
+		if common.GetContextKeyBool(c, constant.ContextKeyChannelIsMultiKey) {
+			keyIdx := common.GetContextKeyInt(c, constant.ContextKeyChannelMultiKeyIndex)
+			if keyIdx >= 0 {
+				_ = keyCache.SetWithTTL(suffix, keyIdx, time.Duration(ttlSeconds)*time.Second)
+				c.Set(ginKeyChannelAffinityChannelID, channelID)
+				c.Set(ginKeyChannelAffinityKeyIndex, keyIdx)
+			}
+		} else {
+			_, _ = keyCache.DeleteMany([]string{suffix})
+		}
 	}
 }
 

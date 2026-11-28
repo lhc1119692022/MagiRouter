@@ -16,6 +16,7 @@ import (
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
+	channelrouting "github.com/QuantumNous/new-api/pkg/channel_routing"
 	pluginruntime "github.com/QuantumNous/new-api/pkg/jsplugin"
 	perfmetrics "github.com/QuantumNous/new-api/pkg/perf_metrics"
 	"github.com/QuantumNous/new-api/relay"
@@ -205,7 +206,11 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		relayInfo.PerformanceOutputTokens = 0
 		relayInfo.PerformancePromptTokens = 0
 		relayInfo.PerformanceCachedTokens = 0
-		relayInfo.ResetStreamOutputTiming()
+		if retryParam.GetRetry() > 0 {
+			relayInfo.ResetAttemptTiming()
+		} else {
+			relayInfo.ResetStreamOutputTiming()
+		}
 		relayInfo.RetryIndex = retryParam.GetRetry()
 		channel, channelErr := getChannel(c, relayInfo, retryParam)
 		if channelErr != nil {
@@ -214,7 +219,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			break
 		}
 		service.AppendUsedChannel(c, channel.Id)
-		if billingErr := service.PrepareTieredBillingForSelectedGroup(c, relayInfo); billingErr != nil {
+		if billingErr := relay.PrepareBillingForSelectedGroup(c, relayInfo); billingErr != nil {
 			newAPIError = billingErr
 			break
 		}
@@ -234,17 +239,43 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		// The request plugins' reply checks read the answer this attempt
 		// writes; without a reply instance nothing changes.
 		finishReply := requestplugin.Reply(c, relayFormat, relayInfo)
-		switch relayFormat {
-		case types.RelayFormatOpenAIRealtime:
-			newAPIError = relay.WssHelper(c, relayInfo)
-		case types.RelayFormatClaude:
-			newAPIError = relay.ClaudeHelper(c, relayInfo)
-		case types.RelayFormatGemini:
-			newAPIError = geminiRelayHandler(c, relayInfo)
-		default:
-			newAPIError = relayHandler(c, relayInfo)
-		}
+		attemptStart := relayInfo.EffectiveAttemptStartTime()
+		func() {
+			releaseInFlight := channelrouting.AcquireInFlight(channel.Id)
+			defer releaseInFlight()
+			switch relayFormat {
+			case types.RelayFormatOpenAIRealtime:
+				newAPIError = relay.WssHelper(c, relayInfo)
+			case types.RelayFormatClaude:
+				newAPIError = relay.ClaudeHelper(c, relayInfo)
+			case types.RelayFormatGemini:
+				newAPIError = geminiRelayHandler(c, relayInfo)
+			default:
+				newAPIError = relayHandler(c, relayInfo)
+			}
+		}()
 		finishReply()
+
+		if relayFormat != types.RelayFormatOpenAIRealtime {
+			ignore, okOutcome, isTimeout := service.ClassifyChannelAttemptOutcome(c, newAPIError)
+			if !ignore {
+				var ttftMs, latencyMs int64
+				if !attemptStart.IsZero() {
+					if relayInfo.IsStream && relayInfo.HasSendResponse() {
+						ttftMs = max(int64(0), relayInfo.FirstResponseTime.Sub(attemptStart).Milliseconds())
+					}
+					latencyMs = max(int64(0), time.Since(attemptStart).Milliseconds())
+				}
+				peerMedianMs := channelrouting.PeerMedianTtftMs(model.GetChannelPeerIDs(relayInfo.UsingGroup, relayInfo.OriginModelName))
+				channelrouting.RecordAttempt(channel.Id, channelrouting.AttemptSample{
+					TtftMs:       ttftMs,
+					LatencyMs:    latencyMs,
+					Success:      okOutcome,
+					IsTimeout:    isTimeout,
+					PeerMedianMs: peerMedianMs,
+				})
+			}
+		}
 
 		if newAPIError == nil {
 			service.MarkRequestPolicySuccess(c, relayInfo.StreamStatus)

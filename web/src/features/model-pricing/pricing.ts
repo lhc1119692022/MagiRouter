@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { t } from 'i18next'
 
 import { combineBillingExpr } from '@/features/pricing/lib/billing-expr'
+import { splitGroupBillingExprKey } from '@/features/pricing/lib/group-pricing'
 import { splitPluginBillingExprKey } from '@/features/pricing/lib/plugin-pricing'
 import type { PricingModel } from '@/features/pricing/types'
 import {
@@ -46,15 +47,20 @@ export const PRICING_KEYS = [
   'billing_setting.billing_mode',
   'billing_setting.billing_expr',
   'billing_setting.plugin_billing_expr',
+  'billing_setting.group_billing_expr',
 ] as const
 export type PricingKey = (typeof PRICING_KEYS)[number]
 export type PricingValues = Partial<
   Record<
-    Exclude<PricingKey, 'billing_setting.plugin_billing_expr'>,
+    Exclude<
+      PricingKey,
+      'billing_setting.plugin_billing_expr' | 'billing_setting.group_billing_expr'
+    >,
     number | string
   >
 > & {
   'billing_setting.plugin_billing_expr'?: Record<string, string>
+  'billing_setting.group_billing_expr'?: Record<string, string>
 }
 export type PricingOptions = Record<PricingKey, string>
 
@@ -123,6 +129,11 @@ export function modelPricingDisplay(
       typeof values['billing_setting.billing_expr'] === 'string'
         ? values['billing_setting.billing_expr']
         : undefined,
+    group_billing_exprs:
+      values['billing_setting.group_billing_expr'] &&
+      Object.keys(values['billing_setting.group_billing_expr']).length > 0
+        ? values['billing_setting.group_billing_expr']
+        : undefined,
     billing_usage_schema: usesTaskModelPricing(
       pricingRow(entry.model_name, values),
       entry.usage_schema,
@@ -160,6 +171,9 @@ export function pricingOptions(
       if (key === 'billing_setting.plugin_billing_expr') {
         value = values.PluginBillingExpr ?? value
       }
+      if (key === 'billing_setting.group_billing_expr') {
+        value = values.GroupBillingExpr ?? value
+      }
       return [key, typeof value === 'string' ? value : '{}']
     })
   ) as PricingOptions
@@ -178,6 +192,7 @@ export function pricingRows(options: PricingOptions): ModelPricingSnapshot[] {
     billingMode: options['billing_setting.billing_mode'],
     billingExpr: options['billing_setting.billing_expr'],
     pluginBillingExpr: options['billing_setting.plugin_billing_expr'],
+    groupBillingExpr: options['billing_setting.group_billing_expr'],
   })
 }
 
@@ -215,6 +230,19 @@ export function pricingRow(
           ),
         ]
       }
+      if (key === 'billing_setting.group_billing_expr') {
+        return [
+          key,
+          JSON.stringify(
+            Object.fromEntries(
+              Object.entries(values[key] ?? {}).map(([group, expression]) => [
+                `${group}::${name}`,
+                expression,
+              ])
+            )
+          ),
+        ]
+      }
       return [
         key,
         JSON.stringify(
@@ -232,6 +260,7 @@ export function pricingRow(
     name,
     billingMode,
     pluginBillingExpr: values['billing_setting.plugin_billing_expr'],
+    groupBillingExpr: values['billing_setting.group_billing_expr'],
   }
 }
 
@@ -240,6 +269,9 @@ export function pricingFromDraft(data: ModelRatioData): PricingValues {
     ...(data.pluginBillingExpr === undefined
       ? {}
       : { 'billing_setting.plugin_billing_expr': data.pluginBillingExpr }),
+    ...(data.groupBillingExpr === undefined
+      ? {}
+      : { 'billing_setting.group_billing_expr': data.groupBillingExpr }),
     'billing_setting.billing_mode':
       data.billingMode === 'tiered_expr' ? 'tiered_expr' : 'ratio',
   }
@@ -313,6 +345,20 @@ function applyPricingValues(
         }
         return [key, JSON.stringify(map)]
       }
+      if (key === 'billing_setting.group_billing_expr') {
+        if (values[key] === undefined) return [key, JSON.stringify(map)]
+        for (const name of names) {
+          for (const entryKey of Object.keys(map)) {
+            if (splitGroupBillingExprKey(entryKey)?.[1] === name) {
+              delete map[entryKey]
+            }
+          }
+          for (const [group, expression] of Object.entries(values[key])) {
+            map[`${group}::${name}`] = expression
+          }
+        }
+        return [key, JSON.stringify(map)]
+      }
       for (const name of names) {
         delete map[name]
         if (values[key] !== undefined) {
@@ -353,6 +399,17 @@ export function pricingValuesByModel(
         models.set(modelName, model)
         continue
       }
+      if (key === 'billing_setting.group_billing_expr') {
+        const parts = splitGroupBillingExprKey(name)
+        if (!parts || typeof value !== 'string') {
+          throw new Error(t('Invalid pricing value'))
+        }
+        const [group, modelName] = parts
+        const model = models.get(modelName) ?? {}
+        model[key] = { ...model[key], [group]: value }
+        models.set(modelName, model)
+        continue
+      }
       const model = models.get(name) ?? {}
       model[key] = value
       models.set(name, model)
@@ -386,7 +443,8 @@ export function applyPriceSyncSelections(
           .join('') as PricingKey
         if (
           PRICING_KEYS.includes(key) &&
-          key !== 'billing_setting.plugin_billing_expr'
+          key !== 'billing_setting.plugin_billing_expr' &&
+          key !== 'billing_setting.group_billing_expr'
         ) {
           next[key] = value
         }

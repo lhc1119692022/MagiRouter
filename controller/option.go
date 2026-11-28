@@ -707,6 +707,25 @@ func UpdateOption(c *gin.Context) {
 				return
 			}
 		}
+	case billing_setting.GroupBillingExprOption:
+		var expressions map[string]string
+		if err = common.UnmarshalJsonStr(option.Value.(string), &expressions); err != nil || expressions == nil {
+			common.ApiErrorMsg(c, "group billing expressions must be a JSON object")
+			return
+		}
+		for key, expression := range expressions {
+			group, name, valid := billing_setting.SplitGroupBillingExprKey(key)
+			if !valid {
+				common.ApiErrorMsg(c, "invalid group billing expression key: "+key)
+				return
+			}
+			if err = model.ValidateModelPricing(name, model.PricingValues{
+				billing_setting.GroupBillingExprOption: map[string]any{group: expression},
+			}); err != nil {
+				common.ApiError(c, err)
+				return
+			}
+		}
 	case "console_setting.api_info":
 		err = console_setting.ValidateConsoleSettings(option.Value.(string), "ApiInfo")
 		if err != nil {

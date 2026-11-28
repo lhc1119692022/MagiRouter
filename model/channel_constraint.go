@@ -89,6 +89,24 @@ func candidatePassesKindFilters(ch *Channel, exists bool, modelName string, kind
 	return true
 }
 
+func extractExcludedChannelIDs(filters []dto.ChannelFilter) map[int]struct{} {
+	var excluded map[int]struct{}
+	for _, filter := range filters {
+		if filter.Kind != dto.FilterExcludeChannelIDs || len(filter.ExcludeChannelIDs) == 0 {
+			continue
+		}
+		if excluded == nil {
+			excluded = make(map[int]struct{}, len(filter.ExcludeChannelIDs))
+		}
+		for _, id := range filter.ExcludeChannelIDs {
+			if id > 0 {
+				excluded[id] = struct{}{}
+			}
+		}
+	}
+	return excluded
+}
+
 func channelMatchesFilter(ch *Channel, modelName string, filter dto.ChannelFilter) bool {
 	switch filter.Kind {
 	case dto.FilterRequestPath:

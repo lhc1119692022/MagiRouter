@@ -726,7 +726,11 @@ func SetupContextForSelectedChannel(c *gin.Context, channel *model.Channel, mode
 	common.SetContextKey(c, constant.ContextKeyChannelModelMapping, channel.GetModelMapping())
 	common.SetContextKey(c, constant.ContextKeyChannelStatusCodeMapping, channel.GetStatusCodeMapping())
 
-	key, index, newAPIError := channel.GetNextEnabledKey()
+	preferredKeyIdx := -1
+	if idx, ok := service.GetPreferredMultiKeyIndexByAffinity(c, channel.Id); ok {
+		preferredKeyIdx = idx
+	}
+	key, index, newAPIError := channel.GetEnabledKeyWithPreferred(preferredKeyIdx)
 	if newAPIError != nil {
 		return newAPIError
 	}

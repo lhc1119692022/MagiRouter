@@ -519,4 +519,50 @@ describe('channel status real-request metrics', () => {
       )
     })
   })
+
+  it('displays TTFT for active LLM groups and median Probe latency for idle groups in GroupStatusPanel', async () => {
+    await renderAt('/', false, {
+      groups: [
+        ...realMetricsFixture.groups,
+        {
+          group: 'idle-probe-only',
+          description: 'Idle standby route',
+          ratio: 1,
+          status: 'operational',
+          capabilities: ['text'],
+          media_only: false,
+          metric_focus: 'cache_rate',
+          enabled_models: 2,
+          has_active_channels: true,
+          request_count: 0,
+          success_count: 0,
+          success_rate: 0,
+          avg_latency_ms: 0,
+          avg_ttft_ms: 0,
+          avg_tps: 0,
+          series: [],
+          top_models: [],
+          recent_probe: {
+            last_tested_at: 1764086000,
+            tested_model: 'gpt-mini',
+            success: true,
+            latency_ms: 9200,
+            median_latency_ms: 680,
+            recent_samples: 5,
+            recent_success_rate: 100,
+          },
+        },
+      ],
+    })
+
+    const defaultRow = await screen.findByRole('link', { name: /default/ })
+    expect(defaultRow).toHaveTextContent('TTFT 450 ms')
+
+    const mediaRow = screen.getByRole('link', { name: /media-studio/ })
+    expect(mediaRow).toHaveTextContent('18,400 ms')
+    expect(mediaRow).not.toHaveTextContent('TTFT')
+
+    const idleRow = screen.getByRole('link', { name: /idle-probe-only/ })
+    expect(idleRow).toHaveTextContent('Probe 680 ms')
+  })
 })

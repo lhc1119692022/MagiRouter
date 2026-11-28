@@ -38,11 +38,20 @@ function hasPricingValues(
 ): boolean {
   if (!values) return false
   if (values['billing_setting.billing_mode'] === 'tiered_expr') {
-    return Boolean(values['billing_setting.billing_expr']?.trim())
+    return (
+      typeof values['billing_setting.billing_expr'] === 'string' &&
+      Boolean(values['billing_setting.billing_expr'].trim())
+    )
   }
   if (
     values['billing_setting.plugin_billing_expr'] &&
     Object.keys(values['billing_setting.plugin_billing_expr']).length > 0
+  ) {
+    return true
+  }
+  if (
+    values['billing_setting.group_billing_expr'] &&
+    Object.keys(values['billing_setting.group_billing_expr']).length > 0
   ) {
     return true
   }

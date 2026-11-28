@@ -23,6 +23,16 @@ func TestSanitizeClientErrorPreservesLocalGatewayErrors(t *testing.T) {
 	assert.Equal(t, "user quota is not enough (request id: local-req-1)", out.Message)
 	assert.Equal(t, types.ErrorCodeInsufficientUserQuota, out.Code)
 
+	localRecordedQuotaErr := types.NewErrorWithStatusCode(
+		errors.New("user quota is not enough"),
+		types.ErrorCodeInsufficientUserQuota,
+		http.StatusForbidden,
+		types.ErrOptionWithSkipRetry(),
+	)
+	recordedOut := SanitizeClientOpenAIError(localRecordedQuotaErr, "local-req-1b")
+	assert.Equal(t, "user quota is not enough (request id: local-req-1b)", recordedOut.Message)
+	assert.Equal(t, types.ErrorCodeInsufficientUserQuota, recordedOut.Code)
+
 	localInvalidErr := types.NewError(
 		errors.New("messages field is required"),
 		types.ErrorCodeInvalidRequest,
@@ -90,6 +100,30 @@ func TestSanitizeClientErrorGeneralizesUpstreamInfraAndAccountFailures(t *testin
 			wantClType:  "api_error",
 		},
 		{
+			name:        "upstream 403 insufficient_user_quota from nested new-api pool account",
+			err:         types.WithOpenAIError(types.OpenAIError{Message: "用户额度不足, 剩余额度: ＄0.000000, 需要预扣费额度: ＄0.000100 (request id: 202611280001)", Type: "new_api_error", Code: "insufficient_user_quota"}, http.StatusForbidden),
+			wantMessage: genericUpstreamUnavailableMessage + " (request id: req-1)",
+			wantOaiType: "upstream_error",
+			wantOaiCode: "upstream_error",
+			wantClType:  "api_error",
+		},
+		{
+			name:        "upstream 400 with insufficient_user_quota code",
+			err:         types.WithOpenAIError(types.OpenAIError{Message: "request rejected", Type: "invalid_request_error", Code: "insufficient_user_quota"}, http.StatusBadRequest),
+			wantMessage: genericUpstreamUnavailableMessage + " (request id: req-1)",
+			wantOaiType: "upstream_error",
+			wantOaiCode: "upstream_error",
+			wantClType:  "api_error",
+		},
+		{
+			name:        "upstream 400 with Chinese balance exhausted message",
+			err:         types.WithOpenAIError(types.OpenAIError{Message: "账号余额不足，请充值后重试", Type: "invalid_request_error", Code: "invalid_request_error"}, http.StatusBadRequest),
+			wantMessage: genericUpstreamUnavailableMessage + " (request id: req-1)",
+			wantOaiType: "upstream_error",
+			wantOaiCode: "upstream_error",
+			wantClType:  "api_error",
+		},
+		{
 			name:        "channel error",
 			err:         types.NewErrorWithStatusCode(errors.New("channel #5 invalid key"), types.ErrorCodeChannelInvalidKey, http.StatusBadRequest),
 			wantMessage: genericUpstreamUnavailableMessage + " (request id: req-1)",
@@ -111,6 +145,11 @@ func TestSanitizeClientErrorGeneralizesUpstreamInfraAndAccountFailures(t *testin
 			cl := SanitizeClientClaudeError(tc.err, "req-1", "https://upstream.relay.net")
 			assert.Equal(t, tc.wantMessage, cl.Message)
 			assert.Equal(t, tc.wantClType, cl.Type)
+
+			pubType, pubCode := SanitizeClientErrorPublicMeta(tc.err, "https://upstream.relay.net")
+			assert.Equal(t, tc.wantOaiType, pubType)
+			assert.Equal(t, tc.wantOaiCode, pubCode)
+			assert.NotContains(t, oai.Message, "额度不足")
 		})
 	}
 }
@@ -156,4 +195,14 @@ func TestSanitizeTaskErrorForClient(t *testing.T) {
 	SanitizeTaskErrorForClient(badPromptErr)
 	assert.Equal(t, "Prompt violates safety policy", badPromptErr.Message)
 	assert.Equal(t, "invalid_prompt", badPromptErr.Code)
+
+	upstreamQuotaTaskErr := &taskdto.TaskError{
+		Code:       "insufficient_user_quota",
+		Message:    "request rejected",
+		StatusCode: http.StatusBadRequest,
+		LocalError: false,
+	}
+	SanitizeTaskErrorForClient(upstreamQuotaTaskErr)
+	assert.Equal(t, genericUpstreamUnavailableMessage, upstreamQuotaTaskErr.Message)
+	assert.Equal(t, "upstream_error", upstreamQuotaTaskErr.Code)
 }

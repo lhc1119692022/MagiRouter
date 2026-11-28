@@ -80,6 +80,7 @@ type ModelFormValues = {
   BillingMode: string
   BillingExpr: string
   PluginBillingExpr: string
+  GroupBillingExpr?: string
 }
 
 type ModelRatioFormProps = {
@@ -301,6 +302,9 @@ export const ModelRatioForm = memo(function ModelRatioForm({
       BillingMode: formatJsonForTextarea(savedValues.BillingMode),
       BillingExpr: formatJsonForTextarea(savedValues.BillingExpr),
       PluginBillingExpr: formatJsonForTextarea(savedValues.PluginBillingExpr),
+      GroupBillingExpr: formatJsonForTextarea(
+        savedValues.GroupBillingExpr ?? '{}'
+      ),
     })
   }, [form, savedValues])
 
@@ -448,6 +452,7 @@ export const ModelRatioForm = memo(function ModelRatioForm({
               savedBillingMode={savedValues.BillingMode}
               savedBillingExpr={savedValues.BillingExpr}
               savedPluginBillingExpr={savedValues.PluginBillingExpr}
+              savedGroupBillingExpr={savedValues.GroupBillingExpr ?? '{}'}
               modelPrice={form.watch('ModelPrice')}
               modelRatio={form.watch('ModelRatio')}
               cacheRatio={form.watch('CacheRatio')}
@@ -459,6 +464,7 @@ export const ModelRatioForm = memo(function ModelRatioForm({
               billingMode={form.watch('BillingMode')}
               billingExpr={form.watch('BillingExpr')}
               pluginBillingExpr={form.watch('PluginBillingExpr')}
+              groupBillingExpr={form.watch('GroupBillingExpr') ?? '{}'}
               candidateModelNames={
                 isUnsetVariant ? enabledModelsQuery.data?.data : undefined
               }
@@ -474,6 +480,7 @@ export const ModelRatioForm = memo(function ModelRatioForm({
                   'billing_setting.billing_mode': 'BillingMode',
                   'billing_setting.billing_expr': 'BillingExpr',
                   'billing_setting.plugin_billing_expr': 'PluginBillingExpr',
+                  'billing_setting.group_billing_expr': 'GroupBillingExpr',
                 }
                 const formField =
                   fieldMap[field] || (field as keyof ModelFormValues)

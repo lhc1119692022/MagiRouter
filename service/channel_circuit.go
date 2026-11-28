@@ -89,6 +89,35 @@ func IsConsecutiveDisableEligibleError(err *types.NewAPIError) bool {
 	}
 }
 
+// ClassifyChannelAttemptOutcome classifies one completed upstream attempt for
+// per-channel runtime routing telemetry. Client cancellations and non-channel
+// 4xx client validation rejections are ignored so they never penalize healthy
+// channels.
+func ClassifyChannelAttemptOutcome(c *gin.Context, err *types.NewAPIError) (ignore bool, success bool, isTimeout bool) {
+	if err == nil {
+		return false, true, false
+	}
+	if isClientRequestCanceled(c, err) {
+		return true, false, false
+	}
+	if errors.Is(err, context.DeadlineExceeded) ||
+		err.StatusCode == http.StatusRequestTimeout ||
+		err.StatusCode == http.StatusGatewayTimeout {
+		return false, false, true
+	}
+	lowerMsg := strings.ToLower(err.Error())
+	if strings.Contains(lowerMsg, "timeout") || strings.Contains(lowerMsg, "deadline exceeded") {
+		return false, false, true
+	}
+	if IsConsecutiveDisableEligibleError(err) || err.StatusCode == http.StatusTooManyRequests || types.IsChannelError(err) {
+		return false, false, false
+	}
+	if err.StatusCode >= http.StatusBadRequest && err.StatusCode < http.StatusInternalServerError {
+		return true, false, false
+	}
+	return false, false, false
+}
+
 func RecordChannelFailure(channelID int, isMultiKey bool, usingKey string) int {
 	if channelID <= 0 {
 		return 0

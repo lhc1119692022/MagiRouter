@@ -66,14 +66,23 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		}
 	}
 	billingModelName := info.GetBillingModelName()
-	modelPrice, usePrice := ratio_setting.GetModelPrice(billingModelName, false)
-
 	groupRatioInfo := HandleGroupRatio(c, info)
+
+	if groupExpr, ok := billing_setting.ResolveGroupBillingExpr(info.UsingGroup, billingModelName); ok {
+		return modelPriceHelperTieredWithExpr(c, info, billingModelName, groupExpr, true, promptTokens, groupRatioInfo)
+	}
 
 	// Check if this model uses tiered_expr billing
 	if billing_setting.GetBillingMode(billingModelName) == billing_setting.BillingModeTieredExpr {
-		return modelPriceHelperTiered(c, info, billingModelName, promptTokens, groupRatioInfo)
+		exprStr, ok := billing_setting.GetBillingExpr(billingModelName)
+		if !ok {
+			return hosttypes.PriceData{}, fmt.Errorf("model %s is configured as tiered_expr but has no billing expression", billingModelName)
+		}
+		return modelPriceHelperTieredWithExpr(c, info, billingModelName, exprStr, false, promptTokens, groupRatioInfo)
 	}
+
+	info.TieredBillingSnapshot = nil
+	modelPrice, usePrice := ratio_setting.GetModelPrice(billingModelName, false)
 
 	var preConsumedQuota int
 	var modelRatio float64
@@ -275,7 +284,7 @@ func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (hostt
 	return priceData, nil
 }
 
-func HasModelBillingConfig(modelName string) bool {
+func hasDefaultModelBillingConfig(modelName string) bool {
 	if _, ok := ratio_setting.GetModelPrice(modelName, false); ok {
 		return true
 	}
@@ -289,6 +298,34 @@ func HasModelBillingConfig(modelName string) bool {
 	return ok && strings.TrimSpace(expr) != ""
 }
 
+func HasModelBillingConfig(modelName string) bool {
+	if hasDefaultModelBillingConfig(modelName) {
+		return true
+	}
+	return billing_setting.HasGroupBillingExprForModel(modelName)
+}
+
+func HasModelBillingConfigForGroups(modelName string, groups []string) bool {
+	if hasDefaultModelBillingConfig(modelName) {
+		return true
+	}
+	if len(groups) == 0 {
+		return billing_setting.HasGroupBillingExprForModel(modelName)
+	}
+	billingModel := resolveBillingModelName(modelName)
+	for _, group := range groups {
+		if _, ok := billing_setting.ResolveGroupBillingExpr(group, modelName); ok {
+			return true
+		}
+		if billingModel != "" && billingModel != modelName {
+			if _, ok := billing_setting.ResolveGroupBillingExpr(group, billingModel); ok {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // HasPriceOrRatioEntry reports whether name has a configured price, ratio, or
 // tiered billing-mode entry after a single wildcard normalization. Self-use
 // fallback does not count as a configured ratio.
@@ -300,35 +337,33 @@ func resolveBillingModelName(origin string) string {
 	return billing_setting.ResolveOrdinaryBillingModel(origin)
 }
 
-func modelPriceHelperTiered(c *gin.Context, info *relaycommon.RelayInfo, billingModelName string, promptTokens int, groupRatioInfo hosttypes.GroupRatioInfo) (hosttypes.PriceData, error) {
-	exprStr, ok := billing_setting.GetBillingExpr(billingModelName)
-	if !ok {
-		return hosttypes.PriceData{}, fmt.Errorf("model %s is configured as tiered_expr but has no billing expression", billingModelName)
-	}
+func modelPriceHelperTieredWithExpr(c *gin.Context, info *relaycommon.RelayInfo, billingModelName string, exprStr string, isGroupOverride bool, promptTokens int, groupRatioInfo hosttypes.GroupRatioInfo) (hosttypes.PriceData, error) {
 	exprHash := billingexpr.ExprHashString(exprStr)
 	usedVars := billingexpr.UsedVarsByHash(exprStr, exprHash)
 	if usedVars["u"] {
 		return hosttypes.PriceData{}, errors.New(i18n.T(c, i18n.MsgRelayTaskUsagePriceUnsupported, map[string]any{"Model": billingModelName}))
 	}
 	fixedPricing := billingexpr.UsesFixedPricingByHash(exprStr, exprHash)
-	value, _ := c.Get(jsplugin.ContextKeyRelayEndpoint)
-	if endpoint, ok := value.(jsplugin.PinnedEndpoint); ok && !fixedPricing {
-		for _, candidate := range endpoint.Candidates {
-			pluginKey := candidate.Plugin.Meta.Key
-			if _, overridden := billing_setting.GetPluginBillingExpr(pluginKey, endpoint.Model); overridden {
-				continue
-			}
-			if _, overridden := billing_setting.GetPluginBillingExpr(pluginKey, endpoint.MappedModel); endpoint.MappedModel != "" && overridden {
-				continue
-			}
-			taskBillingModel := endpoint.Model
-			if billing_setting.GetBillingMode(taskBillingModel) != billing_setting.BillingModeTieredExpr {
-				taskBillingModel = endpoint.MappedModel
-			}
-			// Task expressions return USD; ordinary expressions return USD *
-			// 1M. Even a constant without u() cannot safely serve both contracts.
-			if taskBillingModel == billingModelName {
-				return hosttypes.PriceData{}, errors.New(i18n.T(c, i18n.MsgRelaySharedTaskPriceNeedsOverride, map[string]any{"Model": billingModelName, "Plugin": pluginKey}))
+	if !isGroupOverride {
+		value, _ := c.Get(jsplugin.ContextKeyRelayEndpoint)
+		if endpoint, ok := value.(jsplugin.PinnedEndpoint); ok && !fixedPricing {
+			for _, candidate := range endpoint.Candidates {
+				pluginKey := candidate.Plugin.Meta.Key
+				if _, overridden := billing_setting.GetPluginBillingExpr(pluginKey, endpoint.Model); overridden {
+					continue
+				}
+				if _, overridden := billing_setting.GetPluginBillingExpr(pluginKey, endpoint.MappedModel); endpoint.MappedModel != "" && overridden {
+					continue
+				}
+				taskBillingModel := endpoint.Model
+				if billing_setting.GetBillingMode(taskBillingModel) != billing_setting.BillingModeTieredExpr {
+					taskBillingModel = endpoint.MappedModel
+				}
+				// Task expressions return USD; ordinary expressions return USD *
+				// 1M. Even a constant without u() cannot safely serve both contracts.
+				if taskBillingModel == billingModelName {
+					return hosttypes.PriceData{}, errors.New(i18n.T(c, i18n.MsgRelaySharedTaskPriceNeedsOverride, map[string]any{"Model": billingModelName, "Plugin": pluginKey}))
+				}
 			}
 		}
 	}

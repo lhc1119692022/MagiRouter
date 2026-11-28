@@ -16,6 +16,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
+	channelrouting "github.com/QuantumNous/new-api/pkg/channel_routing"
 	"github.com/QuantumNous/new-api/pkg/jsplugin"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
@@ -65,6 +66,9 @@ type Channel struct {
 	// BalanceDetail is the last balance query in channel responses; see
 	// GetBalanceDetail.
 	BalanceDetail *ChannelBalanceDetail `json:"balance_detail,omitempty" gorm:"-"`
+	// RuntimeMetrics holds live in-memory per-channel latency/load telemetry for
+	// admin inspection without schema changes.
+	RuntimeMetrics *channelrouting.RuntimeSnapshot `json:"runtime_metrics,omitempty" gorm:"-"`
 }
 
 const (
@@ -470,6 +474,10 @@ func (channel *Channel) GetKeys() []string {
 }
 
 func (channel *Channel) GetNextEnabledKey() (string, int, *types.NewAPIError) {
+	return channel.GetEnabledKeyWithPreferred(-1)
+}
+
+func (channel *Channel) GetEnabledKeyWithPreferred(preferredIndex int) (string, int, *types.NewAPIError) {
 	// If not in multi-key mode, return the original key string directly.
 	if !channel.ChannelInfo.IsMultiKey {
 		return channel.Key, 0, nil
@@ -496,6 +504,10 @@ func (channel *Channel) GetNextEnabledKey() (string, int, *types.NewAPIError) {
 			return status
 		}
 		return common.ChannelStatusEnabled
+	}
+
+	if preferredIndex >= 0 && preferredIndex < len(keys) && getStatus(preferredIndex) == common.ChannelStatusEnabled {
+		return keys[preferredIndex], preferredIndex, nil
 	}
 
 	// Collect indexes of enabled keys
@@ -932,6 +944,15 @@ func (channel *Channel) UpdateResponseTime(responseTime int64) {
 	}).Error
 	if err != nil {
 		common.SysLog(common.LogText("failed to update response time: channel_id=%d, error=%v", channel.Id, err))
+	}
+}
+
+func (channel *Channel) UpdateTestTimeOnly() {
+	err := DB.Model(channel).Select("test_time").Updates(Channel{
+		TestTime: common.GetTimestamp(),
+	}).Error
+	if err != nil {
+		common.SysLog(common.LogText("failed to update test time: channel_id=%d, error=%v", channel.Id, err))
 	}
 }
 

@@ -15,7 +15,10 @@ func HasPriceOrRatioEntry(name string) bool {
 	if ratio_setting.HasConfiguredModelRatio(formatted) {
 		return true
 	}
-	return GetBillingMode(formatted) == BillingModeTieredExpr
+	if GetBillingMode(formatted) == BillingModeTieredExpr {
+		return true
+	}
+	return HasGroupBillingExprForModel(name)
 }
 
 func ResolveOrdinaryBillingModel(origin string) string {

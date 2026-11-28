@@ -55,6 +55,7 @@ import {
   pricingRows,
 } from '@/features/model-pricing/pricing'
 import { usePricingData } from '@/features/pricing/hooks/use-pricing-data'
+import { splitGroupBillingExprKey } from '@/features/pricing/lib/group-pricing'
 import { splitPluginBillingExprKey } from '@/features/pricing/lib/plugin-pricing'
 import { useMediaQuery } from '@/hooks'
 
@@ -95,6 +96,7 @@ type ModelRatioVisualEditorProps = {
   savedBillingMode: string
   savedBillingExpr: string
   savedPluginBillingExpr?: string
+  savedGroupBillingExpr?: string
   modelPrice: string
   modelRatio: string
   cacheRatio: string
@@ -106,6 +108,7 @@ type ModelRatioVisualEditorProps = {
   billingMode: string
   billingExpr: string
   pluginBillingExpr?: string
+  groupBillingExpr?: string
   candidateModelNames?: string[]
   candidateModelsLoading?: boolean
   filterMode?: 'all' | 'unset'
@@ -139,6 +142,7 @@ const ModelRatioVisualEditorComponent = forwardRef<
     savedBillingMode,
     savedBillingExpr,
     savedPluginBillingExpr = '{}',
+    savedGroupBillingExpr = '{}',
     modelPrice,
     modelRatio,
     cacheRatio,
@@ -150,6 +154,7 @@ const ModelRatioVisualEditorComponent = forwardRef<
     billingMode,
     billingExpr,
     pluginBillingExpr = '{}',
+    groupBillingExpr = '{}',
     candidateModelNames,
     candidateModelsLoading,
     filterMode = 'all',
@@ -268,6 +273,7 @@ const ModelRatioVisualEditorComponent = forwardRef<
         BillingMode: savedBillingMode,
         BillingExpr: savedBillingExpr,
         PluginBillingExpr: savedPluginBillingExpr,
+        GroupBillingExpr: savedGroupBillingExpr,
       }),
     [
       savedModelPrice,
@@ -281,6 +287,7 @@ const ModelRatioVisualEditorComponent = forwardRef<
       savedBillingMode,
       savedBillingExpr,
       savedPluginBillingExpr,
+      savedGroupBillingExpr,
     ]
   )
   const draftOptions = useMemo(
@@ -297,6 +304,7 @@ const ModelRatioVisualEditorComponent = forwardRef<
         BillingMode: billingMode,
         BillingExpr: billingExpr,
         PluginBillingExpr: pluginBillingExpr,
+        GroupBillingExpr: groupBillingExpr,
       }),
     [
       modelPrice,
@@ -310,6 +318,7 @@ const ModelRatioVisualEditorComponent = forwardRef<
       billingMode,
       billingExpr,
       pluginBillingExpr,
+      groupBillingExpr,
     ]
   )
 
@@ -430,6 +439,7 @@ const ModelRatioVisualEditorComponent = forwardRef<
         billingMode: editBillingMode,
         billingExpr: editableModel.billingExpr,
         pluginBillingExpr: editableModel.pluginBillingExpr,
+        groupBillingExpr: editableModel.groupBillingExpr,
         requestRuleExpr: editableModel.requestRuleExpr,
       })
       setEditorOpen(true)
@@ -537,6 +547,19 @@ const ModelRatioVisualEditorComponent = forwardRef<
         'billing_setting.plugin_billing_expr',
         JSON.stringify(pluginExprMap)
       )
+      const groupExprMap = safeJsonParse<Record<string, string>>(
+        groupBillingExpr,
+        { fallback: {} }
+      )
+      for (const entryKey of Object.keys(groupExprMap)) {
+        if (splitGroupBillingExprKey(entryKey)?.[1] === name) {
+          delete groupExprMap[entryKey]
+        }
+      }
+      onChange(
+        'billing_setting.group_billing_expr',
+        JSON.stringify(groupExprMap)
+      )
 
       onChange('ModelPrice', JSON.stringify(priceMap, null, 2))
       onChange('ModelRatio', JSON.stringify(ratioMap, null, 2))
@@ -573,6 +596,7 @@ const ModelRatioVisualEditorComponent = forwardRef<
       billingMode,
       billingExpr,
       pluginBillingExpr,
+      groupBillingExpr,
       onChange,
     ]
   )
@@ -594,10 +618,12 @@ const ModelRatioVisualEditorComponent = forwardRef<
           ...Object.keys(draft),
           ...Object.keys(saved),
         ])) {
-          const model =
-            key === 'billing_setting.plugin_billing_expr'
-              ? splitPluginBillingExprKey(entry)?.[1]
-              : entry
+          let model: string | undefined = entry
+          if (key === 'billing_setting.plugin_billing_expr') {
+            model = splitPluginBillingExprKey(entry)?.[1]
+          } else if (key === 'billing_setting.group_billing_expr') {
+            model = splitGroupBillingExprKey(entry)?.[1]
+          }
           if (model !== name) continue
           if (Object.hasOwn(saved, entry)) draft[entry] = saved[entry]
           else delete draft[entry]
@@ -998,6 +1024,7 @@ export const ModelRatioVisualEditor = memo(
       prevProps.savedBillingMode === nextProps.savedBillingMode &&
       prevProps.savedBillingExpr === nextProps.savedBillingExpr &&
       prevProps.savedPluginBillingExpr === nextProps.savedPluginBillingExpr &&
+      prevProps.savedGroupBillingExpr === nextProps.savedGroupBillingExpr &&
       prevProps.modelPrice === nextProps.modelPrice &&
       prevProps.modelRatio === nextProps.modelRatio &&
       prevProps.cacheRatio === nextProps.cacheRatio &&
@@ -1009,6 +1036,7 @@ export const ModelRatioVisualEditor = memo(
       prevProps.billingMode === nextProps.billingMode &&
       prevProps.billingExpr === nextProps.billingExpr &&
       prevProps.pluginBillingExpr === nextProps.pluginBillingExpr &&
+      prevProps.groupBillingExpr === nextProps.groupBillingExpr &&
       prevProps.candidateModelNames === nextProps.candidateModelNames &&
       prevProps.candidateModelsLoading === nextProps.candidateModelsLoading &&
       prevProps.filterMode === nextProps.filterMode &&

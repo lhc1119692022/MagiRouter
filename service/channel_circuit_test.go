@@ -193,3 +193,33 @@ func TestHandleChannelErrorDisablesAfterConsecutive5xxAndResetsOnSuccess(t *test
 	assert.Contains(t, stored.GetOtherInfo()["status_reason"], "consecutive upstream failures (3/3)")
 	assert.Equal(t, 0, GetChannelFailureCount(channel.Id, false, ""))
 }
+
+func TestClassifyChannelAttemptOutcome(t *testing.T) {
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+
+	ignore, success, isTimeout := ClassifyChannelAttemptOutcome(c, nil)
+	assert.False(t, ignore)
+	assert.True(t, success)
+	assert.False(t, isTimeout)
+
+	badReq := types.NewOpenAIError(errors.New("invalid prompt"), types.ErrorCodeInvalidRequest, http.StatusBadRequest)
+	ignore, success, isTimeout = ClassifyChannelAttemptOutcome(c, badReq)
+	assert.True(t, ignore)
+	assert.False(t, success)
+	assert.False(t, isTimeout)
+
+	timeoutErr := types.NewOpenAIError(context.DeadlineExceeded, types.ErrorCodeDoRequestFailed, http.StatusGatewayTimeout)
+	ignore, success, isTimeout = ClassifyChannelAttemptOutcome(c, timeoutErr)
+	assert.False(t, ignore)
+	assert.False(t, success)
+	assert.True(t, isTimeout)
+
+	canceledCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	canceledGin, _ := gin.CreateTestContext(httptest.NewRecorder())
+	canceledGin.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil).WithContext(canceledCtx)
+	err502 := types.NewOpenAIError(errors.New("bad gateway"), types.ErrorCodeBadResponseStatusCode, http.StatusBadGateway)
+	ignore, _, _ = ClassifyChannelAttemptOutcome(canceledGin, err502)
+	assert.True(t, ignore)
+}

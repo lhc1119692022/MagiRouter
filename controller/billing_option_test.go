@@ -14,12 +14,16 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	"github.com/QuantumNous/new-api/pkg/jsplugin"
+	"github.com/QuantumNous/new-api/relay"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/helper"
+	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/QuantumNous/new-api/setting/config"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -322,4 +326,241 @@ func TestPreConsumeMultiplierRejectsInvalidRuntimeAndOverflow(t *testing.T) {
 		require.Error(t, err)
 		assert.Nil(t, info.Billing)
 	}
+}
+
+func TestGroupBillingExprSaveValidationAndPricingFilter(t *testing.T) {
+	db := modelManagementDB(t, "sqlite", "")
+	require.NoError(t, db.AutoMigrate(&model.Option{}))
+	previous := config.GlobalConfig.ExportAllConfigs()
+	t.Cleanup(func() { require.NoError(t, config.GlobalConfig.LoadFromDB(previous)) })
+
+	_, err := ratio_setting.ParseGroupRatio(`{"bad::group":1}`)
+	require.ErrorContains(t, err, "::")
+
+	const modelName = "gpt-image-group-cfg"
+	snapshot, err := model.GetModelPricingSnapshot([]string{modelName})
+	require.NoError(t, err)
+	require.Len(t, snapshot.Entries, 1)
+
+	invalidCases := []struct {
+		name    string
+		pricing model.PricingValues
+		errText string
+	}{
+		{
+			name:    "invalid group delimiter",
+			pricing: model.PricingValues{billing_setting.GroupBillingExprOption: map[string]any{"bad::group": `tier("image", fixed(0.08))`}},
+			errText: "invalid billing group name",
+		},
+		{
+			name:    "reserved auto group",
+			pricing: model.PricingValues{billing_setting.GroupBillingExprOption: map[string]any{"auto": `tier("image", fixed(0.08))`}},
+			errText: "invalid billing group name",
+		},
+		{
+			name:    "task usage function rejected",
+			pricing: model.PricingValues{billing_setting.GroupBillingExprOption: map[string]any{"percall": `tier("task", u("seconds") * 0.1)`}},
+			errText: "no task plugin usage schema",
+		},
+		{
+			name:    "syntax error rejected",
+			pricing: model.PricingValues{billing_setting.GroupBillingExprOption: map[string]any{"percall": `tier("image",`}},
+			errText: "expr compile error",
+		},
+	}
+	for _, tc := range invalidCases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := model.UpdateModelPricing([]model.ModelPricingChange{{
+				ModelName:       modelName,
+				ExpectedVersion: snapshot.Entries[0].Version,
+				Pricing:         tc.pricing,
+			}})
+			require.ErrorContains(t, err, tc.errText)
+		})
+	}
+
+	require.NoError(t, model.UpdateModelPricing([]model.ModelPricingChange{{
+		ModelName:       modelName,
+		ExpectedVersion: snapshot.Entries[0].Version,
+		Pricing: model.PricingValues{
+			"billing_setting.billing_mode":         billing_setting.BillingModeTieredExpr,
+			"billing_setting.billing_expr":         `tier("standard", p * 5 + c * 30)`,
+			billing_setting.GroupBillingExprOption: map[string]any{"percall": `tier("image", fixed(0.08)) * image_count`},
+		},
+	}}))
+
+	expr, ok := billing_setting.ResolveGroupBillingExpr("percall", modelName)
+	require.True(t, ok)
+	assert.Equal(t, `tier("image", fixed(0.08)) * image_count`, expr)
+
+	reloaded, err := model.GetModelPricingSnapshot([]string{modelName})
+	require.NoError(t, err)
+	require.Len(t, reloaded.Entries, 1)
+	assert.NotEqual(t, snapshot.Entries[0].Version, reloaded.Entries[0].Version)
+	savedMap, ok := reloaded.Entries[0].Configured[billing_setting.GroupBillingExprOption].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, `tier("image", fixed(0.08)) * image_count`, savedMap["percall"])
+
+	// Verify /api/pricing group filter strips hidden groups without mutating cached map.
+	cached := []model.Pricing{{
+		ModelName:         modelName,
+		EnableGroup:       []string{"default", "percall", "internal"},
+		PriceUnconfigured: true,
+		GroupBillingExprs: map[string]string{
+			"percall":  `tier("image", fixed(0.08)) * image_count`,
+			"internal": `tier("secret", fixed(0.01))`,
+		},
+	}}
+	filtered := filterPricingByUsableGroups(cached, map[string]string{"percall": "Per-image"})
+	require.Len(t, filtered, 1)
+	assert.Equal(t, []string{"percall"}, filtered[0].EnableGroup)
+	assert.Equal(t, map[string]string{"percall": `tier("image", fixed(0.08)) * image_count`}, filtered[0].GroupBillingExprs)
+	assert.False(t, filtered[0].PriceUnconfigured)
+	assert.Contains(t, cached[0].GroupBillingExprs, "internal")
+}
+
+func TestGroupBillingExprRuntimeMultiModeAutoRetryAndAlias(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := modelManagementDB(t, "sqlite", "")
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.Token{}, &model.Option{}, &model.Log{}))
+	previous := config.GlobalConfig.ExportAllConfigs()
+	t.Cleanup(func() { require.NoError(t, config.GlobalConfig.LoadFromDB(previous)) })
+
+	require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{
+		"billing_setting.billing_mode": `{"gpt-image-group-rt":"tiered_expr","gpt-image-group-alias":"tiered_expr"}`,
+		"billing_setting.billing_expr": `{"gpt-image-group-rt":"tier(\"standard\", p * 5 + c * 30)","gpt-image-group-alias":"tier(\"request\", fixed(0.02))"}`,
+		"billing_setting.group_billing_expr": `{"percall::gpt-image-group-rt":"tier(\"image\", fixed(0.08)) * image_count"}`,
+		"group_ratio_setting.group_ratio":    `{"default":1,"percall":1.5}`,
+		"group_ratio_setting.group_group_ratio": `{"vip":{"percall":0.5}}`,
+		"quota_setting.trust_quota_usd":      "0",
+		"quota_setting.pre_consume_multiplier": "1",
+	}))
+
+	// 1. Default group uses token billing; percall group uses fixed * image_count * groupRatio;
+	//    VIP user in percall group multiplies by GroupGroupRatio (0.5).
+	for _, tc := range []struct {
+		name       string
+		modelName  string
+		userGroup  string
+		usingGroup string
+		imageN     uint
+		wantPre    int
+		wantSettle int
+		wantUnit   billingexpr.BillingUnit
+	}{
+		{
+			name:       "default group token billing",
+			modelName:  "gpt-image-group-rt",
+			userGroup:  "default",
+			usingGroup: "default",
+			imageN:     2,
+			wantPre:    2500,   // 1000 * $5 / 1M * 500000 * 1.0
+			wantSettle: 17500,  // (1000*5 + 1000*30) / 1M * 500000 * 1.0
+			wantUnit:   billingexpr.BillingUnitToken,
+		},
+		{
+			name:       "percall group image billing with group ratio",
+			modelName:  "gpt-image-group-rt",
+			userGroup:  "default",
+			usingGroup: "percall",
+			imageN:     2,
+			wantPre:    120000, // 0.08 * 2 * 1.5 * 500000
+			wantSettle: 120000,
+			wantUnit:   billingexpr.BillingUnitRequest,
+		},
+		{
+			name:       "percall group with VIP special group ratio",
+			modelName:  "gpt-image-group-rt",
+			userGroup:  "vip",
+			usingGroup: "percall",
+			imageN:     2,
+			wantPre:    40000, // 0.08 * 2 * 0.5 * 500000
+			wantSettle: 40000,
+			wantUnit:   billingexpr.BillingUnitRequest,
+		},
+		{
+			name:       "alias model stays independent in percall group",
+			modelName:  "gpt-image-group-alias",
+			userGroup:  "default",
+			usingGroup: "percall",
+			imageN:     1,
+			wantPre:    15000, // 0.02 * 1.5 * 500000
+			wantSettle: 15000,
+			wantUnit:   billingexpr.BillingUnitRequest,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+			ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/images/generations", nil)
+			info := &relaycommon.RelayInfo{
+				OriginModelName: tc.modelName,
+				UserGroup:       tc.userGroup,
+				UsingGroup:      tc.usingGroup,
+				Request:         &dto.ImageRequest{Model: tc.modelName, Prompt: "cat", N: common.GetPointer(tc.imageN)},
+			}
+			price, err := helper.ModelPriceHelper(ctx, info, 1000, &types.TokenCountMeta{})
+			require.NoError(t, err)
+			assert.Equal(t, tc.wantPre, price.QuotaToPreConsume)
+			require.NotNil(t, info.TieredBillingSnapshot)
+			assert.Equal(t, tc.wantUnit, info.TieredBillingSnapshot.EstimatedBillingUnit)
+
+			ok, settled, result := service.TryTieredSettle(info, billingexpr.TokenParams{P: 1000, C: 1000, Len: 1000})
+			require.True(t, ok)
+			require.NotNil(t, result)
+			assert.Equal(t, tc.wantSettle, settled)
+			assert.Equal(t, tc.wantUnit, result.BillingUnit)
+		})
+	}
+
+	// 2. Auto-group retry: default (token) -> percall (fixed * image_count) -> default (token).
+	user := model.User{Username: "auto-group-retry-user", Quota: 500000, Group: "default", AffCode: "agr1"}
+	require.NoError(t, db.Create(&user).Error)
+	token := model.Token{UserId: user.Id, Key: "auto-group-retry-token", RemainQuota: 500000}
+	require.NoError(t, db.Create(&token).Error)
+
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/images/generations", nil)
+	ctx.Set("auto_group", "default")
+	ctx.Set("token_quota", token.RemainQuota)
+	info := &relaycommon.RelayInfo{
+		UserId:          user.Id,
+		TokenId:         token.Id,
+		TokenKey:        token.Key,
+		OriginModelName: "gpt-image-group-rt",
+		UserGroup:       "default",
+		UsingGroup:      "default",
+		Request:         &dto.ImageRequest{Model: "gpt-image-group-rt", Prompt: "cat", N: common.GetPointer(uint(2))},
+	}
+	info.UserSetting.BillingPreference = "wallet_only"
+	info.SetEstimatePromptTokens(1000)
+
+	initialPrice, err := helper.ModelPriceHelper(ctx, info, 1000, &types.TokenCountMeta{})
+	require.NoError(t, err)
+	require.Nil(t, service.PreConsumeBilling(ctx, initialPrice.QuotaToPreConsume, info))
+	assert.Equal(t, 2500, info.FinalPreConsumedQuota)
+
+	// Retry falls back to percall group: must rebuild snapshot and top up reservation to 120000.
+	ctx.Set("auto_group", "percall")
+	require.Nil(t, relay.PrepareBillingForSelectedGroup(ctx, info))
+	assert.Equal(t, "percall", info.UsingGroup)
+	assert.Equal(t, 120000, info.FinalPreConsumedQuota)
+	require.NotNil(t, info.TieredBillingSnapshot)
+	assert.Equal(t, billingexpr.BillingUnitRequest, info.TieredBillingSnapshot.EstimatedBillingUnit)
+	require.NotNil(t, info.TieredBillingSnapshot.EstimatedImageCount)
+	assert.Equal(t, 2, *info.TieredBillingSnapshot.EstimatedImageCount)
+
+	// Retry back to default group: snapshot switches back to token billing and settles at 17500, refunding excess.
+	ctx.Set("auto_group", "default")
+	require.Nil(t, relay.PrepareBillingForSelectedGroup(ctx, info))
+	assert.Equal(t, "default", info.UsingGroup)
+	require.NotNil(t, info.TieredBillingSnapshot)
+	assert.Equal(t, billingexpr.BillingUnitToken, info.TieredBillingSnapshot.EstimatedBillingUnit)
+	assert.Nil(t, info.TieredBillingSnapshot.EstimatedImageCount)
+
+	ok, settled, _ := service.TryTieredSettle(info, billingexpr.TokenParams{P: 1000, C: 1000, Len: 1000})
+	require.True(t, ok)
+	assert.Equal(t, 17500, settled)
+	require.NoError(t, info.Billing.Settle(settled))
+	require.NoError(t, db.First(&user, user.Id).Error)
+	assert.Equal(t, 500000-17500, user.Quota)
 }

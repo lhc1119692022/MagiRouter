@@ -70,6 +70,7 @@ var modelPricingOptionKeys = []string{
 	"AudioCompletionRatio", "AudioRatio", "CacheRatio", "CompletionRatio",
 	"CreateCacheRatio", "ImageRatio", "ModelPrice", "ModelRatio",
 	"billing_setting.billing_expr", "billing_setting.billing_mode", billing_setting.PluginBillingExprOption,
+	billing_setting.GroupBillingExprOption,
 }
 
 var modelPricingMutationMu sync.Mutex
@@ -140,6 +141,18 @@ func modelPricingValues(values map[string]map[string]any, name string) PricingVa
 			}
 			continue
 		}
+		if key == billing_setting.GroupBillingExprOption {
+			groupExprs := make(map[string]any)
+			for entryKey, expression := range values[key] {
+				if group, model, ok := billing_setting.SplitGroupBillingExprKey(entryKey); ok && model == name {
+					groupExprs[group] = expression
+				}
+			}
+			if len(groupExprs) > 0 {
+				result[key] = groupExprs
+			}
+			continue
+		}
 		if value, exists := values[key][name]; exists {
 			result[key] = value
 		}
@@ -148,7 +161,7 @@ func modelPricingValues(values map[string]map[string]any, name string) PricingVa
 }
 
 // replaceModelPricing writes one complete model draft into the option maps.
-// Plugin expressions are grouped in the draft and flattened only in storage.
+// Plugin and group expressions are grouped in the draft and flattened only in storage.
 func replaceModelPricing(values map[string]map[string]any, name string, draft PricingValues) {
 	for _, key := range modelPricingOptionKeys {
 		if key == billing_setting.PluginBillingExprOption {
@@ -160,6 +173,18 @@ func replaceModelPricing(values map[string]map[string]any, name string, draft Pr
 			variants, _ := draft[key].(map[string]any)
 			for plugin, expr := range variants {
 				values[key][billing_setting.PluginBillingExprKey(plugin, name)] = expr
+			}
+			continue
+		}
+		if key == billing_setting.GroupBillingExprOption {
+			for entryKey := range values[key] {
+				if _, model, ok := billing_setting.SplitGroupBillingExprKey(entryKey); ok && model == name {
+					delete(values[key], entryKey)
+				}
+			}
+			groupExprs, _ := draft[key].(map[string]any)
+			for group, expr := range groupExprs {
+				values[key][billing_setting.GroupBillingExprKey(group, name)] = expr
 			}
 			continue
 		}
@@ -251,6 +276,13 @@ func GetModelPricingSnapshot(names []string) (*ModelPricingSnapshot, error) {
 			for name := range entries {
 				if key == billing_setting.PluginBillingExprOption {
 					_, model, ok := billing_setting.SplitPluginBillingExprKey(name)
+					if !ok {
+						continue
+					}
+					name = model
+				}
+				if key == billing_setting.GroupBillingExprOption {
+					_, model, ok := billing_setting.SplitGroupBillingExprKey(name)
 					if !ok {
 						continue
 					}
@@ -490,7 +522,16 @@ func ValidateModelPricing(name string, values PricingValues) error {
 			variants[plugin] = expression
 		}
 	}
-	previous := PricingValues{billing_setting.PluginBillingExprOption: variants}
+	groupExprs := make(map[string]any)
+	for key, expression := range billing_setting.GetGroupBillingExprCopy() {
+		if group, model, ok := billing_setting.SplitGroupBillingExprKey(key); ok && model == name {
+			groupExprs[group] = expression
+		}
+	}
+	previous := PricingValues{
+		billing_setting.PluginBillingExprOption: variants,
+		billing_setting.GroupBillingExprOption:  groupExprs,
+	}
 	if expression, ok := billing_setting.GetBillingExpr(name); ok {
 		previous["billing_setting.billing_expr"] = expression
 	}
@@ -535,8 +576,32 @@ func validateModelPricing(name string, values, previous PricingValues) error {
 			}
 		}
 	}
+	previousGroupExprs, _ := previous[billing_setting.GroupBillingExprOption].(map[string]any)
+	if value, exists := values[billing_setting.GroupBillingExprOption]; exists {
+		groupExprs, ok := value.(map[string]any)
+		if !ok || groupExprs == nil {
+			return errors.New("group billing expressions must be a group-to-expression object")
+		}
+		for group, rawExpr := range groupExprs {
+			if !billing_setting.ValidBillingGroupName(group) {
+				return fmt.Errorf("model %s: invalid billing group name: %s", name, group)
+			}
+			expression, ok := rawExpr.(string)
+			if !ok || strings.TrimSpace(expression) == "" {
+				return fmt.Errorf("model %s: group %s: billing expression is required", name, group)
+			}
+			if _, err := billingexpr.CompileFromCache(expression); err != nil {
+				return fmt.Errorf("model %s: group %s: %w", name, group, err)
+			}
+			if previousGroupExprs[group] != expression {
+				if err := billing_setting.SmokeTestExpr(expression); err != nil {
+					return fmt.Errorf("model %s: group %s: %w", name, group, err)
+				}
+			}
+		}
+	}
 	for key, value := range values {
-		if key == billing_setting.PluginBillingExprOption {
+		if key == billing_setting.PluginBillingExprOption || key == billing_setting.GroupBillingExprOption {
 			continue
 		}
 		if !IsModelPricingOption(key) {
@@ -684,6 +749,13 @@ func UpdateModelPricingOptions(updates map[string]string) error {
 						_, model, ok := billing_setting.SplitPluginBillingExprKey(name)
 						if !ok {
 							return fmt.Errorf("invalid plugin billing expression key: %s", name)
+						}
+						name = model
+					}
+					if key == billing_setting.GroupBillingExprOption {
+						_, model, ok := billing_setting.SplitGroupBillingExprKey(name)
+						if !ok {
+							return fmt.Errorf("invalid group billing expression key: %s", name)
 						}
 						name = model
 					}

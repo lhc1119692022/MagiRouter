@@ -53,6 +53,7 @@ type Pricing struct {
 	SupportedEndpointTypes []constant.EndpointType              `json:"supported_endpoint_types"`
 	BillingMode            string                               `json:"billing_mode,omitempty"`
 	BillingExpr            string                               `json:"billing_expr,omitempty"`
+	GroupBillingExprs      map[string]string                    `json:"group_billing_exprs,omitempty"`
 	BillingUsageSchema     map[string]jsplugin.UsageFieldSchema `json:"billing_usage_schema,omitempty"`
 	BillingUsageExamples   []jsplugin.UsageExample              `json:"billing_usage_examples,omitempty"`
 	PricingVersion         string                               `json:"pricing_version,omitempty"`
@@ -443,6 +444,18 @@ func updatePricing() {
 					pricing.BillingExpr = expr
 				}
 			}
+		}
+		groupExprs := billing_setting.GetGroupBillingExprsForModel(priceName)
+		if priceName != model {
+			for group, expr := range billing_setting.GetGroupBillingExprsForModel(model) {
+				if groupExprs == nil {
+					groupExprs = make(map[string]string)
+				}
+				groupExprs[group] = expr
+			}
+		}
+		if len(groupExprs) > 0 {
+			pricing.GroupBillingExprs = groupExprs
 		}
 		usageModel := model
 		plugin, ok := pluginGeneration.GetByModel(model)

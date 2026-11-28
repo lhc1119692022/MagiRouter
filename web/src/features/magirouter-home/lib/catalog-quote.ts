@@ -1,5 +1,6 @@
 import { EXCLUDED_GROUPS } from '@/features/pricing/constants'
 import { getDynamicPricingSummary } from '@/features/pricing/lib/dynamic-price'
+import { withGroupPricing } from '@/features/pricing/lib/group-pricing'
 import { isTokenBasedModel } from '@/features/pricing/lib/model-helpers'
 import { calculateTokenPrice } from '@/features/pricing/lib/price'
 import type { PricingModel } from '@/features/pricing/types'
@@ -273,24 +274,17 @@ export function buildBillingComparisonData(
   ratios: Record<string, number>,
   limitPerGroup = 4
 ): BillingComparisonData {
-  const basePricesByModel = new Map<string, BaseTokenPrices>()
-  const eligibleModels: PricingModel[] = []
-  for (const model of models) {
-    const basePrices = resolveBaseTokenPrices(model)
-    if (!basePrices) continue
-    basePricesByModel.set(model.model_name, basePrices)
-    eligibleModels.push(model)
-  }
+  const basePricesByGroupModel = new Map<string, BaseTokenPrices>()
   const groupBuckets = new Map<string, PricingModel[]>()
   const resolvedRatios = new Map<string, number>()
 
-  for (const model of eligibleModels) {
-    const basePrices = basePricesByModel.get(model.model_name)
-    if (!basePrices) continue
+  for (const model of models) {
     for (const group of model.enable_groups ?? []) {
       if (EXCLUDED_GROUPS.includes(group) || !Object.hasOwn(usable, group)) {
         continue
       }
+      const basePrices = resolveBaseTokenPrices(withGroupPricing(model, group))
+      if (!basePrices) continue
       const hasExplicitRatio = Object.hasOwn(ratios, group)
       const ratio = hasExplicitRatio ? ratios[group] : 1
       if (!isFiniteNonNegative(ratio)) {
@@ -298,6 +292,7 @@ export function buildBillingComparisonData(
       }
       const inputUsd = basePrices.inputUsd * ratio
       if (!Number.isFinite(inputUsd)) continue
+      basePricesByGroupModel.set(`${group}::${model.model_name}`, basePrices)
       const bucket = groupBuckets.get(group) ?? []
       bucket.push(model)
       groupBuckets.set(group, bucket)
@@ -332,7 +327,9 @@ export function buildBillingComparisonData(
       limitPerGroup
     )
     rowsByGroup[group.name] = candidates.map((model) => {
-      const basePrices = basePricesByModel.get(model.model_name)
+      const basePrices = basePricesByGroupModel.get(
+        `${group.name}::${model.model_name}`
+      )
       const baseInputUsd = basePrices?.inputUsd ?? 0
       const baseOutputUsd = basePrices?.outputUsd ?? 0
       const officialCacheUsd = basePrices?.cacheUsd ?? null

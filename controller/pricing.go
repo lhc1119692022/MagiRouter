@@ -38,6 +38,34 @@ func filterPricingByUsableGroups(pricing []model.Pricing, usableGroup map[string
 		}
 		if len(groups) > 0 {
 			item.EnableGroup = groups
+			if len(item.GroupBillingExprs) > 0 {
+				visibleGroupExprs := make(map[string]string)
+				for _, group := range groups {
+					if expr, ok := item.GroupBillingExprs[group]; ok && strings.TrimSpace(expr) != "" {
+						visibleGroupExprs[group] = expr
+					}
+				}
+				if len(visibleGroupExprs) > 0 {
+					item.GroupBillingExprs = visibleGroupExprs
+					if item.PriceUnconfigured {
+						allCovered := true
+						for _, group := range groups {
+							if group == "auto" || group == "all" {
+								continue
+							}
+							if _, ok := visibleGroupExprs[group]; !ok {
+								allCovered = false
+								break
+							}
+						}
+						if allCovered {
+							item.PriceUnconfigured = false
+						}
+					}
+				} else {
+					item.GroupBillingExprs = nil
+				}
+			}
 			filtered = append(filtered, item)
 		}
 	}

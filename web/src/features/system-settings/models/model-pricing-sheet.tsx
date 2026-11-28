@@ -61,6 +61,7 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { getGroups } from '@/features/channels/api'
 import {
   previewModelPricing,
   previewModelPricingConversion,
@@ -80,6 +81,10 @@ import {
 import { PricingCurrencySelector } from '@/features/model-pricing/pricing-currency-selector'
 import { usePricingData } from '@/features/pricing/hooks/use-pricing-data'
 import { combineBillingExpr } from '@/features/pricing/lib/billing-expr'
+import {
+  groupExpressionsEqual,
+  isValidBillingGroupName,
+} from '@/features/pricing/lib/group-pricing'
 import { pluginExpressionsEqual } from '@/features/pricing/lib/plugin-pricing'
 import {
   createDefaultTaskVisualConfig,
@@ -88,10 +93,12 @@ import {
 import type { BillingUsageSchema } from '@/features/pricing/types'
 import { useDebounce } from '@/hooks/use-debounce'
 import { handleServerError } from '@/lib/handle-server-error'
+import { requireServerSuccess } from '@/lib/server-error-message'
 import { cn } from '@/lib/utils'
 import { usePricingPreferencesStore } from '@/stores/pricing-preferences-store'
 import { useSystemConfigStore } from '@/stores/system-config-store'
 
+import { GroupPricingEditor } from './group-pricing-editor'
 import {
   EMPTY_LANE_ENABLED,
   EMPTY_LANE_PRICES,
@@ -241,6 +248,9 @@ export const ModelPricingEditorPanel = forwardRef<
   const [pluginExpressions, setPluginExpressions] = useState<
     Record<string, string>
   >({})
+  const [groupExpressions, setGroupExpressions] = useState<
+    Record<string, string>
+  >({})
   const [editorReloadToken, setEditorReloadToken] = useState(0)
   const [ordinaryPricingModel, setOrdinaryPricingModel] = useState<
     string | null
@@ -266,7 +276,32 @@ export const ModelPricingEditorPanel = forwardRef<
   const initialBillingExpr =
     editData?.billingExpr ||
     (initialPricingMode === 'tiered_expr' ? DEFAULT_TOKEN_BILLING_EXPR : '')
-  const { models: pricingModels } = usePricingData()
+  const { models: pricingModels, groupRatio } = usePricingData()
+  const billingGroupsQuery = useQuery({
+    queryKey: ['billing-groups'],
+    queryFn: async () => requireServerSuccess(await getGroups()),
+    retry: false,
+    refetchOnWindowFocus: false,
+    meta: { errorToast: false },
+  })
+  const availableBillingGroups = useMemo(() => {
+    const names = new Set<string>()
+    const fetchedGroups = billingGroupsQuery.data?.data
+    if (Array.isArray(fetchedGroups)) {
+      for (const group of fetchedGroups) {
+        if (typeof group === 'string' && isValidBillingGroupName(group)) {
+          names.add(group)
+        }
+      }
+    }
+    for (const group of Object.keys(groupRatio ?? {})) {
+      if (isValidBillingGroupName(group)) names.add(group)
+    }
+    for (const group of Object.keys(groupExpressions)) {
+      if (isValidBillingGroupName(group)) names.add(group)
+    }
+    return [...names].sort((left, right) => left.localeCompare(right))
+  }, [billingGroupsQuery.data, groupRatio, groupExpressions])
 
   const form = useForm<ModelPricingFormValues>({
     resolver: zodResolver(createModelPricingSchema(t)),
@@ -361,6 +396,7 @@ export const ModelPricingEditorPanel = forwardRef<
     conversionGeneration.current += 1
     setConversionReason('')
     setPluginExpressions(editData?.pluginBillingExpr ?? {})
+    setGroupExpressions(editData?.groupBillingExpr ?? {})
     setOrdinaryPricingModel(null)
     setWasConverted(false)
     setConversionPreview(null)
@@ -424,7 +460,11 @@ export const ModelPricingEditorPanel = forwardRef<
         pricingMode !== initialPricingMode ||
         billingExpr !== initialBillingExpr ||
         requestRuleExpr !== (editData?.requestRuleExpr ?? '') ||
-        !pluginExpressionsEqual(pluginExpressions, editData?.pluginBillingExpr)
+        !pluginExpressionsEqual(
+          pluginExpressions,
+          editData?.pluginBillingExpr
+        ) ||
+        !groupExpressionsEqual(groupExpressions, editData?.groupBillingExpr)
     )
   }, [
     onDirtyChange,
@@ -436,6 +476,7 @@ export const ModelPricingEditorPanel = forwardRef<
     initialPricingMode,
     initialBillingExpr,
     pluginExpressions,
+    groupExpressions,
   ])
 
   const setFormValue = (field: keyof ModelPricingFormValues, value: string) => {
@@ -695,6 +736,9 @@ export const ModelPricingEditorPanel = forwardRef<
         Object.keys(pluginExpressions).length
           ? { pluginBillingExpr: pluginExpressions }
           : {}),
+        ...(editData?.groupBillingExpr || Object.keys(groupExpressions).length
+          ? { groupBillingExpr: groupExpressions }
+          : {}),
         billingMode: pricingMode,
         price: values.price || '',
         ratio: values.ratio || '',
@@ -718,6 +762,7 @@ export const ModelPricingEditorPanel = forwardRef<
       requestRuleExpr,
       resolvedBillingExpr,
       pluginExpressions,
+      groupExpressions,
       editData,
       pluginVariants,
     ]
@@ -963,224 +1008,248 @@ export const ModelPricingEditorPanel = forwardRef<
                   ordinaryPricing={!usesTaskPricing}
                   onConfigureOrdinaryPricing={configureOrdinaryPricing}
                 >
-                  <Tabs
-                    key={editorReloadToken}
-                    value={pricingMode}
-                    onValueChange={handleModeChange}
-                    className='gap-4'
+                  <GroupPricingEditor
+                    key={`${editorReloadToken}:group:${watchedValues.name}`}
+                    modelName={watchedValues.name}
+                    groups={availableBillingGroups}
+                    groupRatio={groupRatio ?? {}}
+                    expressions={groupExpressions}
+                    onChange={setGroupExpressions}
+                    defaultExpression={
+                      pricingMode === 'tiered_expr'
+                        ? combineBillingExpr(
+                            resolvedBillingExpr,
+                            requestRuleExpr
+                          )
+                        : ''
+                    }
+                    currency={currency}
                   >
-                    <TabsList className='w-full flex-wrap group-data-horizontal/tabs:h-auto'>
-                      <TabsTrigger value='tiered_expr'>
-                        {t('Expression')}
-                      </TabsTrigger>
-                      <TabsTrigger value='per-token'>
-                        {t('Per-token (deprecated)')}
-                      </TabsTrigger>
-                      <TabsTrigger value='per-request'>
-                        {t('Per-request (deprecated)')}
-                      </TabsTrigger>
-                    </TabsList>
+                    <Tabs
+                      key={editorReloadToken}
+                      value={pricingMode}
+                      onValueChange={handleModeChange}
+                      className='gap-4'
+                    >
+                      <TabsList className='w-full flex-wrap group-data-horizontal/tabs:h-auto'>
+                        <TabsTrigger value='tiered_expr'>
+                          {t('Expression')}
+                        </TabsTrigger>
+                        <TabsTrigger value='per-token'>
+                          {t('Per-token (deprecated)')}
+                        </TabsTrigger>
+                        <TabsTrigger value='per-request'>
+                          {t('Per-request (deprecated)')}
+                        </TabsTrigger>
+                      </TabsList>
 
-                    {pricingMode !== 'tiered_expr' && (
-                      <Alert className='border-amber-500/40 bg-amber-500/10 p-4 text-amber-900 dark:text-amber-100'>
-                        <AlertTriangle aria-hidden='true' className='size-5' />
-                        <AlertDescription className='space-y-3 text-sm text-inherit'>
-                          <p className='font-medium'>
-                            {t(
-                              'Legacy pricing is deprecated. Convert the current prices to an expression draft, then save to apply it.'
-                            )}
-                          </p>
-                          <Button
-                            type='button'
-                            className='w-full sm:w-auto'
-                            disabled={
-                              conversion.isPending ||
-                              Boolean(billingExpr.trim())
-                            }
-                            onClick={() => void convertPricing()}
-                          >
-                            {conversion.isPending
-                              ? t('Preparing conversion...')
-                              : t('Convert to expression')}
-                          </Button>
-                          {billingExpr.trim() && (
-                            <p>
+                      {pricingMode !== 'tiered_expr' && (
+                        <Alert className='border-amber-500/40 bg-amber-500/10 p-4 text-amber-900 dark:text-amber-100'>
+                          <AlertTriangle
+                            aria-hidden='true'
+                            className='size-5'
+                          />
+                          <AlertDescription className='space-y-3 text-sm text-inherit'>
+                            <p className='font-medium'>
                               {t(
-                                'An expression draft already exists. Open the Expression tab to keep editing it.'
+                                'Legacy pricing is deprecated. Convert the current prices to an expression draft, then save to apply it.'
                               )}
                             </p>
+                            <Button
+                              type='button'
+                              className='w-full sm:w-auto'
+                              disabled={
+                                conversion.isPending ||
+                                Boolean(billingExpr.trim())
+                              }
+                              onClick={() => void convertPricing()}
+                            >
+                              {conversion.isPending
+                                ? t('Preparing conversion...')
+                                : t('Convert to expression')}
+                            </Button>
+                            {billingExpr.trim() && (
+                              <p>
+                                {t(
+                                  'An expression draft already exists. Open the Expression tab to keep editing it.'
+                                )}
+                              </p>
+                            )}
+                            {conversionReason && (
+                              <p role='status'>{t(conversionReason)}</p>
+                            )}
+                          </AlertDescription>
+                        </Alert>
+                      )}
+                      {(pricingMode !== 'tiered_expr' || wasConverted) && (
+                        <p className='text-muted-foreground text-xs'>
+                          {t(
+                            'After conversion, expression reservation and rounding rules apply. Effective unit prices are preserved; individual rounded charges may differ.'
                           )}
-                          {conversionReason && (
-                            <p role='status'>{t(conversionReason)}</p>
-                          )}
-                        </AlertDescription>
-                      </Alert>
-                    )}
-                    {(pricingMode !== 'tiered_expr' || wasConverted) && (
-                      <p className='text-muted-foreground text-xs'>
-                        {t(
-                          'After conversion, expression reservation and rounding rules apply. Effective unit prices are preserved; individual rounded charges may differ.'
-                        )}
-                      </p>
-                    )}
+                        </p>
+                      )}
 
-                    <TabsContent
-                      value='per-token'
-                      className='@container/pricing-fields min-w-0 pt-0'
-                    >
-                      {taskUsageSchema &&
-                        Object.keys(taskUsageSchema).length > 0 && (
-                          <Alert className='mb-4'>
-                            <AlertDescription className='flex flex-col gap-3 text-xs'>
-                              <p>
-                                {t(
-                                  'This is a task model billed by usage (e.g. seconds, resolution). Prices entered here act as a per-call base rate, not per-token prices.'
-                                )}
-                              </p>
-                              <p>
-                                {t(
-                                  'Tip: after configuring one model, select others in the table and use bulk copy.'
-                                )}
-                              </p>
-                              <Button
-                                type='button'
-                                variant='outline'
-                                size='sm'
-                                className='w-fit'
-                                onClick={() => handleModeChange('tiered_expr')}
-                              >
-                                {t('Configure task pricing')}
-                              </Button>
-                            </AlertDescription>
-                          </Alert>
-                        )}
-                      <p className='text-muted-foreground mb-3 text-xs'>
-                        {embedded && (
-                          <>
-                            {t('{{currency}} price per 1M tokens.', {
-                              currency: currency.label,
-                            })}{' '}
-                          </>
-                        )}
-                        {t(
-                          'Unset legacy prices use the billing engine defaults.'
-                        )}
-                      </p>
-                      <div
-                        className={cn(
-                          'grid min-w-0 gap-3',
-                          embedded && '@min-[560px]/pricing-fields:grid-cols-2'
-                        )}
+                      <TabsContent
+                        value='per-token'
+                        className='@container/pricing-fields min-w-0 pt-0'
                       >
-                        <Field
+                        {taskUsageSchema &&
+                          Object.keys(taskUsageSchema).length > 0 && (
+                            <Alert className='mb-4'>
+                              <AlertDescription className='flex flex-col gap-3 text-xs'>
+                                <p>
+                                  {t(
+                                    'This is a task model billed by usage (e.g. seconds, resolution). Prices entered here act as a per-call base rate, not per-token prices.'
+                                  )}
+                                </p>
+                                <p>
+                                  {t(
+                                    'Tip: after configuring one model, select others in the table and use bulk copy.'
+                                  )}
+                                </p>
+                                <Button
+                                  type='button'
+                                  variant='outline'
+                                  size='sm'
+                                  className='w-fit'
+                                  onClick={() =>
+                                    handleModeChange('tiered_expr')
+                                  }
+                                >
+                                  {t('Configure task pricing')}
+                                </Button>
+                              </AlertDescription>
+                            </Alert>
+                          )}
+                        <p className='text-muted-foreground mb-3 text-xs'>
+                          {embedded && (
+                            <>
+                              {t('{{currency}} price per 1M tokens.', {
+                                currency: currency.label,
+                              })}{' '}
+                            </>
+                          )}
+                          {t(
+                            'Unset legacy prices use the billing engine defaults.'
+                          )}
+                        </p>
+                        <div
                           className={cn(
-                            'min-w-0',
-                            embedded && 'rounded-lg border p-3'
+                            'grid min-w-0 gap-3',
+                            embedded &&
+                              '@min-[560px]/pricing-fields:grid-cols-2'
                           )}
                         >
-                          <FieldLabel htmlFor={promptPriceId}>
-                            {t('Input price')}
-                          </FieldLabel>
-                          <FieldDescription
-                            id={`${promptPriceId}-description`}
-                            className={embedded ? 'text-xs' : undefined}
+                          <Field
+                            className={cn(
+                              'min-w-0',
+                              embedded && 'rounded-lg border p-3'
+                            )}
                           >
-                            {t('{{currency}} price per 1M input tokens.', {
-                              currency: currency.label,
-                            })}
-                          </FieldDescription>
-                          <PriceInput
-                            currency={currency}
-                            id={promptPriceId}
-                            aria-describedby={`${promptPriceId}-description`}
-                            value={promptPrice}
-                            placeholder='3'
-                            onChange={handlePromptPriceChange}
-                          />
-                        </Field>
-
-                        {laneConfigs.map((lane) => {
-                          const disabled =
-                            lane.key === 'audioOutput' &&
-                            (!laneEnabled.audioInput ||
-                              !hasValue(lanePrices.audioInput))
-                          return (
-                            <PriceLane
+                            <FieldLabel htmlFor={promptPriceId}>
+                              {t('Input price')}
+                            </FieldLabel>
+                            <FieldDescription
+                              id={`${promptPriceId}-description`}
+                              className={embedded ? 'text-xs' : undefined}
+                            >
+                              {t('{{currency}} price per 1M input tokens.', {
+                                currency: currency.label,
+                              })}
+                            </FieldDescription>
+                            <PriceInput
                               currency={currency}
-                              key={lane.key}
-                              compact={embedded}
-                              title={t(lane.titleKey)}
-                              description={t(lane.descriptionKey)}
-                              placeholder={lane.placeholder}
-                              value={lanePrices[lane.key]}
-                              enabled={laneEnabled[lane.key]}
-                              disabled={disabled}
-                              disabledReason={
-                                disabled
-                                  ? t(
-                                      'Audio output price requires an audio input price.'
-                                    )
-                                  : undefined
-                              }
-                              onEnabledChange={(checked) =>
-                                handleLaneToggle(lane.key, checked)
-                              }
-                              onChange={(value) =>
-                                handleLanePriceChange(lane.key, value)
-                              }
+                              id={promptPriceId}
+                              aria-describedby={`${promptPriceId}-description`}
+                              value={promptPrice}
+                              placeholder='3'
+                              onChange={handlePromptPriceChange}
                             />
-                          )
-                        })}
-                      </div>
-                    </TabsContent>
+                          </Field>
 
-                    <TabsContent value='per-request' className='pt-0'>
-                      <FieldGroup className='gap-5'>
-                        <FormField
-                          control={form.control}
-                          name='price'
-                          render={({ field }) => (
-                            <FormItem className='contents'>
-                              <Field>
-                                <FormLabel>{t('Fixed price')}</FormLabel>
-                                <InputGroup className='has-[[data-pricing-error]]:h-auto has-[[data-pricing-error]]:flex-wrap'>
-                                  <InputGroupAddon>
-                                    {currency.symbol}
-                                  </InputGroupAddon>
-                                  <FormControl>
-                                    <PricingAmountInput
-                                      {...field}
-                                      value={field.value ?? ''}
-                                      currency={currency}
-                                      grouped
-                                      placeholder='0.01'
-                                      onChange={field.onChange}
-                                    />
-                                  </FormControl>
-                                  <InputGroupAddon align='inline-end'>
-                                    {t('per request')}
-                                  </InputGroupAddon>
-                                </InputGroup>
-                                <FormDescription>
-                                  {t(
-                                    'Cost in {{currency}} per request, regardless of tokens used.',
-                                    { currency: currency.label }
-                                  )}
-                                </FormDescription>
-                                <FormMessage />
-                              </Field>
-                            </FormItem>
-                          )}
-                        />
-                      </FieldGroup>
-                    </TabsContent>
+                          {laneConfigs.map((lane) => {
+                            const disabled =
+                              lane.key === 'audioOutput' &&
+                              (!laneEnabled.audioInput ||
+                                !hasValue(lanePrices.audioInput))
+                            return (
+                              <PriceLane
+                                currency={currency}
+                                key={lane.key}
+                                compact={embedded}
+                                title={t(lane.titleKey)}
+                                description={t(lane.descriptionKey)}
+                                placeholder={lane.placeholder}
+                                value={lanePrices[lane.key]}
+                                enabled={laneEnabled[lane.key]}
+                                disabled={disabled}
+                                disabledReason={
+                                  disabled
+                                    ? t(
+                                        'Audio output price requires an audio input price.'
+                                      )
+                                    : undefined
+                                }
+                                onEnabledChange={(checked) =>
+                                  handleLaneToggle(lane.key, checked)
+                                }
+                                onChange={(value) =>
+                                  handleLanePriceChange(lane.key, value)
+                                }
+                              />
+                            )
+                          })}
+                        </div>
+                      </TabsContent>
 
-                    <TabsContent value='tiered_expr' className='pt-0'>
-                      <FieldGroup className='gap-5'>
-                        {expressionEditor}
-                      </FieldGroup>
-                    </TabsContent>
-                  </Tabs>
+                      <TabsContent value='per-request' className='pt-0'>
+                        <FieldGroup className='gap-5'>
+                          <FormField
+                            control={form.control}
+                            name='price'
+                            render={({ field }) => (
+                              <FormItem className='contents'>
+                                <Field>
+                                  <FormLabel>{t('Fixed price')}</FormLabel>
+                                  <InputGroup className='has-[[data-pricing-error]]:h-auto has-[[data-pricing-error]]:flex-wrap'>
+                                    <InputGroupAddon>
+                                      {currency.symbol}
+                                    </InputGroupAddon>
+                                    <FormControl>
+                                      <PricingAmountInput
+                                        {...field}
+                                        value={field.value ?? ''}
+                                        currency={currency}
+                                        grouped
+                                        placeholder='0.01'
+                                        onChange={field.onChange}
+                                      />
+                                    </FormControl>
+                                    <InputGroupAddon align='inline-end'>
+                                      {t('per request')}
+                                    </InputGroupAddon>
+                                  </InputGroup>
+                                  <FormDescription>
+                                    {t(
+                                      'Cost in {{currency}} per request, regardless of tokens used.',
+                                      { currency: currency.label }
+                                    )}
+                                  </FormDescription>
+                                  <FormMessage />
+                                </Field>
+                              </FormItem>
+                            )}
+                          />
+                        </FieldGroup>
+                      </TabsContent>
+
+                      <TabsContent value='tiered_expr' className='pt-0'>
+                        <FieldGroup className='gap-5'>
+                          {expressionEditor}
+                        </FieldGroup>
+                      </TabsContent>
+                    </Tabs>
+                  </GroupPricingEditor>
                 </TaskPluginPricingEditor>
               </FieldGroup>
 

@@ -235,4 +235,44 @@ describe('Playground price comparison', () => {
       /^[¥￥]14 \/ [¥￥]42$/
     )
   })
+
+  it('quotes per-group billing override for the selected group while preserving default group billing', () => {
+    const multiGroupModel = {
+      ...model,
+      billing_mode: 'tiered_expr',
+      billing_expr: 'tier("standard", p * 4 + c * 12)',
+      group_billing_exprs: {
+        percall: 'tier("image", fixed(0.1)) * image_count',
+      },
+      enable_groups: ['standard', 'percall'],
+    }
+    const extendedGroups = [
+      ...groups,
+      { value: 'percall', label: 'Per image', ratio: 1.5 },
+    ]
+    const { rerender } = render(
+      <PlaygroundPriceQuote
+        compact
+        model={multiGroupModel}
+        group='standard'
+        groups={extendedGroups}
+      />
+    )
+    expect(screen.getByLabelText('Reference price')).toHaveTextContent(
+      /Input [¥￥]14 · Output [¥￥]42 \/ 1M token/
+    )
+
+    rerender(
+      <PlaygroundPriceQuote
+        compact
+        model={multiGroupModel}
+        group='percall'
+        groups={extendedGroups}
+      />
+    )
+    // 0.1 USD * 1.5 group ratio * 7 CNY/USD = ¥1.05 / image
+    expect(screen.getByLabelText('Reference price')).toHaveTextContent(
+      /[¥￥]1\.05 \/ image/
+    )
+  })
 })

@@ -2,6 +2,7 @@ package service
 
 import (
 	"crypto/tls"
+	"io"
 	"net/http"
 	"strings"
 	"sync"
@@ -16,6 +17,7 @@ import (
 // transports so each origin can keep N reusable HTTP/2 connections.
 type shardedRoundTripper struct {
 	shards   []http.RoundTripper
+	inFlight []atomic.Int64
 	n        uint32
 	policy   HTTPTransportPolicy
 	counters sync.Map // origin -> *atomic.Uint32
@@ -31,9 +33,10 @@ func newShardedRoundTripper(policy HTTPTransportPolicy, factory func() *http.Tra
 		shards[i] = transport
 	}
 	return &shardedRoundTripper{
-		shards: shards,
-		n:      uint32(n),
-		policy: policy,
+		shards:   shards,
+		inFlight: make([]atomic.Int64, n),
+		n:        uint32(n),
+		policy:   policy,
 	}
 }
 
@@ -50,13 +53,62 @@ func (s *shardedRoundTripper) pickShard(origin string) uint32 {
 	}
 	counterAny, _ := s.counters.LoadOrStore(origin, &atomic.Uint32{})
 	counter := counterAny.(*atomic.Uint32)
-	return (counter.Add(1) - 1) % s.n
+	start := (counter.Add(1) - 1) % s.n
+	if len(s.inFlight) < int(s.n) {
+		return start
+	}
+	bestIdx := start
+	bestLoad := s.inFlight[start].Load()
+	for offset := uint32(1); offset < s.n; offset++ {
+		candidate := (start + offset) % s.n
+		if load := s.inFlight[candidate].Load(); load < bestLoad {
+			bestLoad = load
+			bestIdx = candidate
+			if bestLoad == 0 {
+				break
+			}
+		}
+	}
+	return bestIdx
+}
+
+type shardInFlightBody struct {
+	io.ReadCloser
+	counter *atomic.Int64
+	once    sync.Once
+}
+
+func (b *shardInFlightBody) Close() error {
+	err := b.ReadCloser.Close()
+	b.once.Do(func() {
+		if b.counter.Add(-1) < 0 {
+			b.counter.Store(0)
+		}
+	})
+	return err
 }
 
 func (s *shardedRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	origin := originKey(req)
 	idx := s.pickShard(origin)
+	var counter *atomic.Int64
+	if int(idx) < len(s.inFlight) {
+		counter = &s.inFlight[idx]
+		counter.Add(1)
+	}
 	resp, err := s.shards[idx].RoundTrip(req)
+	if counter != nil {
+		if err != nil || resp == nil || resp.Body == nil {
+			if counter.Add(-1) < 0 {
+				counter.Store(0)
+			}
+		} else {
+			resp.Body = &shardInFlightBody{
+				ReadCloser: resp.Body,
+				counter:    counter,
+			}
+		}
+	}
 	if common.DebugEnabled {
 		proto := ""
 		if resp != nil {

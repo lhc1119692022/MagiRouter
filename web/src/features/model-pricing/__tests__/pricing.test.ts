@@ -250,3 +250,63 @@ it('commits source provider edits while preserving target providers during batch
     'beta::target': '2',
   })
 })
+
+it('round-trips per-group billing overrides through pricing changes and retains them during sync', () => {
+  const key = 'billing_setting.group_billing_expr'
+  const before = pricingOptions({
+    'billing_setting.billing_mode': JSON.stringify({
+      'gpt-image-2.6': 'tiered_expr',
+    }),
+    'billing_setting.billing_expr': JSON.stringify({
+      'gpt-image-2.6': 'tier("standard", p * 5 + c * 30)',
+    }),
+    [key]: JSON.stringify({
+      'percall::gpt-image-2.6': 'tier("image", fixed(0.08)) * image_count',
+    }),
+  })
+  const snapshot: ModelPricingConfig = {
+    entries: [
+      {
+        model_name: 'gpt-image-2.6',
+        version: 'v1',
+        configured: {
+          'billing_setting.billing_mode': 'tiered_expr',
+          'billing_setting.billing_expr': 'tier("standard", p * 5 + c * 30)',
+          [key]: { percall: 'tier("image", fixed(0.08)) * image_count' },
+        },
+        effective: {
+          'billing_setting.billing_mode': 'tiered_expr',
+          'billing_setting.billing_expr': 'tier("standard", p * 5 + c * 30)',
+          [key]: { percall: 'tier("image", fixed(0.08)) * image_count' },
+        },
+      },
+    ],
+    options: before,
+    empty_version: 'empty',
+  }
+  const after = {
+    ...before,
+    [key]: JSON.stringify({
+      'percall::gpt-image-2.6': 'tier("image", fixed(0.1)) * image_count',
+    }),
+  }
+  expect(buildPricingChanges(snapshot, before, after)).toEqual([
+    {
+      model_name: 'gpt-image-2.6',
+      expected_version: 'v1',
+      pricing: {
+        'billing_setting.billing_mode': 'tiered_expr',
+        'billing_setting.billing_expr': 'tier("standard", p * 5 + c * 30)',
+        [key]: { percall: 'tier("image", fixed(0.1)) * image_count' },
+      },
+    },
+  ])
+  const draft = pricingRow('gpt-image-2.6', snapshot.entries[0].configured)
+  expect(pricingFromDraft(draft)[key]).toEqual({
+    percall: 'tier("image", fixed(0.08)) * image_count',
+  })
+  const synced = applyPriceSyncSelections(before, {
+    'gpt-image-2.6': { billing_expr: 'tier("standard", p * 6 + c * 30)' },
+  })
+  expect(synced[key]).toEqual(before[key])
+})

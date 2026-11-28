@@ -321,6 +321,7 @@ export interface GroupChannelProbeSummary {
   tested_model: string
   success: boolean
   latency_ms: number
+  median_latency_ms?: number
   recent_samples: number
   recent_success_rate: number
   recent_models?: string[]

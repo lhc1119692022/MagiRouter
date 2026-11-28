@@ -16,6 +16,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
+	channelrouting "github.com/QuantumNous/new-api/pkg/channel_routing"
 	"github.com/QuantumNous/new-api/pkg/jsplugin"
 	relaychannel "github.com/QuantumNous/new-api/relay/channel"
 	"github.com/QuantumNous/new-api/relay/channel/ollama"
@@ -72,6 +73,9 @@ func parseStatusFilter(statusParam string) int {
 
 func clearChannelInfo(channel *model.Channel) {
 	channel.BalanceDetail = channel.GetBalanceDetail()
+	if snap, ok := channelrouting.GetSnapshot(channel.Id); ok {
+		channel.RuntimeMetrics = &snap
+	}
 	if channel.ChannelInfo.IsMultiKey {
 		channel.ChannelInfo.MultiKeyDisabledReason = nil
 		channel.ChannelInfo.MultiKeyDisabledTime = nil

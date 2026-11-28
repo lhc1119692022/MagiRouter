@@ -22,11 +22,13 @@ import { toast } from 'sonner'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { ErrorState } from '@/components/error-state'
+import { GroupBadge } from '@/components/group-badge'
 import { LoadingState } from '@/components/loading-state'
 import { Button } from '@/components/ui/button'
 import { DynamicPricingBreakdown } from '@/features/pricing/components/dynamic-pricing-breakdown'
 import { ModelPriceCell } from '@/features/pricing/components/model-price-cell'
 import { isDynamicPricingModel } from '@/features/pricing/lib/dynamic-price'
+import { withGroupPricing } from '@/features/pricing/lib/group-pricing'
 import {
   buildPreviewRows,
   createInitialLaneState,
@@ -229,6 +231,36 @@ export function ModelPricingPanel(props: {
                   </dl>
                 )
               )}
+              {effectivePricing.group_billing_exprs &&
+                Object.keys(effectivePricing.group_billing_exprs).length > 0 && (
+                  <div className='space-y-1.5 pt-1'>
+                    <div className='text-muted-foreground text-xs'>
+                      {t('Group pricing overrides')}
+                    </div>
+                    <div className='space-y-1.5'>
+                      {Object.keys(effectivePricing.group_billing_exprs)
+                        .sort((left, right) => left.localeCompare(right))
+                        .map((group) => (
+                          <div
+                            key={group}
+                            className='bg-muted/30 flex flex-wrap items-center justify-between gap-2 rounded-md border px-2.5 py-1.5'
+                          >
+                            <GroupBadge group={group} size='sm' />
+                            <div className='min-w-0'>
+                              <ModelPriceCell
+                                model={withGroupPricing(
+                                  effectivePricing,
+                                  group
+                                )}
+                                options={{ tokenUnit: 'M' }}
+                                showExpression={false}
+                              />
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                )}
             </section>
             {save.isError && (
               <div>

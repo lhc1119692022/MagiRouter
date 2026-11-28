@@ -8,6 +8,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
+	channelrouting "github.com/QuantumNous/new-api/pkg/channel_routing"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"github.com/samber/lo"
@@ -226,22 +227,33 @@ func GetChannel(
 		abilities = lo.Filter(abilities, func(ability Ability, _ int) bool {
 			return ability.Priority == nil && targetPriority == 0 || ability.Priority != nil && *ability.Priority == targetPriority
 		})
+		if excluded := extractExcludedChannelIDs(filters); len(excluded) > 0 && len(abilities) > 1 {
+			untried := make([]Ability, 0, len(abilities))
+			for _, ability := range abilities {
+				if _, tried := excluded[ability.ChannelId]; !tried {
+					untried = append(untried, ability)
+				}
+			}
+			if len(untried) > 0 {
+				abilities = untried
+			}
+		}
 	}
 	channel := Channel{}
 	if len(abilities) > 0 {
-		// Randomly choose one
-		weightSum := uint(0)
-		for _, ability_ := range abilities {
-			weightSum += ability_.Weight + 10
-		}
-		// Randomly choose one
-		weight := common.GetRandomInt(int(weightSum))
-		for _, ability_ := range abilities {
-			weight -= int(ability_.Weight) + 10
-			//log.Printf("weight: %d, ability weight: %d", weight, *ability_.Weight)
-			if weight <= 0 {
-				channel.Id = ability_.ChannelId
-				break
+		if len(abilities) == 1 {
+			channel.Id = abilities[0].ChannelId
+		} else {
+			candidates := make([]channelrouting.Candidate, len(abilities))
+			for i, ability := range abilities {
+				candidates[i] = channelrouting.Candidate{
+					ChannelID: ability.ChannelId,
+					Weight:    int(ability.Weight) + 10,
+				}
+			}
+			selectedIdx := channelrouting.SelectCandidate(candidates)
+			if selectedIdx >= 0 && selectedIdx < len(abilities) {
+				channel.Id = abilities[selectedIdx].ChannelId
 			}
 		}
 	} else {

@@ -90,6 +90,7 @@ type RelayInfo struct {
 	UserGroup         string // 用户所在分组
 	TokenUnlimited    bool
 	StartTime         time.Time
+	AttemptStartTime  time.Time
 	FirstResponseTime time.Time
 	isFirstResponse   bool
 	LastResponseTime  time.Time
@@ -667,6 +668,7 @@ func genBaseRelayInfo(c *gin.Context, request dto.Request) *RelayInfo {
 		IsStream:        isStream,
 
 		StartTime:         startTime,
+		AttemptStartTime:  startTime,
 		FirstResponseTime: startTime.Add(-time.Second),
 		ThinkingContentInfo: ThinkingContentInfo{
 			IsFirstThinkingContent:  true,
@@ -1058,8 +1060,29 @@ func (info *RelayInfo) ResetStreamOutputTiming() {
 	info.StreamOutputChunks = 0
 }
 
+func (info *RelayInfo) EffectiveAttemptStartTime() time.Time {
+	if info == nil {
+		return time.Time{}
+	}
+	if !info.AttemptStartTime.IsZero() {
+		return info.AttemptStartTime
+	}
+	return info.StartTime
+}
+
+func (info *RelayInfo) ResetAttemptTiming() {
+	if info == nil {
+		return
+	}
+	now := time.Now()
+	info.AttemptStartTime = now
+	info.FirstResponseTime = now.Add(-time.Second)
+	info.isFirstResponse = true
+	info.ResetStreamOutputTiming()
+}
+
 func (info *RelayInfo) HasSendResponse() bool {
-	return info.FirstResponseTime.After(info.StartTime)
+	return info.FirstResponseTime.After(info.EffectiveAttemptStartTime())
 }
 
 type OriginTaskRef struct {

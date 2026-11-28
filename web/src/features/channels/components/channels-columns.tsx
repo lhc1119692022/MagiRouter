@@ -52,7 +52,7 @@ import {
   formatQuotaWithCurrency,
   getCurrencyLabel,
 } from '@/lib/currency'
-import { formatTimestampToDate } from '@/lib/format'
+import { formatNumber, formatTimestampToDate } from '@/lib/format'
 import { handleServerError } from '@/lib/handle-server-error'
 import {
   createServerError,
@@ -1337,6 +1337,69 @@ export function useChannelsColumns(
         meta: { mobileHidden: true },
         cell: ({ row }) => {
           const responseTime = row.getValue('response_time') as number
+          const runtime = row.original.runtime_metrics
+          const hasLiveTtft =
+            runtime != null &&
+            runtime.sample_count > 0 &&
+            (runtime.p50_ttft_ms > 0 || runtime.ewma_ttft_ms > 0)
+
+          if (hasLiveTtft) {
+            const liveMs =
+              runtime.p50_ttft_ms > 0
+                ? runtime.p50_ttft_ms
+                : runtime.ewma_ttft_ms
+            const variant = runtime.soft_demoted
+              ? 'danger'
+              : getResponseTimeConfig(liveMs).variant
+            const label = runtime.soft_demoted
+              ? `${formatResponseTime(liveMs, t)} · ${t('Demoted')}`
+              : formatResponseTime(liveMs, t)
+
+            return (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <StatusBadge
+                        label={label}
+                        variant={variant}
+                        size='sm'
+                        copyable={false}
+                        className='-ml-1.5'
+                      />
+                    }
+                  />
+                  <TooltipContent className='space-y-1 text-xs'>
+                    <div className='tabular-nums'>
+                      {t('P50 / P95 TTFT')}:{' '}
+                      {formatResponseTime(runtime.p50_ttft_ms, t)} /{' '}
+                      {formatResponseTime(runtime.p95_ttft_ms, t)}
+                    </div>
+                    <div className='tabular-nums'>
+                      {t('EWMA TTFT')}:{' '}
+                      {formatResponseTime(runtime.ewma_ttft_ms, t)}
+                    </div>
+                    <div className='tabular-nums'>
+                      {t('In-flight')}: {formatNumber(runtime.in_flight, locale)}{' '}
+                      · {t('Samples')}:{' '}
+                      {formatNumber(runtime.sample_count, locale)}
+                    </div>
+                    <div className='tabular-nums'>
+                      {t('Last test')}: {formatResponseTime(responseTime, t)}
+                    </div>
+                    {runtime.soft_demoted && (
+                      <div className='text-destructive'>
+                        {t(
+                          'Temporarily soft-demoted due to high latency or timeouts'
+                        )}
+                      </div>
+                    )}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )
+          }
+
           const config = getResponseTimeConfig(responseTime)
 
           return (

@@ -23,6 +23,7 @@ type GroupProbeSummary struct {
 	TestedModel       string   `json:"tested_model"`
 	Success           bool     `json:"success"`
 	LatencyMs         int64    `json:"latency_ms"`
+	MedianLatencyMs   int64    `json:"median_latency_ms,omitempty"`
 	RecentSamples     int      `json:"recent_samples"`
 	RecentSuccessRate float64  `json:"recent_success_rate"`
 	RecentModels      []string `json:"recent_models,omitempty"`
@@ -153,14 +154,28 @@ func summarizeGroupProbe(group string, allowedModels map[string]struct{}) *Group
 
 	latest := snapshot[len(snapshot)-1]
 	successCount := 0
+	successLatencies := make([]int64, 0, len(snapshot))
 	recentModels := make([]string, 0, 6)
 	for i := len(snapshot) - 1; i >= 0; i-- {
 		entry := snapshot[i]
 		if entry.Success {
 			successCount++
+			if entry.LatencyMs > 0 {
+				successLatencies = append(successLatencies, entry.LatencyMs)
+			}
 		}
 		if entry.Model != "" && len(recentModels) < 6 && !slices.Contains(recentModels, entry.Model) {
 			recentModels = append(recentModels, entry.Model)
+		}
+	}
+	var medianLatencyMs int64
+	if len(successLatencies) > 0 {
+		slices.Sort(successLatencies)
+		mid := len(successLatencies) / 2
+		if len(successLatencies)%2 == 1 {
+			medianLatencyMs = successLatencies[mid]
+		} else {
+			medianLatencyMs = (successLatencies[mid-1] + successLatencies[mid]) / 2
 		}
 	}
 	rate := float64(successCount) / float64(len(snapshot)) * 100
@@ -169,6 +184,7 @@ func summarizeGroupProbe(group string, allowedModels map[string]struct{}) *Group
 		TestedModel:       latest.Model,
 		Success:           latest.Success,
 		LatencyMs:         latest.LatencyMs,
+		MedianLatencyMs:   medianLatencyMs,
 		RecentSamples:     len(snapshot),
 		RecentSuccessRate: math.Round(rate*100) / 100,
 		RecentModels:      recentModels,

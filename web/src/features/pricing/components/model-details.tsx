@@ -94,6 +94,10 @@ import { parseTags } from '../lib/filters'
 import type { SupportedParameter } from '../lib/mock-stats'
 import { getAvailableGroups, isTokenBasedModel } from '../lib/model-helpers'
 import {
+  hasGroupBillingOverrides,
+  withGroupPricing,
+} from '../lib/group-pricing'
+import {
   buildHourlyMonitorSlots,
   isMeasuredRate,
   monitoringWindowLabel,
@@ -353,6 +357,7 @@ function ModelHeader(props: {
 
   const summaryRate = props.monitoringData?.summary?.success_rate
   const hasMeasuredStatus = isMeasuredRate(summaryRate)
+  const hasGroupOverrides = hasGroupBillingOverrides(model)
 
   const inputModalities = normalizeCatalogItems(model.input_modalities)
   const outputModalities = normalizeCatalogItems(model.output_modalities)
@@ -475,10 +480,14 @@ function ModelHeader(props: {
                   {model.vendor_name}
                 </span>
               )}
-              {model.vendor_name && (
-                <span className='text-muted-foreground/30'>·</span>
+              {!hasGroupOverrides && (
+                <>
+                  {model.vendor_name && (
+                    <span className='text-muted-foreground/30'>·</span>
+                  )}
+                  <ModelBillingModeBadge model={model} />
+                </>
               )}
-              <ModelBillingModeBadge model={model} />
               {hasMeasuredStatus && summaryRate !== undefined && (
                 <>
                   <span className='text-muted-foreground/30'>·</span>
@@ -1246,12 +1255,39 @@ function UnifiedProviderPricingSection(props: UnifiedPricingSectionProps) {
   const { t, i18n } = useTranslation()
   const showRechargePrice = props.showRechargePrice ?? false
   const currency = useSystemConfigStore((state) => state.config.currency)
-  const billingTime = useBillingTime(props.model.billing_expr)
 
   const availableGroups = useMemo(
     () => getAvailableGroups(props.model, props.usableGroup || {}),
     [props.model, props.usableGroup]
   )
+
+  const hasGroupOverrides = useMemo(
+    () => hasGroupBillingOverrides(props.model, availableGroups),
+    [props.model, availableGroups]
+  )
+
+  const groupModelsByGroup = useMemo(
+    () =>
+      new Map(
+        availableGroups.map((group) => [
+          group,
+          withGroupPricing(props.model, group),
+        ])
+      ),
+    [props.model, availableGroups]
+  )
+
+  const billingTimeSource = useMemo(
+    () =>
+      [
+        props.model.billing_expr,
+        ...Object.values(props.model.group_billing_exprs ?? {}),
+      ]
+        .filter(Boolean)
+        .join(' '),
+    [props.model.billing_expr, props.model.group_billing_exprs]
+  )
+  const billingTime = useBillingTime(billingTimeSource)
 
   const [selectedTierGroup, setSelectedTierGroup] = useState<string>(
     () => availableGroups[0] ?? BASE_RATIO_KEY
@@ -1323,12 +1359,14 @@ function UnifiedProviderPricingSection(props: UnifiedPricingSectionProps) {
     )
 
   const showUnifiedTierTable =
+    !hasGroupOverrides &&
     isDynamic &&
     !simpleTaskPricing &&
     hasConditionalOrMultiTier &&
     (dynamicTiers.length > 0 || Boolean(props.model.billing_expr))
 
   const showCompactBaseStrip =
+    !hasGroupOverrides &&
     !(showUnifiedTierTable && activeBaseDynamicSummary?.isSpecialExpression) &&
     (!props.model.billing_usage_schema ||
       simpleTaskPricing ||
@@ -1364,15 +1402,19 @@ function UnifiedProviderPricingSection(props: UnifiedPricingSectionProps) {
   )
 
   const dynamicSummariesByGroup = useMemo(() => {
-    if (!isDynamic) {
+    if (!isDynamic && !hasGroupOverrides) {
       return new Map<string, ReturnType<typeof getDynamicPricingSummary>>()
     }
     return new Map(
       availableGroups.map((group) => {
         const ratio = props.groupRatio[group] || 1
+        const groupModel = groupModelsByGroup.get(group) ?? props.model
+        if (!isDynamicPricingModel(groupModel)) {
+          return [group, null] as const
+        }
         return [
           group,
-          getDynamicPricingSummary(props.model, {
+          getDynamicPricingSummary(groupModel, {
             now: billingTime === undefined ? undefined : new Date(billingTime),
             tokenUnit: props.tokenUnit,
             showRechargePrice,
@@ -1388,8 +1430,10 @@ function UnifiedProviderPricingSection(props: UnifiedPricingSectionProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     isDynamic,
+    hasGroupOverrides,
     availableGroups,
     props.groupRatio,
+    groupModelsByGroup,
     props.model,
     billingTime,
     props.tokenUnit,
@@ -1432,8 +1476,11 @@ function UnifiedProviderPricingSection(props: UnifiedPricingSectionProps) {
   const renderGroupPriceSlots = (
     group: string
   ): { primary: React.ReactNode; secondary?: React.ReactNode } => {
+    const groupModel = groupModelsByGroup.get(group) ?? props.model
+    const groupIsDynamic = isDynamicPricingModel(groupModel)
+    const groupIsTokenBased = isTokenBasedModel(groupModel)
     const groupDynamicSummary = dynamicSummariesByGroup.get(group)
-    if (isDynamic && groupDynamicSummary) {
+    if (groupIsDynamic && groupDynamicSummary) {
       if (groupDynamicSummary.isSpecialExpression) {
         return {
           primary: (
@@ -1447,7 +1494,7 @@ function UnifiedProviderPricingSection(props: UnifiedPricingSectionProps) {
       const secondaryEntries = groupDynamicSummary.secondaryEntries
       const showDynamicCacheFallback =
         !groupDynamicSummary.isTaskUsage &&
-        isTokenBased &&
+        groupIsTokenBased &&
         secondaryEntries.length === 0
       return {
         primary: primaryEntries.map((entry) => {
@@ -1513,7 +1560,7 @@ function UnifiedProviderPricingSection(props: UnifiedPricingSectionProps) {
           ) : undefined,
       }
     }
-    if (isTokenBased) {
+    if (groupIsTokenBased) {
       const hasCache = props.model.cache_ratio != null
       return {
         primary: (
@@ -1777,7 +1824,7 @@ function UnifiedProviderPricingSection(props: UnifiedPricingSectionProps) {
         <div className='space-y-2'>
           <div className='flex items-center justify-between gap-2'>
             <SectionTitle>{t('Pricing by Group')}</SectionTitle>
-            {isTokenBased && !showUnifiedTierTable && (
+            {!hasGroupOverrides && isTokenBased && !showUnifiedTierTable && (
               <span className='text-muted-foreground/70 text-[10px]'>
                 {t('Prices shown per {{unit}} tokens', {
                   unit: tokenUnitLabel,
@@ -1790,6 +1837,24 @@ function UnifiedProviderPricingSection(props: UnifiedPricingSectionProps) {
             {availableGroups.map((group) => {
               const ratio = props.groupRatio[group] || 1
               const perf = props.perfByGroup.get(group)
+              const groupModel = groupModelsByGroup.get(group) ?? props.model
+              const groupSummary = dynamicSummariesByGroup.get(group)
+              const groupTiers =
+                hasGroupOverrides && isDynamicPricingModel(groupModel)
+                  ? getDynamicPricingTiers(groupModel)
+                  : []
+              const showGroupBreakdown =
+                hasGroupOverrides &&
+                isDynamicPricingModel(groupModel) &&
+                (groupTiers.length > 1 ||
+                  Boolean(groupSummary?.hasRequestRules) ||
+                  Boolean(groupSummary?.isSpecialExpression) ||
+                  groupTiers.some((tier) =>
+                    'unitPrices' in tier
+                      ? tier.conditions.length > 0
+                      : Boolean(tier.conditionText) ||
+                        tier.conditions.length > 0
+                  ))
               const isSelectedForTiers =
                 showUnifiedTierTable && effectiveTierGroup === group
               const groupPrices = renderGroupPriceSlots(group)
@@ -1812,6 +1877,12 @@ function UnifiedProviderPricingSection(props: UnifiedPricingSectionProps) {
                   <div className='flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5'>
                     <div className='flex min-w-0 items-center gap-2'>
                       <GroupBadge group={group} size='sm' />
+                      {hasGroupOverrides && (
+                        <ModelBillingModeBadge
+                          model={groupModel}
+                          appearance='caption'
+                        />
+                      )}
                       <span className='bg-muted/70 text-muted-foreground shrink-0 rounded px-1.5 py-0.5 font-mono text-[11px] font-medium'>
                         {ratio}x
                       </span>
@@ -1830,6 +1901,28 @@ function UnifiedProviderPricingSection(props: UnifiedPricingSectionProps) {
                   {groupPrices.secondary && (
                     <div className='mt-1.5 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-[11px]'>
                       {groupPrices.secondary}
+                    </div>
+                  )}
+
+                  {showGroupBreakdown && (
+                    <div className='border-border/60 mt-2.5 border-t pt-2.5'>
+                      <DynamicPricingBreakdown
+                        hideHeader
+                        compact
+                        unitInHeader
+                        tableOnly
+                        modelName={props.model.model_name}
+                        billingExpr={groupModel.billing_expr}
+                        usageSchema={groupModel.billing_usage_schema}
+                        taskPriceOptions={{
+                          tokenUnit: props.tokenUnit,
+                          showRechargePrice,
+                          priceRate: props.priceRate,
+                          usdExchangeRate: props.usdExchangeRate,
+                          groupRatioMultiplier: ratio,
+                          digitsLarge: 2,
+                        }}
+                      />
                     </div>
                   )}
 

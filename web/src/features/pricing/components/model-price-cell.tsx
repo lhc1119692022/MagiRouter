@@ -30,7 +30,8 @@ import {
   getDynamicPricingSummary,
   isUnconfiguredTaskUsageModel,
 } from '../lib/dynamic-price'
-import { isTokenBasedModel } from '../lib/model-helpers'
+import { withGroupPricing } from '../lib/group-pricing'
+import { isTokenBasedModel, resolveDisplayGroup } from '../lib/model-helpers'
 import { withBasePricing } from '../lib/plugin-pricing'
 import { formatPrice, formatRequestPrice } from '../lib/price'
 import { taskUsageUnitLabel } from '../lib/task-price-display'
@@ -51,9 +52,17 @@ export function ModelPriceCell(props: {
   showExpression?: boolean
 }) {
   const { t, i18n } = useTranslation()
-  const model = useMemo(() => withBasePricing(props.model), [props.model])
   const currency = useSystemConfigStore((state) => state.config.currency)
   const options = props.options ?? {}
+  const baseModel = useMemo(() => withBasePricing(props.model), [props.model])
+  const displayGroup = useMemo(
+    () => resolveDisplayGroup(baseModel, options.selectedGroup),
+    [baseModel, options.selectedGroup]
+  )
+  const model = useMemo(
+    () => withGroupPricing(baseModel, displayGroup.group),
+    [baseModel, displayGroup.group]
+  )
   let currencyLabel =
     currency.quotaDisplayType === 'TOKENS' ? 'USD' : getCurrencyLabel()
   if (options.priceMode === 'yours') {
@@ -97,6 +106,14 @@ export function ModelPriceCell(props: {
   const providerCaption = dynamic?.providerCount
     ? t('{{count}} providers', { count: dynamic.providerCount })
     : ''
+  const groupOverrideCount =
+    !displayGroup.group && props.model.group_billing_exprs
+      ? Object.keys(props.model.group_billing_exprs).length
+      : 0
+  const groupOverrideCaption =
+    groupOverrideCount > 0
+      ? t('{{count}} group rules', { count: groupOverrideCount })
+      : ''
   const unconfiguredCaption = dynamic?.hasUnconfiguredProviders
     ? t('Not configured for some providers')
     : ''
@@ -244,6 +261,9 @@ export function ModelPriceCell(props: {
       ]
       caption = `${currencyLabel} / ${t('request')}`
     }
+  }
+  if (groupOverrideCaption) {
+    caption += ` · ${groupOverrideCaption}`
   }
   return (
     <span className='block w-full max-w-full min-w-0 space-y-1.5'>

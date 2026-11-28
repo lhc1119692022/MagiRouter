@@ -479,4 +479,50 @@ describe('ModelDetailsContent redesigned 2-panel drawer', () => {
     expect(bars[0].querySelectorAll('[data-state="err"]')).toHaveLength(0)
     expect(bars[1].querySelectorAll('[data-state="err"]')).toHaveLength(1)
   })
+
+  it('renders each group with its own billing mode and price without global override chrome', () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    const model: PricingModel = {
+      id: 99,
+      model_name: 'gpt-image-2.6-sunburst',
+      vendor_name: 'OpenAI',
+      quota_type: 0,
+      model_ratio: 0,
+      completion_ratio: 1,
+      billing_mode: 'tiered_expr',
+      billing_expr: 'tier("standard", p * 5 + c * 30)',
+      group_billing_exprs: {
+        percall: 'tier("image", fixed(0.08)) * image_count',
+      },
+      enable_groups: ['default', 'percall'],
+    }
+
+    render(
+      <QueryClientProvider client={client}>
+        <ModelDetailsContent
+          model={model}
+          groupRatio={{ default: 1, percall: 1.5 }}
+          usableGroup={{
+            default: { desc: 'Token group', ratio: 1 },
+            percall: { desc: 'Per-image group', ratio: 1.5 },
+          }}
+          endpointMap={{}}
+          autoGroups={[]}
+          priceRate={1}
+          usdExchangeRate={1}
+          tokenUnit='M'
+        />
+      </QueryClientProvider>
+    )
+
+    expect(screen.queryByText('Official Base')).not.toBeInTheDocument()
+    expect(screen.queryByText('Official base pricing')).not.toBeInTheDocument()
+    expect(screen.getByText('default')).toBeInTheDocument()
+    expect(screen.getByText('percall')).toBeInTheDocument()
+    expect(screen.getByText('$5')).toBeInTheDocument()
+    expect(screen.getByText('$30')).toBeInTheDocument()
+    expect(screen.getByText('$0.12')).toBeInTheDocument()
+  })
 })

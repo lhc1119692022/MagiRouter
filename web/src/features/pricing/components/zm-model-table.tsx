@@ -23,6 +23,7 @@ import {
   resolveCatalogTablePriceDisplay,
 } from '../lib/catalog-display'
 import { getDynamicPricingSummary } from '../lib/dynamic-price'
+import { withGroupPricing } from '../lib/group-pricing'
 import { resolveDisplayGroup } from '../lib/model-helpers'
 import {
   buildHourlyMonitorSlots,
@@ -65,13 +66,17 @@ const ZmModelTableRow = memo(function ZmModelTableRow(
   const { t, i18n } = useTranslation()
   const [copied, setCopied] = useState(false)
   const currency = useSystemConfigStore((state) => state.config.currency)
-  const billingTime = useBillingTime(props.model.billing_expr)
 
   const baseModel = useMemo(() => withBasePricing(props.model), [props.model])
   const displayGroup = useMemo(
     () => resolveDisplayGroup(baseModel, props.selectedGroup),
     [baseModel, props.selectedGroup]
   )
+  const effectiveModel = useMemo(
+    () => withGroupPricing(baseModel, displayGroup.group),
+    [baseModel, displayGroup.group]
+  )
+  const billingTime = useBillingTime(effectiveModel.billing_expr)
   const isOfficialPrice = props.priceMode === PRICE_MODES.OFFICIAL
 
   const dynamicPriceOptions = useMemo(
@@ -97,15 +102,15 @@ const ZmModelTableRow = memo(function ZmModelTableRow(
   )
 
   const dynamicSummary = useMemo(
-    () => getDynamicPricingSummary(baseModel, dynamicPriceOptions),
+    () => getDynamicPricingSummary(effectiveModel, dynamicPriceOptions),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [baseModel, dynamicPriceOptions, currency]
+    [effectiveModel, dynamicPriceOptions, currency]
   )
 
   const priceDisplay = useMemo(
     () =>
       resolveCatalogTablePriceDisplay({
-        baseModel,
+        baseModel: effectiveModel,
         displayGroup,
         dynamicSummary,
         dynamicPriceOptions,
@@ -119,7 +124,7 @@ const ZmModelTableRow = memo(function ZmModelTableRow(
         t,
       }),
     [
-      baseModel,
+      effectiveModel,
       displayGroup,
       dynamicSummary,
       dynamicPriceOptions,
@@ -135,8 +140,8 @@ const ZmModelTableRow = memo(function ZmModelTableRow(
   )
 
   const quotaLabel = useMemo(
-    () => getCatalogQuotaLabel(props.model, dynamicSummary, t),
-    [props.model, dynamicSummary, t]
+    () => getCatalogQuotaLabel(effectiveModel, dynamicSummary, t),
+    [effectiveModel, dynamicSummary, t]
   )
 
   const { capabilities, remarkTags } = useMemo(

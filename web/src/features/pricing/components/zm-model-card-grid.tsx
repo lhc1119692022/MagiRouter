@@ -24,6 +24,7 @@ import {
   resolveCatalogPriceDisplay,
 } from '../lib/catalog-display'
 import { getDynamicPricingSummary } from '../lib/dynamic-price'
+import { withGroupPricing } from '../lib/group-pricing'
 import { getModelPlaygroundModes } from '../lib/filters'
 import { resolveDisplayGroup } from '../lib/model-helpers'
 import {
@@ -69,7 +70,6 @@ const ZmModelCardItem = memo(function ZmModelCardItem(
   const navigate = useNavigate()
   const [copied, setCopied] = useState(false)
   const currency = useSystemConfigStore((state) => state.config.currency)
-  const billingTime = useBillingTime(props.model.billing_expr)
 
   const baseModel = useMemo(() => withBasePricing(props.model), [props.model])
   const { capabilities, remarkTags } = useMemo(
@@ -91,6 +91,11 @@ const ZmModelCardItem = memo(function ZmModelCardItem(
     () => resolveDisplayGroup(baseModel, props.selectedGroup),
     [baseModel, props.selectedGroup]
   )
+  const effectiveModel = useMemo(
+    () => withGroupPricing(baseModel, displayGroup.group),
+    [baseModel, displayGroup.group]
+  )
+  const billingTime = useBillingTime(effectiveModel.billing_expr)
   const isOfficialPrice = props.priceMode === PRICE_MODES.OFFICIAL
 
   const dynamicPriceOptions = useMemo(
@@ -116,15 +121,15 @@ const ZmModelCardItem = memo(function ZmModelCardItem(
   )
 
   const dynamicSummary = useMemo(
-    () => getDynamicPricingSummary(baseModel, dynamicPriceOptions),
+    () => getDynamicPricingSummary(effectiveModel, dynamicPriceOptions),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [baseModel, dynamicPriceOptions, currency]
+    [effectiveModel, dynamicPriceOptions, currency]
   )
 
   const priceDisplay = useMemo(
     () =>
       resolveCatalogPriceDisplay({
-        baseModel,
+        baseModel: effectiveModel,
         displayGroup,
         dynamicSummary,
         dynamicPriceOptions,
@@ -138,7 +143,7 @@ const ZmModelCardItem = memo(function ZmModelCardItem(
         t,
       }),
     [
-      baseModel,
+      effectiveModel,
       displayGroup,
       dynamicSummary,
       dynamicPriceOptions,
@@ -154,8 +159,8 @@ const ZmModelCardItem = memo(function ZmModelCardItem(
   )
 
   const quotaLabel = useMemo(
-    () => getCatalogQuotaLabel(props.model, dynamicSummary, t),
-    [props.model, dynamicSummary, t]
+    () => getCatalogQuotaLabel(effectiveModel, dynamicSummary, t),
+    [effectiveModel, dynamicSummary, t]
   )
 
   const successRate = props.perf?.success_rate

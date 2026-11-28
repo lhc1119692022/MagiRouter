@@ -10027,6 +10027,21 @@
     "Invalid system notice images format": "系统公告图片格式不正确",
     "System notice cannot exceed {{max}} images": "系统公告最多只能添加{{max}}张图片",
     "System notice has an invalid image source": "系统公告包含无效的图片地址或格式",
-    "System notice image is too large": "系统公告图片体积过大"
+    "System notice image is too large": "系统公告图片体积过大",
+    "TTFT": "首字",
+    "Probe": "探活",
+    "Demoted": "已降权",
+    "P50 / P95 TTFT": "P50 / P95 首字延迟",
+    "EWMA TTFT": "实时滑动首字延迟",
+    "In-flight": "并发请求",
+    "Last test": "最近测速",
+    "Temporarily soft-demoted due to high latency or timeouts": "因持续高延迟或超时已临时软降权",
+    "Add group pricing": "添加分组定价",
+    "Group pricing scope": "分组定价范围",
+    "Default pricing": "默认定价",
+    "Group pricing multiplies by group ratio ({{ratio}}x) on settlement.": "该分组定价在结算时会乘以分组倍率（{{ratio}}x）。",
+    "Remove group pricing": "移除分组定价",
+    "Group pricing overrides": "分组专属定价",
+    "{{count}} group rules": "{{count}} 个分组定价"
   }
 }

@@ -24,6 +24,7 @@ import {
 } from '@tanstack/react-query'
 import { t } from 'i18next'
 
+import { groupExpressionsEqual } from '@/features/pricing/lib/group-pricing'
 import { pluginExpressionsEqual } from '@/features/pricing/lib/plugin-pricing'
 import type {
   BillingUsageSchema,
@@ -190,11 +191,15 @@ export function buildPricingChanges(
   for (const name of new Set([...previous.keys(), ...next.keys()])) {
     const oldValues = previous.get(name) ?? {}
     const newValues = next.get(name) ?? {}
-    const dirty = PRICING_KEYS.filter((key) =>
-      key === 'billing_setting.plugin_billing_expr'
-        ? !pluginExpressionsEqual(oldValues[key], newValues[key])
-        : oldValues[key] !== newValues[key]
-    )
+    const dirty = PRICING_KEYS.filter((key) => {
+      if (key === 'billing_setting.plugin_billing_expr') {
+        return !pluginExpressionsEqual(oldValues[key], newValues[key])
+      }
+      if (key === 'billing_setting.group_billing_expr') {
+        return !groupExpressionsEqual(oldValues[key], newValues[key])
+      }
+      return oldValues[key] !== newValues[key]
+    })
     if (!dirty.length) continue
     const entry = entries.get(name)
     const pricing = { ...entry?.configured }

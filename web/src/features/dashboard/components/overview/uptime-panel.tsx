@@ -458,18 +458,22 @@ function GroupMonitorCard({
       </span>
     )
   } else if (item.recent_probe) {
+    const probeLatencyMs =
+      item.recent_probe.median_latency_ms &&
+      item.recent_probe.median_latency_ms > 0
+        ? item.recent_probe.median_latency_ms
+        : item.recent_probe.latency_ms
     probeContent = (
       <span
         className='gm-probe-badge'
-        title={`${item.recent_probe.tested_model} · ${formatSeconds(item.recent_probe.latency_ms)}`}
+        title={`${item.recent_probe.tested_model} · ${formatSeconds(probeLatencyMs)}`}
       >
         <span
           className='gm-probe-badge-dot'
           data-ok={item.recent_probe.success ? 'true' : 'false'}
         />
         <span className='truncate'>
-          {item.recent_probe.tested_model} ·{' '}
-          {formatSeconds(item.recent_probe.latency_ms)}
+          {item.recent_probe.tested_model} · {formatSeconds(probeLatencyMs)}
         </span>
       </span>
     )

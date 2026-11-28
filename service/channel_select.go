@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -122,6 +123,25 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 	selectGroup := param.TokenGroup
 	userGroup := common.GetContextKeyString(param.Ctx, constant.ContextKeyUserGroup)
 	filters := GetChannelConstraints(param.Ctx).Filters
+	if param.Ctx != nil {
+		if usedRaw := param.Ctx.GetStringSlice("use_channel"); len(usedRaw) > 0 {
+			excludedIDs := make([]int, 0, len(usedRaw))
+			for _, rawID := range usedRaw {
+				if id, parseErr := strconv.Atoi(rawID); parseErr == nil && id > 0 {
+					excludedIDs = append(excludedIDs, id)
+				}
+			}
+			if len(excludedIDs) > 0 {
+				copied := make([]dto.ChannelFilter, len(filters), len(filters)+1)
+				copy(copied, filters)
+				copied = append(copied, dto.ChannelFilter{
+					Kind:              dto.FilterExcludeChannelIDs,
+					ExcludeChannelIDs: excludedIDs,
+				})
+				filters = copied
+			}
+		}
+	}
 	affinityRetryOffset := param.Ctx.GetInt(ginKeyChannelAffinityRetryOffset)
 
 	if param.TokenGroup == "auto" {

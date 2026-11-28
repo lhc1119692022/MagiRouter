@@ -142,6 +142,9 @@ func ParseGroupRatio(jsonStr string) (map[string]float64, error) {
 		if strings.TrimSpace(name) == "" {
 			return nil, errors.New("group name cannot be empty")
 		}
+		if strings.Contains(name, "::") {
+			return nil, errors.New("group name cannot contain '::': " + name)
+		}
 		if ratio < 0 {
 			return nil, errors.New("group ratio must be not less than 0: " + name)
 		}

@@ -493,3 +493,68 @@ func TestTestAllChannelsRejectsExistingActiveTask(t *testing.T) {
 	require.Contains(t, recorder.Body.String(), existing.TaskID)
 	require.Contains(t, recorder.Body.String(), "A channel test task is already running or queued")
 }
+
+func TestRunChannelTestWorkersCapsPerHostConcurrencyAndInterleaves(t *testing.T) {
+	originalInterval := common.RequestInterval
+	common.RequestInterval = 0
+	t.Cleanup(func() { common.RequestInterval = originalInterval })
+
+	hostA := "https://host-a.example.com"
+	hostB := "https://host-b.example.com"
+	channels := []*model.Channel{
+		{Id: 1, Status: common.ChannelStatusEnabled, BaseURL: &hostA},
+		{Id: 2, Status: common.ChannelStatusEnabled, BaseURL: &hostA},
+		{Id: 3, Status: common.ChannelStatusEnabled, BaseURL: &hostA},
+		{Id: 4, Status: common.ChannelStatusEnabled, BaseURL: &hostA},
+		{Id: 5, Status: common.ChannelStatusEnabled, BaseURL: &hostB},
+		{Id: 6, Status: common.ChannelStatusEnabled, BaseURL: &hostB},
+	}
+
+	interleaved := interleaveChannelsByHost(channels)
+	require.Len(t, interleaved, 6)
+	assert.Equal(t, hostA, interleaved[0].GetBaseURL())
+	assert.Equal(t, hostB, interleaved[1].GetBaseURL())
+	assert.Equal(t, hostA, interleaved[2].GetBaseURL())
+	assert.Equal(t, hostB, interleaved[3].GetBaseURL())
+
+	var activeHostA atomic.Int32
+	var maxHostA atomic.Int32
+	startedHostA := make(chan struct{}, 4)
+	release := make(chan struct{})
+
+	done := make(chan channelTestSummary, 1)
+	go func() {
+		done <- runChannelTestWorkers(
+			context.Background(),
+			channels[:4],
+			4,
+			func(_ context.Context, _ *model.Channel) channelTestSummary {
+				cur := activeHostA.Add(1)
+				defer activeHostA.Add(-1)
+				for {
+					prev := maxHostA.Load()
+					if cur <= prev || maxHostA.CompareAndSwap(prev, cur) {
+						break
+					}
+				}
+				startedHostA <- struct{}{}
+				<-release
+				return channelTestSummary{Tested: 1, Succeeded: 1}
+			},
+			nil,
+		)
+	}()
+
+	<-startedHostA
+	<-startedHostA
+	select {
+	case <-startedHostA:
+		t.Fatal("exceeded per-upstream-host test concurrency cap")
+	default:
+	}
+	close(release)
+
+	summary := <-done
+	assert.Equal(t, int32(maxConcurrentTestsPerUpstreamHost), maxHostA.Load())
+	assert.Equal(t, channelTestSummary{Tested: 4, Succeeded: 4}, summary)
+}
