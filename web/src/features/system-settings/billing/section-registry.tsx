@@ -156,6 +156,12 @@ const BILLING_SECTIONS = [
           DailyTopUpLimit: settings['payment_setting.daily_topup_limit'] ?? 200,
           DailyTopUpExemptUsers:
             settings['payment_setting.daily_topup_exempt_users'] ?? '[]',
+          DailyTopUpContactMethod:
+            settings['payment_setting.daily_topup_contact_method'] === 'wechat'
+              ? 'wechat'
+              : 'email',
+          DailyTopUpContactEmail:
+            settings['payment_setting.daily_topup_contact_email'] ?? '',
           DailyTopUpContactWeChatQRCode:
             settings['payment_setting.daily_topup_contact_wechat_qrcode'] ?? '',
           DailyTopUpContactNote:

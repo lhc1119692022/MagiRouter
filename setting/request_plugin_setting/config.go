@@ -13,11 +13,13 @@ import (
 const InstancesOption = "request_plugin_setting.instances"
 
 // Instance is one configured use of a request plugin. Global instances run
-// on every request, group instances on the requests of their groups, and a
-// channel runs the instances its request_plugins setting lists. Models
-// narrows any of them to requests for those models; empty means every
-// model. Whether a failure stops the request is the plugin's meta.optional;
-// the required member of older saved lists is dropped on load.
+// on every request, exclude_groups instances on every group except those
+// listed, group instances on the requests of their groups, and a channel
+// runs the instances its request_plugins setting lists. Models narrows any
+// of them to requests for those models, and ExcludeModels skips the models
+// listed; empty means every model. Whether a failure stops the request is
+// the plugin's meta.optional; the required member of older saved lists is
+// dropped on load.
 //
 // A plugin scope instance runs where its plugin's meta.scope says instead,
 // on every channel and model that fits it, new ones included, but only where
@@ -25,14 +27,16 @@ const InstancesOption = "request_plugin_setting.instances"
 // update that narrows its scope applies at once, and one that widens it
 // reaches the new requests once an administrator confirms it again.
 type Instance struct {
-	ID      string          `json:"id"`
-	Name    string          `json:"name"`
-	Plugin  string          `json:"plugin"`
-	Enabled bool            `json:"enabled"`
-	Global  bool            `json:"global"`
-	Groups  []string        `json:"groups"`
-	Models  []string        `json:"models"`
-	Config  json.RawMessage `json:"config"`
+	ID            string          `json:"id"`
+	Name          string          `json:"name"`
+	Plugin        string          `json:"plugin"`
+	Enabled       bool            `json:"enabled"`
+	Global        bool            `json:"global"`
+	Groups        []string        `json:"groups"`
+	ExcludeGroups []string        `json:"exclude_groups"`
+	Models        []string        `json:"models"`
+	ExcludeModels []string        `json:"exclude_models"`
+	Config        json.RawMessage `json:"config"`
 	// PluginScope is the confirmed scope of a plugin scope instance; nil for
 	// an instance placed by hand.
 	PluginScope *Scope `json:"plugin_scope,omitempty"`
@@ -56,10 +60,19 @@ func (list *Instances) UnmarshalJSON(data []byte) error {
 	if err := common.Unmarshal(data, &decoded); err != nil {
 		return err
 	}
-	// Lists saved before models existed read as every model.
+	// Lists saved before models or exclusions existed read as empty.
 	for index := range decoded {
+		if decoded[index].Groups == nil {
+			decoded[index].Groups = []string{}
+		}
+		if decoded[index].ExcludeGroups == nil {
+			decoded[index].ExcludeGroups = []string{}
+		}
 		if decoded[index].Models == nil {
 			decoded[index].Models = []string{}
+		}
+		if decoded[index].ExcludeModels == nil {
+			decoded[index].ExcludeModels = []string{}
 		}
 	}
 	instancesMu.Lock()

@@ -77,6 +77,7 @@ import { PaymentMethodsVisualEditor } from './payment-methods-visual-editor'
 import {
   formatJsonForEditor,
   getJsonError,
+  isValidContactEmailValue,
   isValidWeChatQRCodeValue,
   normalizeJsonForComparison,
   removeTrailingSlash,
@@ -173,6 +174,13 @@ const paymentSchema = z.object({
       })
     }
   }),
+  DailyTopUpContactMethod: z.enum(['email', 'wechat']),
+  DailyTopUpContactEmail: z
+    .string()
+    .refine(
+      isValidContactEmailValue,
+      'Daily top-up contact email must be a valid email address'
+    ),
   DailyTopUpContactWeChatQRCode: z
     .string()
     .refine(
@@ -472,6 +480,8 @@ export function PaymentSettingsSection({
       AmountDiscount: values.AmountDiscount.trim(),
       DailyTopUpLimit: values.DailyTopUpLimit,
       DailyTopUpExemptUsers: values.DailyTopUpExemptUsers.trim() || '[]',
+      DailyTopUpContactMethod: values.DailyTopUpContactMethod,
+      DailyTopUpContactEmail: values.DailyTopUpContactEmail.trim(),
       DailyTopUpContactWeChatQRCode:
         values.DailyTopUpContactWeChatQRCode.trim(),
       DailyTopUpContactNote: values.DailyTopUpContactNote.trim(),
@@ -526,6 +536,8 @@ export function PaymentSettingsSection({
       DailyTopUpLimit: initialRef.current.DailyTopUpLimit,
       DailyTopUpExemptUsers:
         initialRef.current.DailyTopUpExemptUsers.trim() || '[]',
+      DailyTopUpContactMethod: initialRef.current.DailyTopUpContactMethod,
+      DailyTopUpContactEmail: initialRef.current.DailyTopUpContactEmail.trim(),
       DailyTopUpContactWeChatQRCode:
         initialRef.current.DailyTopUpContactWeChatQRCode.trim(),
       DailyTopUpContactNote: initialRef.current.DailyTopUpContactNote.trim(),
@@ -660,6 +672,20 @@ export function PaymentSettingsSection({
       updates.push({
         key: 'payment_setting.daily_topup_exempt_users',
         value: sanitized.DailyTopUpExemptUsers,
+      })
+    }
+
+    if (sanitized.DailyTopUpContactMethod !== initial.DailyTopUpContactMethod) {
+      updates.push({
+        key: 'payment_setting.daily_topup_contact_method',
+        value: sanitized.DailyTopUpContactMethod,
+      })
+    }
+
+    if (sanitized.DailyTopUpContactEmail !== initial.DailyTopUpContactEmail) {
+      updates.push({
+        key: 'payment_setting.daily_topup_contact_email',
+        value: sanitized.DailyTopUpContactEmail,
       })
     }
 
@@ -1328,23 +1354,39 @@ export function PaymentSettingsSection({
 
                     <FormField
                       control={form.control}
-                      name='DailyTopUpContactNote'
+                      name='DailyTopUpContactMethod'
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>
-                            {t('Over-limit contact message')}
+                            {t('Large top-up contact method')}
                           </FormLabel>
-                          <FormControl>
-                            <Input
-                              {...field}
-                              placeholder={t(
-                                'Scan the WeChat QR code to contact us for larger top-ups or whitelist exemption'
-                              )}
-                            />
-                          </FormControl>
+                          <Select
+                            items={[
+                              { value: 'email', label: t('Email') },
+                              { value: 'wechat', label: t('WeChat QR Code') },
+                            ]}
+                            value={field.value}
+                            onValueChange={field.onChange}
+                          >
+                            <FormControl>
+                              <SelectTrigger className='w-full'>
+                                <SelectValue />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectGroup>
+                                <SelectItem value='email'>
+                                  {t('Email')}
+                                </SelectItem>
+                                <SelectItem value='wechat'>
+                                  {t('WeChat QR Code')}
+                                </SelectItem>
+                              </SelectGroup>
+                            </SelectContent>
+                          </Select>
                           <FormDescription>
                             {t(
-                              'Optional helper message shown alongside the WeChat QR code when a user exceeds the daily limit.'
+                              'Choose how users contact you for large top-ups or whitelist exemption. Switching methods preserves both configurations while only exposing the active one.'
                             )}
                           </FormDescription>
                           <FormMessage />
@@ -1353,26 +1395,88 @@ export function PaymentSettingsSection({
                     />
                   </div>
 
+                  {currentFormValues.DailyTopUpContactMethod === 'wechat' ? (
+                    <FormField
+                      control={form.control}
+                      name='DailyTopUpContactWeChatQRCode'
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{t('WeChat Contact QR Code')}</FormLabel>
+                          <FormControl>
+                            <WeChatQRCodeField
+                              value={field.value}
+                              onChange={field.onChange}
+                              invalid={Boolean(
+                                form.formState.errors
+                                  .DailyTopUpContactWeChatQRCode
+                              )}
+                            />
+                          </FormControl>
+                          <FormDescription>
+                            {t(
+                              'Displayed to users when their online top-up exceeds the daily limit. Supports uploading an image (up to 512 KB) or pasting an image URL.'
+                            )}
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  ) : (
+                    <FormField
+                      control={form.control}
+                      name='DailyTopUpContactEmail'
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{t('Contact Email')}</FormLabel>
+                          <FormControl>
+                            <Input
+                              type='email'
+                              autoComplete='off'
+                              placeholder='support@example.com'
+                              {...field}
+                            />
+                          </FormControl>
+                          <FormDescription>
+                            {t(
+                              'Displayed to users when they request a large top-up or exceed the daily limit so they can email you directly.'
+                            )}
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  )}
+
                   <FormField
                     control={form.control}
-                    name='DailyTopUpContactWeChatQRCode'
+                    name='DailyTopUpContactNote'
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>{t('WeChat Contact QR Code')}</FormLabel>
+                        <FormLabel>{t('Over-limit contact message')}</FormLabel>
                         <FormControl>
-                          <WeChatQRCodeField
-                            value={field.value}
-                            onChange={field.onChange}
-                            invalid={Boolean(
-                              form.formState.errors
-                                .DailyTopUpContactWeChatQRCode
-                            )}
+                          <Input
+                            {...field}
+                            placeholder={
+                              currentFormValues.DailyTopUpContactMethod ===
+                              'wechat'
+                                ? t(
+                                    'Scan the WeChat QR code to contact us for larger top-ups or whitelist exemption'
+                                  )
+                                : t(
+                                    'Send an email to contact us for larger top-ups or whitelist exemption'
+                                  )
+                            }
                           />
                         </FormControl>
                         <FormDescription>
-                          {t(
-                            'Displayed to users when their online top-up exceeds the daily limit. Supports uploading an image (up to 512 KB) or pasting an image URL.'
-                          )}
+                          {currentFormValues.DailyTopUpContactMethod ===
+                          'wechat'
+                            ? t(
+                                'Optional helper message shown alongside the WeChat QR code when a user exceeds the daily limit.'
+                              )
+                            : t(
+                                'Optional helper message shown alongside the contact email when a user exceeds the daily limit.'
+                              )}
                         </FormDescription>
                         <FormMessage />
                       </FormItem>

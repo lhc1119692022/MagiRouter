@@ -25,6 +25,7 @@ import {
   DEFAULT_MIN_TOPUP,
 } from '../constants'
 import type {
+  DailyTopUpContactMethod,
   DailyTopUpLimitStatus,
   PaymentMethod,
   PresetAmount,
@@ -51,6 +52,43 @@ export function getPaymentErrorTranslation(
   return getServerMessage(body)
 }
 
+export function resolveDailyTopUpContactMethod(
+  dailyLimit:
+    | {
+        contact_method?: string | null
+        contact_email?: string | null
+        contact_wechat_qrcode?: string | null
+      }
+    | null
+    | undefined
+): DailyTopUpContactMethod {
+  const normalized = dailyLimit?.contact_method?.trim().toLowerCase()
+  if (normalized === 'wechat') {
+    return 'wechat'
+  }
+  if (normalized === 'email') {
+    return 'email'
+  }
+  if (
+    dailyLimit?.contact_wechat_qrcode?.trim() &&
+    !dailyLimit?.contact_email?.trim()
+  ) {
+    return 'wechat'
+  }
+  return 'email'
+}
+
+export function buildDailyLimitMailtoHref(
+  email: string,
+  subject: string
+): string {
+  const trimmed = email.trim()
+  if (!trimmed) {
+    return ''
+  }
+  return `mailto:${trimmed}?subject=${encodeURIComponent(subject)}`
+}
+
 export function extractDailyTopUpLimitExceeded(
   response: unknown
 ): DailyTopUpLimitStatus | null {
@@ -66,6 +104,20 @@ export function extractDailyTopUpLimitExceeded(
     return null
   }
   const limitObj = rawLimit as Record<string, unknown>
+  const contactEmail =
+    typeof limitObj.contact_email === 'string' ? limitObj.contact_email : ''
+  const contactWeChatQR =
+    typeof limitObj.contact_wechat_qrcode === 'string'
+      ? limitObj.contact_wechat_qrcode
+      : ''
+  const contactMethod = resolveDailyTopUpContactMethod({
+    contact_method:
+      typeof limitObj.contact_method === 'string'
+        ? limitObj.contact_method
+        : undefined,
+    contact_email: contactEmail,
+    contact_wechat_qrcode: contactWeChatQR,
+  })
   const parsed: DailyTopUpLimitStatus = {
     enabled: Boolean(limitObj.enabled),
     limit: Number(limitObj.limit) || 0,
@@ -73,10 +125,9 @@ export function extractDailyTopUpLimitExceeded(
     pending: Number(limitObj.pending) || 0,
     remaining: Number(limitObj.remaining) || 0,
     exempt: Boolean(limitObj.exempt),
-    contact_wechat_qrcode:
-      typeof limitObj.contact_wechat_qrcode === 'string'
-        ? limitObj.contact_wechat_qrcode
-        : '',
+    contact_method: contactMethod,
+    contact_email: contactEmail,
+    contact_wechat_qrcode: contactWeChatQR,
     contact_note:
       typeof limitObj.contact_note === 'string' ? limitObj.contact_note : '',
   }

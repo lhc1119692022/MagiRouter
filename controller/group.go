@@ -16,9 +16,15 @@ func GetGroups(c *gin.Context) {
 	var groupNames []string
 	if strings.TrimSpace(c.Query("scope")) == "billing" {
 		groupNames = ratio_setting.GetBillingGroupNames()
-	} else {
-		groupNames = ratio_setting.GetAllGroupNames()
+		c.JSON(http.StatusOK, gin.H{
+			"success":     true,
+			"message":     "",
+			"data":        groupNames,
+			"group_ratio": ratio_setting.GetBillingGroupRatioCopy(),
+		})
+		return
 	}
+	groupNames = ratio_setting.GetAllGroupNames()
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",

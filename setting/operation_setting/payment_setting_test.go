@@ -14,6 +14,7 @@ import (
 func TestDefaultDailyTopUpLimitIs200(t *testing.T) {
 	assert.Equal(t, 200.0, DefaultDailyTopUpLimit)
 	assert.Equal(t, 200.0, GetPaymentSetting().DailyTopUpLimit)
+	assert.Equal(t, DailyTopUpContactMethodEmail, GetPaymentSetting().DailyTopUpContactMethod)
 }
 
 func TestDailyTopUpLimitConfigIsUserExempt(t *testing.T) {
@@ -42,6 +43,19 @@ func TestValidateDailyTopUpOption(t *testing.T) {
 	require.NoError(t, ValidateDailyTopUpOption(DailyTopUpExemptUsersOptionKey, `[]`))
 	require.Error(t, ValidateDailyTopUpOption(DailyTopUpExemptUsersOptionKey, `{"id":42}`))
 	require.Error(t, ValidateDailyTopUpOption(DailyTopUpExemptUsersOptionKey, `not-json`))
+
+	require.NoError(t, ValidateDailyTopUpOption(DailyTopUpContactMethodOptionKey, DailyTopUpContactMethodEmail))
+	require.NoError(t, ValidateDailyTopUpOption(DailyTopUpContactMethodOptionKey, DailyTopUpContactMethodWeChat))
+	require.Error(t, ValidateDailyTopUpOption(DailyTopUpContactMethodOptionKey, ""))
+	require.Error(t, ValidateDailyTopUpOption(DailyTopUpContactMethodOptionKey, "telegram"))
+
+	require.NoError(t, ValidateDailyTopUpOption(DailyTopUpContactEmailOptionKey, ""))
+	require.NoError(t, ValidateDailyTopUpOption(DailyTopUpContactEmailOptionKey, "billing+topup@example.com"))
+	require.Error(t, ValidateDailyTopUpOption(DailyTopUpContactEmailOptionKey, "not-an-email"))
+	require.Error(t, ValidateDailyTopUpOption(DailyTopUpContactEmailOptionKey, "admin@localhost"))
+	require.Error(t, ValidateDailyTopUpOption(DailyTopUpContactEmailOptionKey, "Support <support@example.com>"))
+	require.Error(t, ValidateDailyTopUpOption(DailyTopUpContactEmailOptionKey, "support@example.com?subject=evil"))
+	require.Error(t, ValidateDailyTopUpOption(DailyTopUpContactEmailOptionKey, "support@example..com"))
 
 	validPNGDataURL := "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7+8X8AAAAASUVORK5CYII="
 	require.NoError(t, ValidateDailyTopUpOption(DailyTopUpContactWeChatQRCodeOptionKey, ""))

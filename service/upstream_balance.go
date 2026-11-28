@@ -525,9 +525,25 @@ func doUpstreamBalanceGET(ctx context.Context, targetURL string, channel *model.
 		return nil, fmt.Errorf("upstream balance response exceeds %d bytes", upstreamBalanceMaxResponse)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
+		return nil, &upstreamHTTPStatusError{StatusCode: resp.StatusCode}
 	}
 	return body, nil
+}
+
+type upstreamHTTPStatusError struct {
+	StatusCode int
+}
+
+func (e *upstreamHTTPStatusError) Error() string {
+	return fmt.Sprintf("HTTP %d", e.StatusCode)
+}
+
+func isUpstreamHTTPStatus(err error, codes ...int) bool {
+	var statusErr *upstreamHTTPStatusError
+	if !errors.As(err, &statusErr) {
+		return false
+	}
+	return slices.Contains(codes, statusErr.StatusCode)
 }
 
 type newAPITokenProbeResult struct {
@@ -555,8 +571,28 @@ type sub2apiKeyProbeResult struct {
 	Err          error
 }
 
-func fetchNewAPIQuotaPerUnit(ctx context.Context, siteKey string, proxyChannel *model.Channel) (float64, error) {
+func fetchNewAPIQuotaPerUnit(ctx context.Context, siteKey string, proxyChannel *model.Channel, authTokens []string) (float64, error) {
 	body, err := doUpstreamBalanceGET(ctx, siteKey+"/api/status", proxyChannel, nil)
+	if err != nil && isUpstreamHTTPStatus(err, http.StatusUnauthorized, http.StatusForbidden) {
+		seen := make(map[string]struct{}, len(authTokens))
+		for _, rawToken := range authTokens {
+			token := strings.TrimSpace(rawToken)
+			if token == "" {
+				continue
+			}
+			if _, exists := seen[token]; exists {
+				continue
+			}
+			seen[token] = struct{}{}
+			headers := http.Header{}
+			headers.Set("Authorization", "Bearer "+token)
+			if authBody, authErr := doUpstreamBalanceGET(ctx, siteKey+"/api/status", proxyChannel, headers); authErr == nil {
+				body = authBody
+				err = nil
+				break
+			}
+		}
+	}
 	if err != nil {
 		return 0, fmt.Errorf("query /api/status failed: %w", err)
 	}
@@ -916,7 +952,16 @@ func probeSiteGroup(
 	var newAPIQuotaPerUnit float64
 	var newAPIStatusErr error
 	if needsNewAPI {
-		newAPIQuotaPerUnit, newAPIStatusErr = fetchNewAPIQuotaPerUnit(ctx, siteKey, proxyChannel)
+		statusAuthTokens := make([]string, 0, len(group.channels)+1)
+		for _, channel := range group.channels {
+			if apiKey, _ := firstActiveChannelKey(channel); apiKey != "" {
+				statusAuthTokens = append(statusAuthTokens, apiKey)
+			}
+		}
+		if token := strings.TrimSpace(siteCfg.AccessToken); token != "" {
+			statusAuthTokens = append(statusAuthTokens, token)
+		}
+		newAPIQuotaPerUnit, newAPIStatusErr = fetchNewAPIQuotaPerUnit(ctx, siteKey, proxyChannel, statusAuthTokens)
 	}
 
 	newAPIKeyCache := make(map[string]newAPITokenProbeResult)
@@ -1246,68 +1291,79 @@ func probeSiteGroup(
 		if newAPIStatusErr != nil {
 			siteSnap.Status = UpstreamBalanceStatusError
 			siteSnap.Error = sanitizeUpstreamError(newAPIStatusErr, siteCfg.AccessToken)
-		} else if strings.TrimSpace(siteCfg.AccessToken) != "" {
-			availUSD, usedUSD, totalUSD, err := probeNewAPIUserSelf(ctx, siteKey, siteCfg.AccessToken, siteCfg.UserID, newAPIQuotaPerUnit, proxyChannel)
-			if err != nil {
-				siteSnap.Status = UpstreamBalanceStatusError
-				siteSnap.Error = sanitizeUpstreamError(err, siteCfg.AccessToken)
-			} else {
-				balUSD := roundMoney(availUSD)
-				uUSD := roundMoney(usedUSD)
-				tUSD := roundMoney(totalUSD)
-				balCNY, totCNY, remPct, pctSrc := computeBalanceMetrics(&balUSD, &tUSD, cnyRate, siteCfg.ReferenceTotalCNY, UpstreamPercentSourceAccountTotal)
-				siteSnap.Status = UpstreamBalanceStatusOK
-				siteSnap.BalanceSource = UpstreamBalanceSourceUserSelf
-				siteSnap.BalanceUSD = &balUSD
-				siteSnap.UsedUSD = &uUSD
-				siteSnap.TotalUSD = &tUSD
-				siteSnap.BalanceCNY = balCNY
-				siteSnap.TotalCNY = totCNY
-				siteSnap.RemainingPercent = remPct
-				siteSnap.PercentSource = pctSrc
-			}
-		} else if newAPIUserQuotaFound {
-			balUSD := roundMoney(newAPIUserAvailUSD)
-			uUSD := roundMoney(newAPIUserUsedUSD)
-			tUSD := roundMoney(newAPIUserTotalUSD)
-			balCNY, totCNY, remPct, pctSrc := computeBalanceMetrics(&balUSD, &tUSD, cnyRate, siteCfg.ReferenceTotalCNY, UpstreamPercentSourceAccountTotal)
-			siteSnap.Status = UpstreamBalanceStatusOK
-			siteSnap.BalanceSource = UpstreamBalanceSourceTokenUserQuota
-			siteSnap.BalanceUSD = &balUSD
-			siteSnap.UsedUSD = &uUSD
-			siteSnap.TotalUSD = &tUSD
-			siteSnap.BalanceCNY = balCNY
-			siteSnap.TotalCNY = totCNY
-			siteSnap.RemainingPercent = remPct
-			siteSnap.PercentSource = pctSrc
-		} else if len(finiteNewAPIKeys) > 0 {
-			var sumAvail, sumUsed, sumTotal float64
-			for _, item := range finiteNewAPIKeys {
-				sumAvail += item.TokenAvailUSD
-				sumUsed += item.TokenUsedUSD
-				sumTotal += item.TokenTotalUSD
-			}
-			balUSD := roundMoney(sumAvail)
-			uUSD := roundMoney(sumUsed)
-			tUSD := roundMoney(sumTotal)
-			balCNY, totCNY, remPct, pctSrc := computeBalanceMetrics(&balUSD, &tUSD, cnyRate, siteCfg.ReferenceTotalCNY, UpstreamPercentSourceTokenTotal)
-			siteSnap.Status = UpstreamBalanceStatusOK
-			siteSnap.BalanceSource = UpstreamBalanceSourceTokenQuota
-			siteSnap.BalanceUSD = &balUSD
-			siteSnap.UsedUSD = &uUSD
-			siteSnap.TotalUSD = &tUSD
-			siteSnap.BalanceCNY = balCNY
-			siteSnap.TotalCNY = totCNY
-			siteSnap.RemainingPercent = remPct
-			siteSnap.PercentSource = pctSrc
-		} else if newAPIProbedCount > 0 && newAPIUnlimitedCount == newAPIProbedCount {
-			siteSnap.Status = UpstreamBalanceStatusError
-			siteSnap.Error = `Upstream token has unlimited quota without user_quota. Enable "Allow querying user quota" on upstream or configure System Access Token for this site.`
-		} else if firstNewAPIError != "" {
-			siteSnap.Status = UpstreamBalanceStatusError
-			siteSnap.Error = firstNewAPIError
 		} else {
-			siteSnap.Status = UpstreamBalanceStatusUnconfigured
+			var userSelfErr error
+			resolved := false
+			if strings.TrimSpace(siteCfg.AccessToken) != "" {
+				availUSD, usedUSD, totalUSD, err := probeNewAPIUserSelf(ctx, siteKey, siteCfg.AccessToken, siteCfg.UserID, newAPIQuotaPerUnit, proxyChannel)
+				if err == nil {
+					balUSD := roundMoney(availUSD)
+					uUSD := roundMoney(usedUSD)
+					tUSD := roundMoney(totalUSD)
+					balCNY, totCNY, remPct, pctSrc := computeBalanceMetrics(&balUSD, &tUSD, cnyRate, siteCfg.ReferenceTotalCNY, UpstreamPercentSourceAccountTotal)
+					siteSnap.Status = UpstreamBalanceStatusOK
+					siteSnap.BalanceSource = UpstreamBalanceSourceUserSelf
+					siteSnap.BalanceUSD = &balUSD
+					siteSnap.UsedUSD = &uUSD
+					siteSnap.TotalUSD = &tUSD
+					siteSnap.BalanceCNY = balCNY
+					siteSnap.TotalCNY = totCNY
+					siteSnap.RemainingPercent = remPct
+					siteSnap.PercentSource = pctSrc
+					resolved = true
+				} else {
+					userSelfErr = err
+				}
+			}
+			if !resolved {
+				canFallbackFromUserSelf := userSelfErr == nil || isUpstreamHTTPStatus(userSelfErr, http.StatusForbidden)
+				if canFallbackFromUserSelf && newAPIUserQuotaFound {
+					balUSD := roundMoney(newAPIUserAvailUSD)
+					uUSD := roundMoney(newAPIUserUsedUSD)
+					tUSD := roundMoney(newAPIUserTotalUSD)
+					balCNY, totCNY, remPct, pctSrc := computeBalanceMetrics(&balUSD, &tUSD, cnyRate, siteCfg.ReferenceTotalCNY, UpstreamPercentSourceAccountTotal)
+					siteSnap.Status = UpstreamBalanceStatusOK
+					siteSnap.BalanceSource = UpstreamBalanceSourceTokenUserQuota
+					siteSnap.BalanceUSD = &balUSD
+					siteSnap.UsedUSD = &uUSD
+					siteSnap.TotalUSD = &tUSD
+					siteSnap.BalanceCNY = balCNY
+					siteSnap.TotalCNY = totCNY
+					siteSnap.RemainingPercent = remPct
+					siteSnap.PercentSource = pctSrc
+				} else if canFallbackFromUserSelf && len(finiteNewAPIKeys) > 0 {
+					var sumAvail, sumUsed, sumTotal float64
+					for _, item := range finiteNewAPIKeys {
+						sumAvail += item.TokenAvailUSD
+						sumUsed += item.TokenUsedUSD
+						sumTotal += item.TokenTotalUSD
+					}
+					balUSD := roundMoney(sumAvail)
+					uUSD := roundMoney(sumUsed)
+					tUSD := roundMoney(sumTotal)
+					balCNY, totCNY, remPct, pctSrc := computeBalanceMetrics(&balUSD, &tUSD, cnyRate, siteCfg.ReferenceTotalCNY, UpstreamPercentSourceTokenTotal)
+					siteSnap.Status = UpstreamBalanceStatusOK
+					siteSnap.BalanceSource = UpstreamBalanceSourceTokenQuota
+					siteSnap.BalanceUSD = &balUSD
+					siteSnap.UsedUSD = &uUSD
+					siteSnap.TotalUSD = &tUSD
+					siteSnap.BalanceCNY = balCNY
+					siteSnap.TotalCNY = totCNY
+					siteSnap.RemainingPercent = remPct
+					siteSnap.PercentSource = pctSrc
+				} else if userSelfErr != nil {
+					siteSnap.Status = UpstreamBalanceStatusError
+					siteSnap.Error = sanitizeUpstreamError(userSelfErr, siteCfg.AccessToken)
+				} else if newAPIProbedCount > 0 && newAPIUnlimitedCount == newAPIProbedCount {
+					siteSnap.Status = UpstreamBalanceStatusError
+					siteSnap.Error = `Upstream token has unlimited quota without user_quota. Enable "Allow querying user quota" on upstream or configure System Access Token for this site.`
+				} else if firstNewAPIError != "" {
+					siteSnap.Status = UpstreamBalanceStatusError
+					siteSnap.Error = firstNewAPIError
+				} else {
+					siteSnap.Status = UpstreamBalanceStatusUnconfigured
+				}
+			}
 		}
 
 	case operation_setting.UpstreamBalanceProviderSub2API:

@@ -98,12 +98,13 @@ import {
   ApiKeyGroupCombobox,
   type ApiKeyGroupOption,
 } from './api-key-group-combobox'
-import { useApiKeys } from './api-keys-provider'
+import { useOptionalApiKeys } from './api-keys-provider'
 import { AutoGroupOrderEditor } from './auto-group-order-editor'
 
 type ApiKeyMutateDrawerProps = {
   open: boolean
   onOpenChange: (open: boolean, createdId?: number) => void
+  onCreated?: (createdId?: number) => void
   closeLabel?: string
   singleCreate?: boolean
   currentRow?: ApiKey
@@ -116,6 +117,7 @@ const QUOTA_PRESET_AMOUNTS = [10, 50, 100, 500] as const
 export function ApiKeysMutateDrawer({
   open,
   onOpenChange,
+  onCreated,
   closeLabel,
   singleCreate,
   currentRow,
@@ -124,7 +126,7 @@ export function ApiKeysMutateDrawer({
   const locale = toIntlLocale(i18n.language)
   const isUpdate = !!currentRow
   const currentRowId = currentRow?.id
-  const { triggerRefresh } = useApiKeys()
+  const apiKeysContext = useOptionalApiKeys()
   const { status, loading: statusLoading } = useStatus()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [advancedOpen, setAdvancedOpen] = useState(false)
@@ -374,7 +376,7 @@ export function ApiKeysMutateDrawer({
         if (result.success) {
           toast.success(t(SUCCESS_MESSAGES.API_KEY_UPDATED))
           onOpenChange(false)
-          triggerRefresh()
+          apiKeysContext?.triggerRefresh()
         } else {
           handleServerError(result, t(ERROR_MESSAGES.UPDATE_FAILED))
         }
@@ -407,8 +409,9 @@ export function ApiKeysMutateDrawer({
               count: successCount,
             })
           )
+          onCreated?.(createdId)
           onOpenChange(false, createdId)
-          triggerRefresh()
+          apiKeysContext?.triggerRefresh()
         }
       }
     } catch (error) {

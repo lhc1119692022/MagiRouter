@@ -24,6 +24,8 @@ import type {
   ConfirmPaymentComplianceResponse,
   FetchUpstreamRatiosRequest,
   LogCleanupTask,
+  RenameGroupRequest,
+  RenameGroupResponse,
   SmartRoutingConfig,
   SmartRoutingPreviewResponse,
   SystemOptionsResponse,
@@ -60,6 +62,14 @@ export async function updateSystemOption(request: UpdateOptionRequest) {
 export async function updateGroupSettings(request: UpdateGroupSettingsRequest) {
   const res = await api.put<UpdateOptionResponse>(
     '/api/option/group_settings',
+    request
+  )
+  return res.data
+}
+
+export async function renameGroup(request: RenameGroupRequest) {
+  const res = await api.post<RenameGroupResponse>(
+    '/api/option/group_settings/rename',
     request
   )
   return res.data

@@ -149,3 +149,17 @@ export function isValidWeChatQRCodeValue(value: string): boolean {
     return false
   }
 }
+
+export function isValidContactEmailValue(value: string): boolean {
+  const trimmed = value.trim()
+  if (!trimmed) {
+    return true
+  }
+  if (trimmed.length > 254 || /[\s?&#<>"'\\]/.test(trimmed)) {
+    return false
+  }
+  if (trimmed.includes('..')) {
+    return false
+  }
+  return /^[^\s@]+@[^\s@.]+\.[^\s@.]+(?:\.[^\s@.]+)*$/.test(trimmed)
+}

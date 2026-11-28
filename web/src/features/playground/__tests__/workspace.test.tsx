@@ -289,7 +289,7 @@ it('opening a scene prefills an editable prompt without revealing a key or start
   ).toBeVisible()
   expect(screen.getByRole('combobox', { name: 'Select model' })).toBeDisabled()
   await chooseWorkspaceOption(userEvent.setup(), 'API Key', 'Test key')
-  expect(await screen.findByRole('button', { name: '2 张' })).toHaveClass(
+  expect(await screen.findByRole('button', { name: '2 image(s)' })).toHaveClass(
     'is-active'
   )
   expect(screen.getByRole('button', { name: /^Generate/ })).toBeDisabled()
@@ -587,7 +587,7 @@ it('drops the old key’s model and media controls, preserves the draft, and nev
   await chooseWorkspaceOption(user, 'API Key', 'Test key')
   await waitFor(() => expect(model).toHaveValue('restricted-image'))
   await user.type(screen.getByRole('textbox'), 'My unsent image description')
-  await user.click(screen.getByRole('button', { name: '4 张' }))
+  await user.click(screen.getByRole('button', { name: '4 image(s)' }))
   expect(screen.queryByRole('status', { name: 'Billing group' })).toBeNull()
   expect(keys).toHaveTextContent('Test key')
   expect(keys).toHaveTextContent('research')
@@ -607,10 +607,10 @@ it('drops the old key’s model and media controls, preserves the draft, and nev
     await screen.findByRole('option', { name: 'first-catalog-entry' })
   ).toBeVisible()
   await user.keyboard('{Escape}')
-  expect(screen.queryByRole('button', { name: '4 张' })).toBeNull()
+  expect(screen.queryByRole('button', { name: '4 image(s)' })).toBeNull()
   expect(screen.getByRole('button', { name: /^Generate/ })).toBeDisabled()
   await chooseWorkspaceOption(user, 'API Key', 'Test key')
-  expect(await screen.findByRole('button', { name: '1 张' })).toHaveClass(
+  expect(await screen.findByRole('button', { name: '1 image(s)' })).toHaveClass(
     'is-active'
   )
   expect(screen.getByRole('textbox')).toHaveValue('My unsent image description')
@@ -1532,4 +1532,189 @@ it('enables file/image attachment and defaults to auto file-output without showi
     role: 'user',
     content: 'Generate sales report',
   })
+})
+
+it('lets users with existing keys create and auto-select a new API key inline from the dropdown without losing their draft', async () => {
+  const user = userEvent.setup()
+  await renderPlayground('selected-catalog-entry')
+
+  const existingKeys = [
+    {
+      id: 42,
+      name: 'Test key',
+      status: 1,
+      expired_time: -1,
+      unlimited_quota: true,
+      group: 'default',
+    },
+    {
+      id: 43,
+      name: 'VIP key',
+      status: 1,
+      expired_time: -1,
+      unlimited_quota: true,
+      group: 'vip',
+    },
+  ]
+  const createdKey = {
+    id: 99,
+    name: 'Image Studio Key',
+    status: 1,
+    expired_time: -1,
+    unlimited_quota: true,
+    group: 'studio',
+  }
+  let keys = [...existingKeys]
+
+  vi.spyOn(api, 'get').mockImplementation(async (url, options) => {
+    if (url === '/api/token/auto_groups') {
+      return { data: { success: true, data: { groups: [], max_count: 5 } } }
+    }
+    if (url.startsWith('/api/token/')) {
+      return {
+        data: { success: true, data: { items: keys, total: keys.length } },
+      }
+    }
+    if (url === '/api/user/self/groups') {
+      return {
+        data: {
+          success: true,
+          data: {
+            default: { desc: 'Default group', ratio: 1 },
+            studio: { desc: 'Studio group', ratio: 1 },
+          },
+        },
+      }
+    }
+    if (url === '/api/user/models') {
+      const params = options?.params as Record<string, unknown> | undefined
+      const billingKeyId = params?.billing_key_id
+      if (billingKeyId === createdKey.id) {
+        return {
+          data: {
+            success: true,
+            group: 'studio',
+            billing_key_id: createdKey.id,
+            data: ['selected-catalog-entry'],
+          },
+        }
+      }
+      return {
+        data: {
+          success: true,
+          group: 'default',
+          data: ['selected-catalog-entry'],
+          ...(billingKeyId ? { billing_key_id: billingKeyId } : {}),
+        },
+      }
+    }
+    if (url === '/api/status') {
+      return { data: { success: true, data: { usd_exchange_rate: 7 } } }
+    }
+    if (url === '/api/pricing') {
+      return {
+        data: {
+          success: true,
+          vendors: [],
+          data: [
+            {
+              model_name: 'selected-catalog-entry',
+              input_modalities: ['image', 'text'],
+              supported_endpoint_types: ['image-generation', 'image-edits'],
+              output_modalities: ['image'],
+              enable_groups: ['default', 'studio'],
+            },
+          ],
+        },
+      }
+    }
+    return { data: { success: true, data: [] } }
+  })
+
+  const post = vi.spyOn(api, 'post').mockImplementation(async (url) => {
+    if (url === '/api/token/') {
+      keys = [...existingKeys, createdKey]
+      return { data: { success: true, data: { id: createdKey.id } } }
+    }
+    return { data: { success: false, message: 'Unexpected POST' } }
+  })
+
+  const promptBox = await screen.findByRole('textbox')
+  await user.type(promptBox, 'Keep my image prompt intact')
+
+  await user.click(screen.getByRole('combobox', { name: 'API Key' }))
+  const options = await screen.findAllByRole('option')
+  expect(options.at(-1)).toHaveAccessibleName('Create an API key')
+  await user.click(options.at(-1) as HTMLElement)
+
+  const dialog = await screen.findByRole('dialog', { name: 'Create API Key' })
+  expect(dialog).toBeVisible()
+  await user.click(within(dialog).getAllByRole('button', { name: 'Close' })[0])
+  await waitFor(() =>
+    expect(
+      screen.queryByRole('dialog', { name: 'Create API Key' })
+    ).not.toBeInTheDocument()
+  )
+  expect(promptBox).toHaveValue('Keep my image prompt intact')
+
+  await user.click(screen.getByRole('combobox', { name: 'API Key' }))
+  await user.click(
+    await screen.findByRole('option', { name: 'Create an API key' })
+  )
+  const reopenedDialog = await screen.findByRole('dialog', {
+    name: 'Create API Key',
+  })
+  const saveButton = within(reopenedDialog).getByRole('button', {
+    name: 'Save changes',
+  })
+  await waitFor(() => expect(saveButton).toBeEnabled())
+  const nameInput = within(reopenedDialog).getByRole('textbox', {
+    name: /Name/i,
+  })
+  await user.type(nameInput, createdKey.name)
+  await user.click(saveButton)
+
+  await waitFor(() =>
+    expect(
+      screen.queryByRole('dialog', { name: 'Create API Key' })
+    ).not.toBeInTheDocument()
+  )
+  await waitFor(() =>
+    expect(screen.getByRole('combobox', { name: 'API Key' })).toHaveTextContent(
+      createdKey.name
+    )
+  )
+  expect(screen.getByRole('combobox', { name: 'API Key' })).toHaveTextContent(
+    'studio'
+  )
+  expect(screen.getByRole('textbox')).toHaveValue('Keep my image prompt intact')
+  expect(screen.getByRole('button', { name: /^Generate/ })).toBeEnabled()
+  expect(post).toHaveBeenCalledWith(
+    '/api/token/',
+    expect.objectContaining({ name: createdKey.name })
+  )
+})
+
+it('offers inline key creation inside the media status notice when the selected key lacks the requested model', async () => {
+  const user = userEvent.setup()
+  await renderPlayground(
+    'protected-image',
+    undefined,
+    ['protected-image', 'first-catalog-entry'],
+    undefined,
+    { models: ['first-catalog-entry'] }
+  )
+  await chooseWorkspaceOption(user, 'API Key', 'Test key')
+  const notice = (
+    await screen.findByText(
+      /Requested model is unavailable in this group: protected-image/
+    )
+  ).closest('[role="status"]') as HTMLElement
+  expect(notice).not.toBeNull()
+  await user.click(
+    within(notice).getByRole('button', { name: 'Create an API key' })
+  )
+  expect(
+    await screen.findByRole('dialog', { name: 'Create API Key' })
+  ).toBeVisible()
 })

@@ -59,6 +59,7 @@ import {
   SettingsSwitchItem,
 } from '../components/settings-form-layout'
 import { SettingsPageActionsPortal } from '../components/settings-page-context'
+import type { GroupRenameImpact } from '../types'
 import { safeNumberFieldProps } from '../utils/numeric-field'
 import {
   GroupRatioVisualEditor,
@@ -82,12 +83,24 @@ type GroupRatioFormProps = {
   form: UseFormReturn<GroupFormValues>
   onSave: (values: GroupFormValues) => Promise<void>
   isSaving: boolean
+  savedGroupNames?: ReadonlySet<string>
+  onPreviewRenameGroup?: (
+    oldName: string,
+    newName: string
+  ) => Promise<GroupRenameImpact>
+  onConfirmRenameGroup?: (
+    oldName: string,
+    newName: string
+  ) => Promise<GroupRenameImpact>
 }
 
 export const GroupRatioForm = memo(function GroupRatioForm({
   form,
   onSave,
   isSaving,
+  savedGroupNames,
+  onPreviewRenameGroup,
+  onConfirmRenameGroup,
 }: GroupRatioFormProps) {
   const { t } = useTranslation()
   const values = useWatch({ control: form.control })
@@ -182,6 +195,10 @@ export const GroupRatioForm = memo(function GroupRatioForm({
             groupGroupRatio={values.GroupGroupRatio ?? ''}
             autoGroups={values.AutoGroups ?? ''}
             smartRoutingConfig={values.SmartRoutingConfig ?? ''}
+            savedGroupNames={savedGroupNames}
+            hasUnsavedGroupChanges={form.formState.isDirty}
+            onPreviewRenameGroup={onPreviewRenameGroup}
+            onConfirmRenameGroup={onConfirmRenameGroup}
             maxTokenAutoGroupsField={
               <FormField
                 control={form.control}

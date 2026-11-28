@@ -312,6 +312,82 @@ func TestUpstreamBalanceNewAPIUserSelfFallbackAndAlertCooldown(t *testing.T) {
 	assert.Equal(t, int32(2), emailCount.Load())
 }
 
+func TestUpstreamBalanceNewAPIRetriesStatusWithChannelKeyAndFallsBackOnForbiddenUserSelf(t *testing.T) {
+	setupUpstreamBalanceServiceTest(t)
+
+	var unauthStatusHits atomic.Int32
+	var authStatusHits atomic.Int32
+	var userSelfHits atomic.Int32
+	upstreamServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/status":
+			if r.Header.Get("Authorization") != "Bearer sk-cdn-key" {
+				unauthStatusHits.Add(1)
+				http.Error(w, "403 Forbidden", http.StatusForbidden)
+				return
+			}
+			authStatusHits.Add(1)
+			_, _ = w.Write([]byte(`{"success":true,"data":{"quota_per_unit":1000000}}`))
+		case "/api/user/self":
+			userSelfHits.Add(1)
+			http.Error(w, "403 Forbidden", http.StatusForbidden)
+		case "/api/usage/token/":
+			if r.Header.Get("Authorization") != "Bearer sk-cdn-key" {
+				http.Error(w, "403 Forbidden", http.StatusForbidden)
+				return
+			}
+			_, _ = w.Write([]byte(`{"code":true,"data":{"total_available":25000000,"total_granted":30000000,"total_used":5000000,"unlimited_quota":false}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstreamServer.Close()
+
+	siteURL := upstreamServer.URL
+	ch := &model.Channel{
+		Name:    "CDN Protected New API",
+		Type:    constant.ChannelTypeNewAPI,
+		Status:  common.ChannelStatusEnabled,
+		BaseURL: &siteURL,
+		Key:     "sk-cdn-key",
+		Group:   "default",
+	}
+	require.NoError(t, model.DB.Create(ch).Error)
+
+	saveTestUpstreamSetting(t, operation_setting.UpstreamBalanceSetting{
+		Enabled:              true,
+		CheckIntervalMinutes: 15,
+		AlertCooldownMinutes: 1440,
+		Sites: map[string]operation_setting.UpstreamBalanceSiteConfig{
+			upstreamServer.URL: {
+				Name:         "CDN Site",
+				ProviderType: operation_setting.UpstreamBalanceProviderNewAPI,
+				AccessToken:  "legacy-access-token",
+				UserID:       "2565",
+			},
+		},
+		Channels: map[string]operation_setting.UpstreamBalanceChannelConfig{},
+	})
+
+	summary, err := RefreshUpstreamBalances(context.Background(), UpstreamBalanceRefreshOptions{SendAlerts: false})
+	require.NoError(t, err)
+	assert.Equal(t, 1, summary.RefreshedSites)
+	assert.GreaterOrEqual(t, unauthStatusHits.Load(), int32(1))
+	assert.Equal(t, int32(1), authStatusHits.Load())
+	assert.Equal(t, int32(1), userSelfHits.Load())
+
+	overview, err := BuildUpstreamBalanceOverview()
+	require.NoError(t, err)
+	require.Len(t, overview.Sites, 1)
+	site := overview.Sites[0]
+	assert.Equal(t, UpstreamBalanceStatusOK, site.Snapshot.Status)
+	assert.Equal(t, UpstreamBalanceSourceTokenQuota, site.Snapshot.BalanceSource)
+	require.NotNil(t, site.Snapshot.BalanceUSD)
+	assert.InDelta(t, 25.0, *site.Snapshot.BalanceUSD, 1e-6)
+	require.NotNil(t, site.Snapshot.BalanceCNY)
+	assert.InDelta(t, 175.0, *site.Snapshot.BalanceCNY, 1e-6)
+}
+
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {

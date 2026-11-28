@@ -519,6 +519,12 @@ func updateChannelNewAPIBalance(channel *model.Channel) (float64, error) {
 	}
 
 	body, err = GetResponseBody("GET", baseURL+"/api/status", channel, nil)
+	if err != nil && strings.TrimSpace(channel.Key) != "" {
+		if authBody, authErr := GetResponseBody("GET", baseURL+"/api/status", channel, GetAuthHeader(channel.Key)); authErr == nil {
+			body = authBody
+			err = nil
+		}
+	}
 	if err != nil {
 		return 0, err
 	}

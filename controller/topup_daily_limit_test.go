@@ -30,6 +30,8 @@ func setupDailyTopUpControllerTestDB(t *testing.T) *model.User {
 	ps := operation_setting.GetPaymentSetting()
 	oldLimit := ps.DailyTopUpLimit
 	oldExempt := append([]string(nil), ps.DailyTopUpExemptUsers...)
+	oldMethod := ps.DailyTopUpContactMethod
+	oldEmail := ps.DailyTopUpContactEmail
 	oldQR := ps.DailyTopUpContactWeChatQRCode
 	oldNote := ps.DailyTopUpContactNote
 
@@ -53,8 +55,10 @@ func setupDailyTopUpControllerTestDB(t *testing.T) *model.User {
 	common.OptionMapRWMutex.Lock()
 	ps.DailyTopUpLimit = 200
 	ps.DailyTopUpExemptUsers = []string{"vip_user"}
+	ps.DailyTopUpContactMethod = operation_setting.DailyTopUpContactMethodEmail
+	ps.DailyTopUpContactEmail = "billing@example.com"
 	ps.DailyTopUpContactWeChatQRCode = "https://cdn.example.com/wechat-qr.png"
-	ps.DailyTopUpContactNote = "Add WeChat for large top-up"
+	ps.DailyTopUpContactNote = "Contact us for large top-up"
 	common.OptionMapRWMutex.Unlock()
 
 	t.Cleanup(func() {
@@ -71,6 +75,8 @@ func setupDailyTopUpControllerTestDB(t *testing.T) *model.User {
 		common.OptionMapRWMutex.Lock()
 		ps.DailyTopUpLimit = oldLimit
 		ps.DailyTopUpExemptUsers = oldExempt
+		ps.DailyTopUpContactMethod = oldMethod
+		ps.DailyTopUpContactEmail = oldEmail
 		ps.DailyTopUpContactWeChatQRCode = oldQR
 		ps.DailyTopUpContactNote = oldNote
 		common.OptionMapRWMutex.Unlock()
@@ -111,10 +117,13 @@ func TestGetTopUpInfoIncludesDailyLimitWithoutLeakingExemptList(t *testing.T) {
 	assert.Equal(t, 200.0, resp.Data.DailyLimit.Limit)
 	assert.Equal(t, 200.0, resp.Data.DailyLimit.Remaining)
 	assert.False(t, resp.Data.DailyLimit.Exempt)
-	assert.Equal(t, "https://cdn.example.com/wechat-qr.png", resp.Data.DailyLimit.ContactWeChatQR)
+	assert.Equal(t, operation_setting.DailyTopUpContactMethodEmail, resp.Data.DailyLimit.ContactMethod)
+	assert.Equal(t, "billing@example.com", resp.Data.DailyLimit.ContactEmail)
+	assert.Empty(t, resp.Data.DailyLimit.ContactWeChatQR)
+	assert.NotContains(t, recorder.Body.String(), "wechat-qr.png")
 }
 
-func TestRequestEpayReturnsDailyLimitPayloadWithQRCodeWhenExceeded(t *testing.T) {
+func TestRequestEpayReturnsDailyLimitPayloadWithEmailWhenExceeded(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	user := setupDailyTopUpControllerTestDB(t)
 
@@ -136,11 +145,48 @@ func TestRequestEpayReturnsDailyLimitPayloadWithQRCodeWhenExceeded(t *testing.T)
 	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &body))
 	assert.Equal(t, "error", body.Message)
 	assert.Equal(t, "daily_topup_limit_exceeded", body.Code)
-	assert.NotEmpty(t, body.MessageKey)
+	assert.Contains(t, body.MessageKey, "email")
 	assert.Equal(t, 200.0, body.DailyLimit.Limit)
 	assert.Equal(t, 200.0, body.DailyLimit.Remaining)
+	assert.Equal(t, operation_setting.DailyTopUpContactMethodEmail, body.DailyLimit.ContactMethod)
+	assert.Equal(t, "billing@example.com", body.DailyLimit.ContactEmail)
+	assert.Empty(t, body.DailyLimit.ContactWeChatQR)
+	assert.Equal(t, "Contact us for large top-up", body.DailyLimit.ContactNote)
+	assert.NotContains(t, recorder.Body.String(), "wechat-qr.png")
+}
+
+func TestRequestEpayReturnsDailyLimitPayloadWithQRCodeWhenWeChatEnabled(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	user := setupDailyTopUpControllerTestDB(t)
+
+	ps := operation_setting.GetPaymentSetting()
+	common.OptionMapRWMutex.Lock()
+	ps.DailyTopUpContactMethod = operation_setting.DailyTopUpContactMethodWeChat
+	common.OptionMapRWMutex.Unlock()
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/user/pay", strings.NewReader(`{"amount":250,"payment_method":"alipay"}`))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+	ctx.Set("id", user.Id)
+
+	RequestEpay(ctx)
+	require.Equal(t, http.StatusOK, recorder.Code)
+
+	var body struct {
+		Message    string                      `json:"message"`
+		Code       string                      `json:"code"`
+		MessageKey string                      `json:"message_key"`
+		DailyLimit model.DailyTopUpLimitStatus `json:"daily_limit"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &body))
+	assert.Equal(t, "error", body.Message)
+	assert.Equal(t, "daily_topup_limit_exceeded", body.Code)
+	assert.Contains(t, body.MessageKey, "WeChat")
+	assert.Equal(t, operation_setting.DailyTopUpContactMethodWeChat, body.DailyLimit.ContactMethod)
+	assert.Empty(t, body.DailyLimit.ContactEmail)
 	assert.Equal(t, "https://cdn.example.com/wechat-qr.png", body.DailyLimit.ContactWeChatQR)
-	assert.Equal(t, "Add WeChat for large top-up", body.DailyLimit.ContactNote)
+	assert.NotContains(t, recorder.Body.String(), "billing@example.com")
 }
 
 func TestRequestEpayAllowsExemptUserOverDailyLimit(t *testing.T) {

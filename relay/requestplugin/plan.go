@@ -195,13 +195,14 @@ func newPlanOf(instances []request_plugin_setting.Instance) *Plan {
 }
 
 // scope returns the instances that run at stage for a request for model, in
-// order: the global ones and those that follow their plugin's scope, then
-// those of group, then the channel's bound ids; each once. channelType is the
-// type of the attempt's channel, 0 before one is selected: a plugin scope
-// that names channel types holds only once a channel of one of them is. One
-// whose plugin lacks the stage hook does not run, nor one whose models leave
-// out model. An unavailable plugin's instance is in scope at ingress only,
-// where it fails the request.
+// order: the global ones, those excluding other groups and those that follow
+// their plugin's scope, then those of group, then the channel's bound ids;
+// each once. channelType is the type of the attempt's channel, 0 before one
+// is selected: a plugin scope that names channel types holds only once a
+// channel of one of them is. One whose plugin lacks the stage hook does not
+// run, nor one whose models leave out model or whose excluded models name
+// it. An unavailable plugin's instance is in scope at ingress only, where it
+// fails the request.
 func (p *Plan) scope(stage, group, model string, channelType int, bound []string) []*request_plugin_setting.Instance {
 	if p == nil {
 		return nil
@@ -218,8 +219,13 @@ func (p *Plan) scope(stage, group, model string, channelType int, bound []string
 		// The models are matched without the @ modifiers of the client's
 		// name, and as written for a model whose real name has an @. Those
 		// of a plugin scope instance come from its scope alone.
-		if instance.PluginScope == nil && len(instance.Models) > 0 && !slices.Contains(instance.Models, base) && !slices.Contains(instance.Models, model) {
-			return
+		if instance.PluginScope == nil {
+			if len(instance.Models) > 0 && !slices.Contains(instance.Models, base) && !slices.Contains(instance.Models, model) {
+				return
+			}
+			if len(instance.ExcludeModels) > 0 && (slices.Contains(instance.ExcludeModels, base) || slices.Contains(instance.ExcludeModels, model)) {
+				return
+			}
 		}
 		scoped = append(scoped, instance)
 	}
@@ -235,13 +241,21 @@ func (p *Plan) scope(stage, group, model string, channelType int, bound []string
 			}
 			continue
 		}
+		if len(instance.ExcludeGroups) > 0 {
+			// The auto group is settled only when the channel is selected;
+			// wait for the settled group before deciding whether to run.
+			if group != "auto" && !slices.Contains(instance.ExcludeGroups, group) {
+				add(instance)
+			}
+			continue
+		}
 		if instance.Global {
 			add(instance)
 		}
 	}
 	if group != "" {
 		for i := range p.instances {
-			if p.instances[i].PluginScope == nil && slices.Contains(p.instances[i].Groups, group) {
+			if p.instances[i].PluginScope == nil && len(p.instances[i].ExcludeGroups) == 0 && slices.Contains(p.instances[i].Groups, group) {
 				add(&p.instances[i])
 			}
 		}

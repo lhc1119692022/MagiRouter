@@ -84,6 +84,21 @@ describe('resolveImageRoute', () => {
       isFallback: false,
     })
   })
+
+  it('always routes GPT Image reference requests to /v1/images/edits even with style-reference keywords', () => {
+    const result = resolveImageRoute({
+      prompt: '参考这张图的画风和构图，生成一个雪山新场景',
+      referenceCount: 2,
+      alwaysUseEditsWithReferences: true,
+    })
+    expect(result).toEqual({
+      intent: 'image-edit',
+      endpoint: '/v1/images/edits',
+      task: 'edit',
+      matchedKeywords: [],
+      isFallback: false,
+    })
+  })
 })
 
 describe('extractImageReferenceCountFromPayload', () => {
@@ -98,6 +113,15 @@ describe('extractImageReferenceCountFromPayload', () => {
     expect(
       extractImageReferenceCountFromPayload({
         image: ['https://example.com/a.png', '', 'data:image/png;base64,abc'],
+      })
+    ).toBe(2)
+    expect(
+      extractImageReferenceCountFromPayload({
+        images: [
+          { image_url: 'https://example.com/a.png' },
+          { image_url: '   ' },
+          { file_id: 'file-123' },
+        ],
       })
     ).toBe(2)
   })

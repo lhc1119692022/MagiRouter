@@ -290,6 +290,35 @@ func UpdateGroupSettings(c *gin.Context) {
 	common.ApiSuccess(c, nil)
 }
 
+func RenameGroup(c *gin.Context) {
+	var request struct {
+		OldName string `json:"old_name"`
+		NewName string `json:"new_name"`
+		DryRun  bool   `json:"dry_run"`
+	}
+	if err := common.DecodeJsonBody(c.Request.Body, &request); err != nil {
+		common.ApiErrorStatus(c, http.StatusBadRequest, common.NewMessage("Invalid parameters"))
+		return
+	}
+	impact, err := model.RenameGroup(request.OldName, request.NewName, request.DryRun)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if !request.DryRun {
+		recordManageAudit(c, "group.rename", map[string]any{
+			"old_name":           impact.OldName,
+			"new_name":           impact.NewName,
+			"channels":           impact.Channels,
+			"users":              impact.Users,
+			"tokens":             impact.Tokens,
+			"subscriptions":      impact.Subscriptions,
+			"model_group_prices": impact.ModelGroupPrices,
+		})
+	}
+	common.ApiSuccess(c, impact)
+}
+
 func writePasskeyDomainSettingsError(c *gin.Context, err error) {
 	var removal *model.PasskeyDomainRemovalError
 	if errors.As(err, &removal) {

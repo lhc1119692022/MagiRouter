@@ -22,6 +22,8 @@ type DailyTopUpLimitStatus struct {
 	Remaining          float64 `json:"remaining"`
 	Exempt             bool    `json:"exempt"`
 	PendingHoldMinutes int     `json:"pending_hold_minutes,omitempty"`
+	ContactMethod      string  `json:"contact_method"`
+	ContactEmail       string  `json:"contact_email"`
 	ContactWeChatQR    string  `json:"contact_wechat_qrcode"`
 	ContactNote        string  `json:"contact_note"`
 }
@@ -115,6 +117,17 @@ func buildDailyTopUpLimitStatus(cfg operation_setting.DailyTopUpLimitConfig, exe
 			remainingDec = decimal.Zero
 		}
 	}
+	contactMethod := cfg.ContactMethod
+	if contactMethod != operation_setting.DailyTopUpContactMethodWeChat {
+		contactMethod = operation_setting.DailyTopUpContactMethodEmail
+	}
+	contactEmail := ""
+	contactWeChatQR := ""
+	if contactMethod == operation_setting.DailyTopUpContactMethodWeChat {
+		contactWeChatQR = cfg.ContactWeChatQR
+	} else {
+		contactEmail = cfg.ContactEmail
+	}
 	return DailyTopUpLimitStatus{
 		Enabled:            enabled,
 		Limit:              limitDec.InexactFloat64(),
@@ -123,7 +136,9 @@ func buildDailyTopUpLimitStatus(cfg operation_setting.DailyTopUpLimitConfig, exe
 		Remaining:          remainingDec.Round(2).InexactFloat64(),
 		Exempt:             exempt,
 		PendingHoldMinutes: int(dailyTopUpPendingHoldDuration() / time.Minute),
-		ContactWeChatQR:    cfg.ContactWeChatQR,
+		ContactMethod:      contactMethod,
+		ContactEmail:       contactEmail,
+		ContactWeChatQR:    contactWeChatQR,
 		ContactNote:        cfg.ContactNote,
 	}
 }

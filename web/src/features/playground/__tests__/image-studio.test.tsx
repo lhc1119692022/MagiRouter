@@ -477,4 +477,187 @@ describe('Image Playground Studio', () => {
       within(inspector).getByRole('tab', { name: 'Solo layer' })
     ).toHaveAttribute('aria-selected', 'true')
   })
+
+  it('adapts form controls, 16-reference edits routing, compression, background, and extended quality for gpt-image-2.5-flare', async () => {
+    const user = await renderImagePlayground('gpt-image-2.5-flare')
+    vi.spyOn(api, 'post').mockResolvedValue({
+      data: { success: true, data: { key: 'oai-test-key' } },
+    })
+    const gateway = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: [{ b64_json: 'iVBORw0KGgo=' }],
+        })
+      )
+    )
+    vi.stubGlobal('fetch', gateway)
+
+    expect(screen.getByText('0 / 32000')).toBeVisible()
+    expect(screen.getByText('0 / 16')).toBeVisible()
+
+    const tierGroup = screen.getByRole('group', { name: 'Resolution tier' })
+    expect(within(tierGroup).getByRole('button', { name: 'auto' })).toHaveClass(
+      'is-active'
+    )
+    expect(within(tierGroup).getByRole('button', { name: '2K' })).toBeVisible()
+    expect(within(tierGroup).getByRole('button', { name: '4K' })).toBeVisible()
+    expect(screen.queryByRole('combobox', { name: 'Aspect ratio' })).toBeNull()
+
+    await user.click(within(tierGroup).getByRole('button', { name: '2K' }))
+    const ratioSelect = screen.getByRole('combobox', { name: 'Aspect ratio' })
+    await user.click(ratioSelect)
+    await user.click(await screen.findByRole('option', { name: '16:9' }))
+    expect(screen.getByTestId('pg-resolved-pixel-size')).toHaveTextContent(
+      '2048 × 1152 px'
+    )
+
+    const qualityGroup = screen.getByRole('group', { name: 'Quality' })
+    expect(
+      within(qualityGroup).getByRole('button', { name: 'auto' })
+    ).toHaveClass('is-active')
+    await user.click(
+      within(qualityGroup).getByRole('button', { name: 'xhigh' })
+    )
+    expect(
+      within(qualityGroup).getByRole('button', { name: 'max' })
+    ).toBeVisible()
+    expect(
+      screen.queryByRole('group', { name: 'Planning complexity' })
+    ).toBeNull()
+
+    const formatGroup = screen.getByRole('group', { name: 'Output format' })
+    await user.click(within(formatGroup).getByRole('button', { name: 'JPEG' }))
+    const compressionSlider = screen.getByRole('slider', {
+      name: 'Output compression',
+    })
+    expect(compressionSlider).toHaveValue('100')
+    fireEvent.change(compressionSlider, { target: { value: '85' } })
+
+    const bgGroup = screen.getByRole('group', { name: 'Background alpha' })
+    await user.click(
+      within(bgGroup).getByRole('button', { name: 'Transparent (RGBA)' })
+    )
+    expect(
+      within(formatGroup).getByRole('button', { name: 'PNG' })
+    ).toHaveClass('is-active')
+    await user.click(within(formatGroup).getByRole('button', { name: 'WEBP' }))
+    expect(
+      within(bgGroup).getByRole('button', { name: 'Transparent (RGBA)' })
+    ).toHaveClass('is-active')
+
+    await user.click(
+      within(screen.getByRole('group', { name: 'Moderation level' })).getByRole(
+        'button',
+        { name: 'Low (less restrictive)' }
+      )
+    )
+
+    await user.click(screen.getByRole('switch', { name: 'Stream output' }))
+    await user.click(
+      within(
+        screen.getByRole('group', { name: 'Partial preview images' })
+      ).getByRole('button', { name: '2' })
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Add image URL' }))
+    await user.type(
+      screen.getByPlaceholderText('Paste image URL and press Enter'),
+      'https://example.com/cat.png{Enter}'
+    )
+    await user.type(
+      screen.getByRole('textbox', { name: /Prompt/ }),
+      '参考这张图的画风生成雪山新场景'
+    )
+    expect(screen.getByText('POST /v1/images/edits')).toBeVisible()
+    expect(screen.queryByRole('group', { name: 'Input fidelity' })).toBeNull()
+
+    await user.click(screen.getByRole('button', { name: /^Generate/ }))
+    await waitFor(() =>
+      expect(gateway).toHaveBeenCalledWith(
+        '/v1/images/edits',
+        expect.objectContaining({ method: 'POST' })
+      )
+    )
+    const sentPayload = JSON.parse(
+      String(gateway.mock.calls[0]?.[1]?.body ?? '{}')
+    ) as Record<string, unknown>
+    expect(sentPayload).toEqual({
+      model: 'gpt-image-2.5-flare',
+      prompt: '参考这张图的画风生成雪山新场景',
+      images: [{ image_url: 'https://example.com/cat.png' }],
+      size: '2048x1152',
+      quality: 'xhigh',
+      n: 1,
+      background: 'transparent',
+      output_format: 'webp',
+      output_compression: 85,
+      moderation: 'low',
+      stream: true,
+      partial_images: 2,
+    })
+  })
+
+  it('shows discrete sizes without custom pixel toggle and edit-only input fidelity for gpt-image-1.5', async () => {
+    const user = await renderImagePlayground('gpt-image-1.5')
+    expect(screen.queryByRole('button', { name: 'Custom pixels' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Resolution tier' })).toBeNull()
+    expect(
+      within(screen.getByRole('group', { name: 'Image size' })).getByRole(
+        'button',
+        { name: 'auto' }
+      )
+    ).toHaveClass('is-active')
+    expect(screen.queryByRole('group', { name: 'Input fidelity' })).toBeNull()
+
+    await user.click(screen.getByRole('button', { name: 'Add image URL' }))
+    await user.type(
+      screen.getByPlaceholderText('Paste image URL and press Enter'),
+      'https://example.com/portrait.png{Enter}'
+    )
+    const fidelityGroup = screen.getByRole('group', { name: 'Input fidelity' })
+    expect(
+      within(fidelityGroup).getByRole('button', { name: 'low' })
+    ).toHaveClass('is-active')
+    expect(
+      within(fidelityGroup).getByRole('button', { name: 'high' })
+    ).toBeVisible()
+  })
+
+  it('exposes complexity, GIF frame controls, and SVG safeguards for gpt-image-2.6-flare', async () => {
+    const user = await renderImagePlayground('gpt-image-2.6-flare')
+    const complexityGroup = screen.getByRole('group', {
+      name: 'Planning complexity',
+    })
+    expect(
+      within(complexityGroup).getByRole('button', { name: 'high' })
+    ).toHaveClass('is-active')
+    await user.click(
+      within(complexityGroup).getByRole('button', { name: 'low' })
+    )
+
+    const formatGroup = screen.getByRole('group', { name: 'Output format' })
+    await user.click(within(formatGroup).getByRole('button', { name: 'GIF' }))
+    expect(screen.getByRole('slider', { name: 'Frame count' })).toHaveValue('9')
+    expect(screen.getByRole('slider', { name: 'Frame duration' })).toHaveValue(
+      '200'
+    )
+    expect(screen.queryByRole('switch', { name: 'Stream output' })).toBeNull()
+
+    await user.click(within(formatGroup).getByRole('button', { name: 'SVG' }))
+    expect(
+      screen.getByText('SVG output supports 1 image per request.')
+    ).toBeVisible()
+
+    await user.click(screen.getByRole('button', { name: 'Add image URL' }))
+    await user.type(
+      screen.getByPlaceholderText('Paste image URL and press Enter'),
+      'https://example.com/icon.png{Enter}'
+    )
+    expect(
+      within(formatGroup).getByRole('button', { name: 'PNG' })
+    ).toHaveClass('is-active')
+    expect(
+      within(formatGroup).getByRole('button', { name: 'SVG' })
+    ).toBeDisabled()
+  })
 })

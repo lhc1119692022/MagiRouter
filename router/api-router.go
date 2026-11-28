@@ -229,6 +229,7 @@ func SetApiRouter(router *gin.Engine) {
 			optionRoute.PATCH("/request_policy", controller.UpdateRequestPolicy)
 			optionRoute.PUT("/", controller.UpdateOption)
 			optionRoute.PUT("/group_settings", controller.UpdateGroupSettings)
+			optionRoute.POST("/group_settings/rename", controller.RenameGroup)
 			optionRoute.POST("/smart_routing/preview", controller.PreviewSmartRouting)
 			optionRoute.POST("/creation-presets", controller.CreateCreationPreset)
 			optionRoute.PUT("/passkey/domains", controller.UpdatePasskeyDomains)

@@ -133,8 +133,9 @@ export type RequestPluginConfigSchema = {
 
 /**
  * One configured use of a request processing plugin. `global` and `groups`
- * are its own scope; channels bind instances by id. `models` limits it to the
- * models clients ask for; empty means every model.
+ * (or `exclude_groups`) are its own scope; channels bind instances by id.
+ * `models` limits it to the models clients ask for and `exclude_models` skips
+ * the listed models; empty means every model.
  */
 /** A plugin's scope as an administrator confirmed it. */
 export type RequestPluginScope = {
@@ -149,7 +150,9 @@ export type RequestPluginInstance = {
   enabled: boolean
   global: boolean
   groups: string[]
+  exclude_groups?: string[]
   models: string[]
+  exclude_models?: string[]
   config: Record<string, unknown>
   /** Set when the instance runs where its plugin's scope says. */
   plugin_scope?: RequestPluginScope | null

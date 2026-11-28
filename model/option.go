@@ -757,10 +757,22 @@ func updateOptionMap(key string, value string) (err error) {
 		err = ratio_setting.UpdateModelRatioByJSONString(value)
 	case "GroupRatio":
 		err = ratio_setting.UpdateGroupRatioByJSONString(value)
+		if err == nil {
+			InvalidatePricingCache()
+			ratio_setting.InvalidateExposedDataCache()
+		}
 	case "GroupGroupRatio":
 		err = ratio_setting.UpdateGroupGroupRatioByJSONString(value)
+		if err == nil {
+			InvalidatePricingCache()
+			ratio_setting.InvalidateExposedDataCache()
+		}
 	case "UserUsableGroups":
 		err = setting.UpdateUserUsableGroupsByJSONString(value)
+		if err == nil {
+			InvalidatePricingCache()
+			ratio_setting.InvalidateExposedDataCache()
+		}
 	case "CompletionRatio":
 		err = ratio_setting.UpdateCompletionRatioByJSONString(value)
 	case "ModelPrice":
@@ -835,6 +847,7 @@ func handleConfigUpdate(key, value string) bool {
 		InvalidatePricingCache()
 		ratio_setting.InvalidateExposedDataCache()
 	} else if configName == "group_ratio_setting" {
+		InvalidatePricingCache()
 		ratio_setting.InvalidateExposedDataCache()
 	}
 

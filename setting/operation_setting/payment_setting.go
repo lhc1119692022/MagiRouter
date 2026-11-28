@@ -3,6 +3,7 @@ package operation_setting
 import (
 	"encoding/base64"
 	"math"
+	"net/mail"
 	"net/url"
 	"strconv"
 	"strings"
@@ -31,6 +32,8 @@ type PaymentSetting struct {
 
 	DailyTopUpLimit               float64  `json:"daily_topup_limit"`
 	DailyTopUpExemptUsers         []string `json:"daily_topup_exempt_users"`
+	DailyTopUpContactMethod       string   `json:"daily_topup_contact_method"`
+	DailyTopUpContactEmail        string   `json:"daily_topup_contact_email"`
 	DailyTopUpContactWeChatQRCode string   `json:"daily_topup_contact_wechat_qrcode"`
 	DailyTopUpContactNote         string   `json:"daily_topup_contact_note"`
 
@@ -48,24 +51,32 @@ const (
 	EpayMerchantPrivateKeyOptionKey = "payment_setting.epay_merchant_private_key"
 	EpayPlatformPublicKeyOptionKey  = "payment_setting.epay_platform_public_key"
 
+	DailyTopUpContactMethodEmail  = "email"
+	DailyTopUpContactMethodWeChat = "wechat"
+
 	DailyTopUpLimitOptionKey               = "payment_setting.daily_topup_limit"
 	DailyTopUpExemptUsersOptionKey         = "payment_setting.daily_topup_exempt_users"
+	DailyTopUpContactMethodOptionKey       = "payment_setting.daily_topup_contact_method"
+	DailyTopUpContactEmailOptionKey        = "payment_setting.daily_topup_contact_email"
 	DailyTopUpContactWeChatQRCodeOptionKey = "payment_setting.daily_topup_contact_wechat_qrcode"
 	DailyTopUpContactNoteOptionKey         = "payment_setting.daily_topup_contact_note"
 	OrderExpireMinutesOptionKey            = "payment_setting.order_expire_minutes"
 
-	DefaultDailyTopUpLimit        = 200.0
-	MaxDailyTopUpLimit            = 1_000_000_000.0
-	MaxDailyTopUpExemptUsers      = 1000
-	MaxDailyTopUpQRCodeLength     = 750 * 1024
-	MaxDailyTopUpContactNoteRunes = 500
-	DefaultOrderExpireMinutes     = 20
-	MaxOrderExpireMinutes         = 30 * 24 * 60
+	DefaultDailyTopUpLimit          = 200.0
+	MaxDailyTopUpLimit              = 1_000_000_000.0
+	MaxDailyTopUpExemptUsers        = 1000
+	MaxDailyTopUpContactEmailLength = 254
+	MaxDailyTopUpQRCodeLength       = 750 * 1024
+	MaxDailyTopUpContactNoteRunes   = 500
+	DefaultOrderExpireMinutes       = 20
+	MaxOrderExpireMinutes           = 30 * 24 * 60
 )
 
 type DailyTopUpLimitConfig struct {
 	Limit           float64
 	ExemptUsers     []string
+	ContactMethod   string
+	ContactEmail    string
 	ContactWeChatQR string
 	ContactNote     string
 }
@@ -75,10 +86,11 @@ var paymentSetting = PaymentSetting{
 	AmountOptions:  []int{10, 20, 50, 100, 200, 500},
 	AmountDiscount: map[int]float64{},
 	// 没有保存过签名方式的站点按 MD5 运行，升级后行为不变。
-	EpaySignType:          EpaySignTypeMD5,
-	DailyTopUpLimit:       DefaultDailyTopUpLimit,
-	DailyTopUpExemptUsers: []string{},
-	OrderExpireMinutes:    DefaultOrderExpireMinutes,
+	EpaySignType:            EpaySignTypeMD5,
+	DailyTopUpLimit:         DefaultDailyTopUpLimit,
+	DailyTopUpExemptUsers:   []string{},
+	DailyTopUpContactMethod: DailyTopUpContactMethodEmail,
+	OrderExpireMinutes:      DefaultOrderExpireMinutes,
 }
 
 func init() {
@@ -111,9 +123,16 @@ func GetDailyTopUpLimitConfig() DailyTopUpLimitConfig {
 		limit = 0
 	}
 
+	contactMethod := strings.ToLower(strings.TrimSpace(paymentSetting.DailyTopUpContactMethod))
+	if contactMethod != DailyTopUpContactMethodWeChat {
+		contactMethod = DailyTopUpContactMethodEmail
+	}
+
 	return DailyTopUpLimitConfig{
 		Limit:           limit,
 		ExemptUsers:     exemptUsers,
+		ContactMethod:   contactMethod,
+		ContactEmail:    strings.TrimSpace(paymentSetting.DailyTopUpContactEmail),
 		ContactWeChatQR: strings.TrimSpace(paymentSetting.DailyTopUpContactWeChatQRCode),
 		ContactNote:     strings.TrimSpace(paymentSetting.DailyTopUpContactNote),
 	}
@@ -218,6 +237,24 @@ func isValidWeChatQRCodeSource(value string) bool {
 	return (scheme == "https" || scheme == "http") && parsed.Host != ""
 }
 
+func isValidDailyTopUpContactEmail(value string) bool {
+	if len(value) > MaxDailyTopUpContactEmailLength || strings.ContainsAny(value, " \t\r\n?&#<>\"'\\") {
+		return false
+	}
+	parsed, err := mail.ParseAddress(value)
+	if err != nil || parsed.Address != value {
+		return false
+	}
+	local, domain, ok := strings.Cut(parsed.Address, "@")
+	if !ok || local == "" || domain == "" {
+		return false
+	}
+	if !strings.Contains(domain, ".") || strings.HasPrefix(domain, ".") || strings.HasSuffix(domain, ".") || strings.Contains(domain, "..") {
+		return false
+	}
+	return true
+}
+
 func ValidateDailyTopUpOption(key, value string) error {
 	switch key {
 	case DailyTopUpLimitOptionKey:
@@ -237,6 +274,19 @@ func ValidateDailyTopUpOption(key, value string) error {
 			if len(strings.TrimSpace(entry)) > 255 {
 				return common.NewMessage("Daily top-up exempt user identifier is too long")
 			}
+		}
+	case DailyTopUpContactMethodOptionKey:
+		trimmed := strings.ToLower(strings.TrimSpace(value))
+		if trimmed != DailyTopUpContactMethodEmail && trimmed != DailyTopUpContactMethodWeChat {
+			return common.NewMessage("Daily top-up contact method must be email or wechat")
+		}
+	case DailyTopUpContactEmailOptionKey:
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			return nil
+		}
+		if !isValidDailyTopUpContactEmail(trimmed) {
+			return common.NewMessage("Daily top-up contact email must be a valid email address")
 		}
 	case DailyTopUpContactWeChatQRCodeOptionKey:
 		trimmed := strings.TrimSpace(value)

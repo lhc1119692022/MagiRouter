@@ -284,6 +284,13 @@ export const ModelPricingEditorPanel = forwardRef<
     refetchOnWindowFocus: false,
     meta: { errorToast: false },
   })
+  const effectiveGroupRatio = useMemo(
+    () => ({
+      ...groupRatio,
+      ...billingGroupsQuery.data?.group_ratio,
+    }),
+    [groupRatio, billingGroupsQuery.data?.group_ratio]
+  )
   const availableBillingGroups = useMemo(() => {
     const names = new Set<string>()
     const fetchedGroups = billingGroupsQuery.data?.data
@@ -293,15 +300,13 @@ export const ModelPricingEditorPanel = forwardRef<
           names.add(group)
         }
       }
+      return [...names].sort((left, right) => left.localeCompare(right))
     }
     for (const group of Object.keys(groupRatio ?? {})) {
       if (isValidBillingGroupName(group)) names.add(group)
     }
-    for (const group of Object.keys(groupExpressions)) {
-      if (isValidBillingGroupName(group)) names.add(group)
-    }
     return [...names].sort((left, right) => left.localeCompare(right))
-  }, [billingGroupsQuery.data, groupRatio, groupExpressions])
+  }, [billingGroupsQuery.data, groupRatio])
 
   const form = useForm<ModelPricingFormValues>({
     resolver: zodResolver(createModelPricingSchema(t)),
@@ -1012,7 +1017,7 @@ export const ModelPricingEditorPanel = forwardRef<
                     key={`${editorReloadToken}:group:${watchedValues.name}`}
                     modelName={watchedValues.name}
                     groups={availableBillingGroups}
-                    groupRatio={groupRatio ?? {}}
+                    groupRatio={effectiveGroupRatio}
                     expressions={groupExpressions}
                     onChange={setGroupExpressions}
                     defaultExpression={

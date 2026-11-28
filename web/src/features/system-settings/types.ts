@@ -39,6 +39,30 @@ export type UpdateGroupSettingsRequest = {
   options: Record<string, string | boolean | number>
 }
 
+export type RenameGroupRequest = {
+  old_name: string
+  new_name: string
+  dry_run?: boolean
+}
+
+export type GroupRenameImpact = {
+  old_name: string
+  new_name: string
+  dry_run: boolean
+  channels: number
+  users: number
+  tokens: number
+  subscriptions: number
+  model_group_prices: number
+  updated_options: string[]
+}
+
+export type RenameGroupResponse = {
+  success: boolean
+  message: string
+  data?: GroupRenameImpact
+}
+
 export type UpdateOptionResponse = {
   success: boolean
   message: string
@@ -342,6 +366,8 @@ export type BillingSettings = {
   'payment_setting.epay_platform_public_key': string
   'payment_setting.daily_topup_limit': number
   'payment_setting.daily_topup_exempt_users': string
+  'payment_setting.daily_topup_contact_method': string
+  'payment_setting.daily_topup_contact_email': string
   'payment_setting.daily_topup_contact_wechat_qrcode': string
   'payment_setting.daily_topup_contact_note': string
   'payment_setting.order_expire_minutes': number

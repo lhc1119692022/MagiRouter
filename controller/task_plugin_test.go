@@ -2056,10 +2056,16 @@ export function parseTaskResult() { return {}; }`,
 		"long name":              {`{"instances":[{"name":"` + strings.Repeat("名", 65) + `","plugin":"rp-api"}]}`, "names must be 1 to 64 characters"},
 		"duplicate ids":          {`{"instances":[{"id":"rp_same","name":"A","plugin":"rp-api"},{"id":"rp_same","name":"B","plugin":"rp-api"}]}`, "rp_same is used more than once"},
 		"empty group":            {`{"instances":[{"name":"A","plugin":"rp-api","groups":["vip",""]}]}`, "has an empty group"},
+		"empty excluded group":   {`{"instances":[{"name":"A","plugin":"rp-api","exclude_groups":["vip"," "]}]}`, "has an empty group"},
+		"include exclude groups": {`{"instances":[{"name":"A","plugin":"rp-api","groups":["vip"],"exclude_groups":["svip"]}]}`, "cannot both include and exclude groups"},
 		"too large":              {`{"instances":[{"name":"A","plugin":"rp-api","groups":["` + strings.Repeat("g", maxRequestPluginOptionBytes) + `"]}]}`, fmt.Sprintf("must not exceed %d bytes", maxRequestPluginOptionBytes)},
 		"empty model":            {`{"instances":[{"name":"A","plugin":"rp-api","models":["gpt"," "]}]}`, "Request plugin instance A has an empty model name"},
+		"empty excluded model":   {`{"instances":[{"name":"A","plugin":"rp-api","exclude_models":["gpt"," "]}]}`, "Request plugin instance A has an empty model name"},
 		"long model":             {`{"instances":[{"name":"A","plugin":"rp-api","models":["` + strings.Repeat("m", 129) + `"]}]}`, "has a model name longer than 128 characters"},
+		"long excluded model":    {`{"instances":[{"name":"A","plugin":"rp-api","exclude_models":["` + strings.Repeat("m", 129) + `"]}]}`, "has a model name longer than 128 characters"},
 		"too many models":        {`{"instances":[{"name":"A","plugin":"rp-api","models":["` + strings.Join(models, `","`) + `"]}]}`, "lists more than 100 models"},
+		"too many excluded":      {`{"instances":[{"name":"A","plugin":"rp-api","exclude_models":["` + strings.Join(models, `","`) + `"]}]}`, "lists more than 100 models"},
+		"include exclude models": {`{"instances":[{"name":"A","plugin":"rp-api","models":["gpt-4o"],"exclude_models":["claude"]}]}`, "cannot both include and exclude models"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			code, body := call(UpdateRequestPluginInstances, http.MethodPut, tc.body)
@@ -2073,6 +2079,7 @@ export function parseTaskResult() { return {}; }`,
 	code, body := call(UpdateRequestPluginInstances, http.MethodPut, `{"instances":[
 		{"name":" First ","plugin":"rp-api","enabled":true,"required":true,"global":true},
 		{"id":"rp_keepme1","name":"Second","plugin":"rp-api","groups":["vip"],"models":[" gpt-4o ","gpt-4o","claude"],"config":{"limit":5}},
+		{"name":"Third","plugin":"rp-api","global":true,"exclude_groups":[" vip ","vip","svip"],"exclude_models":[" gpt-4o ","gpt-4o","claude"],"config":{"limit":4}},
 		{"name":"Gone","plugin":"missing"}]}`)
 	require.Equal(t, http.StatusOK, code, body)
 	assert.NotContains(t, body, `"required"`)
@@ -2083,18 +2090,27 @@ export function parseTaskResult() { return {}; }`,
 	}
 	require.NoError(t, common.Unmarshal([]byte(body), &saved))
 	instances := saved.Data.Instances
-	require.Len(t, instances, 3)
+	require.Len(t, instances, 4)
 	assert.Regexp(t, `^rp_[a-z0-9]{8}$`, instances[0].ID)
 	assert.Equal(t, "First", instances[0].Name)
 	assert.JSONEq(t, `{"limit":3}`, string(instances[0].Config))
 	assert.Equal(t, []string{}, instances[0].Groups)
+	assert.Equal(t, []string{}, instances[0].ExcludeGroups)
 	// Models are trimmed and listed once; none means every model.
 	assert.Equal(t, []string{}, instances[0].Models)
+	assert.Equal(t, []string{}, instances[0].ExcludeModels)
 	assert.Contains(t, body, `"models":[]`)
+	assert.Contains(t, body, `"exclude_models":[]`)
+	assert.Contains(t, body, `"exclude_groups":[]`)
 	assert.Equal(t, []string{"gpt-4o", "claude"}, instances[1].Models)
 	assert.Equal(t, "rp_keepme1", instances[1].ID)
 	assert.JSONEq(t, `{"limit":5}`, string(instances[1].Config))
-	assert.JSONEq(t, `{}`, string(instances[2].Config))
+	assert.False(t, instances[2].Global)
+	assert.Equal(t, []string{}, instances[2].Groups)
+	assert.Equal(t, []string{"vip", "svip"}, instances[2].ExcludeGroups)
+	assert.Equal(t, []string{}, instances[2].Models)
+	assert.Equal(t, []string{"gpt-4o", "claude"}, instances[2].ExcludeModels)
+	assert.JSONEq(t, `{}`, string(instances[3].Config))
 	assert.Equal(t, instances, request_plugin_setting.GetInstances())
 
 	code, body = call(GetRequestPluginInstances, http.MethodGet, "")
@@ -2111,7 +2127,7 @@ export function parseTaskResult() { return {}; }`,
 	code, body = call(UpdateOption, http.MethodPut, `{"key":"request_plugin_setting.instances","value":"[]"}`)
 	assert.Equal(t, http.StatusOK, code)
 	assert.Contains(t, body, `"success":false`)
-	assert.Len(t, request_plugin_setting.GetInstances(), 3)
+	assert.Len(t, request_plugin_setting.GetInstances(), 4)
 
 	code, body = call(DryRunRequestPlugins, http.MethodPost, `{"format":"openai","model":"gpt","body":{"model":"gpt"}}`)
 	require.Equal(t, http.StatusOK, code, body)
@@ -2174,7 +2190,7 @@ export function outbound() { return {action: "continue"}; }`, jsplugin.Options{}
 
 	// Confirming the plugin's scope, in any order, saves it; the members of a
 	// hand-placed instance are cleared.
-	code, body := save(`{"instances":[{"id":"rp_scoped1","name":"Scoped","plugin":"rp-scoped","enabled":true,"global":true,"groups":["vip"],"models":["x"],
+	code, body := save(`{"instances":[{"id":"rp_scoped1","name":"Scoped","plugin":"rp-scoped","enabled":true,"global":true,"exclude_groups":["vip"],"exclude_models":["x"],
 		"plugin_scope":{"models":["claude","gpt-4o"],"channel_types":[1]}}]}`)
 	require.Equal(t, http.StatusOK, code, body)
 	saved := request_plugin_setting.GetInstances()
@@ -2182,7 +2198,9 @@ export function outbound() { return {action: "continue"}; }`, jsplugin.Options{}
 	assert.Equal(t, &request_plugin_setting.Scope{Models: []string{"claude", "gpt-4o"}, ChannelTypes: []int{1}}, saved[0].PluginScope)
 	assert.False(t, saved[0].Global)
 	assert.Equal(t, []string{}, saved[0].Groups)
+	assert.Equal(t, []string{}, saved[0].ExcludeGroups)
 	assert.Equal(t, []string{}, saved[0].Models)
+	assert.Equal(t, []string{}, saved[0].ExcludeModels)
 
 	// A scope the plugin does not declare cannot be confirmed: the console
 	// cannot widen it, and a new instance cannot take one.

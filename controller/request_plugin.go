@@ -125,23 +125,36 @@ func normalizeRequestPluginInstances(instances []request_plugin_setting.Instance
 				return nil, common.NewMessage("Request plugin instance {{name}} has an empty group", map[string]any{"name": instance.Name})
 			}
 		}
-		models := make([]string, 0, len(instance.Models))
-		for _, name := range instance.Models {
-			name = strings.TrimSpace(name)
-			if name == "" {
-				return nil, common.NewMessage("Request plugin instance {{name}} has an empty model name", map[string]any{"name": instance.Name})
+		excludeGroups := make([]string, 0, len(instance.ExcludeGroups))
+		for _, group := range instance.ExcludeGroups {
+			group = strings.TrimSpace(group)
+			if group == "" {
+				return nil, common.NewMessage("Request plugin instance {{name}} has an empty group", map[string]any{"name": instance.Name})
 			}
-			if utf8.RuneCountInString(name) > maxRequestPluginModelRunes {
-				return nil, common.NewMessage("Request plugin instance {{name}} has a model name longer than {{max}} characters", map[string]any{"name": instance.Name, "max": maxRequestPluginModelRunes})
-			}
-			if !slices.Contains(models, name) {
-				models = append(models, name)
+			if !slices.Contains(excludeGroups, group) {
+				excludeGroups = append(excludeGroups, group)
 			}
 		}
-		if len(models) > maxRequestPluginModels {
-			return nil, common.NewMessage("Request plugin instance {{name}} lists more than {{max}} models", map[string]any{"name": instance.Name, "max": maxRequestPluginModels})
+		instance.ExcludeGroups = excludeGroups
+		if len(instance.Groups) > 0 && len(instance.ExcludeGroups) > 0 {
+			return nil, common.NewMessage("Request plugin instance {{name}} cannot both include and exclude groups", map[string]any{"name": instance.Name})
+		}
+		if len(instance.ExcludeGroups) > 0 {
+			instance.Global = false
+		}
+		models, err := normalizeRequestPluginModels(instance.Name, instance.Models)
+		if err != nil {
+			return nil, err
 		}
 		instance.Models = models
+		excludeModels, err := normalizeRequestPluginModels(instance.Name, instance.ExcludeModels)
+		if err != nil {
+			return nil, err
+		}
+		instance.ExcludeModels = excludeModels
+		if len(instance.Models) > 0 && len(instance.ExcludeModels) > 0 {
+			return nil, common.NewMessage("Request plugin instance {{name}} cannot both include and exclude models", map[string]any{"name": instance.Name})
+		}
 		if len(instance.Config) == 0 || string(instance.Config) == "null" {
 			instance.Config = json.RawMessage("{}")
 		}
@@ -164,7 +177,7 @@ func normalizeRequestPluginInstances(instances []request_plugin_setting.Instance
 			if !confirmsDeclared && !keepsSaved {
 				return nil, common.NewMessage("Plugin {{plugin}} changed where it runs; review it again before saving", map[string]any{"plugin": instance.Plugin})
 			}
-			instance.Global, instance.Groups, instance.Models = false, []string{}, []string{}
+			instance.Global, instance.Groups, instance.ExcludeGroups, instance.Models, instance.ExcludeModels = false, []string{}, []string{}, []string{}, []string{}
 			instance.PluginScope = instance.PluginScope.Clone()
 		}
 		if !ok {
@@ -182,6 +195,26 @@ func normalizeRequestPluginInstances(instances []request_plugin_setting.Instance
 		normalized = append(normalized, instance)
 	}
 	return normalized, nil
+}
+
+func normalizeRequestPluginModels(instanceName string, raw []string) ([]string, error) {
+	models := make([]string, 0, len(raw))
+	for _, name := range raw {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			return nil, common.NewMessage("Request plugin instance {{name}} has an empty model name", map[string]any{"name": instanceName})
+		}
+		if utf8.RuneCountInString(name) > maxRequestPluginModelRunes {
+			return nil, common.NewMessage("Request plugin instance {{name}} has a model name longer than {{max}} characters", map[string]any{"name": instanceName, "max": maxRequestPluginModelRunes})
+		}
+		if !slices.Contains(models, name) {
+			models = append(models, name)
+		}
+	}
+	if len(models) > maxRequestPluginModels {
+		return nil, common.NewMessage("Request plugin instance {{name}} lists more than {{max}} models", map[string]any{"name": instanceName, "max": maxRequestPluginModels})
+	}
+	return models, nil
 }
 
 type requestPluginDryRunRequest struct {

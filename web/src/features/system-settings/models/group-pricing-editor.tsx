@@ -1,4 +1,4 @@
-import { Plus, Trash2 } from 'lucide-react'
+import { AlertTriangle, Plus, Trash2 } from 'lucide-react'
 import {
   useState,
   type Dispatch,
@@ -8,6 +8,7 @@ import {
 import { useTranslation } from 'react-i18next'
 
 import { GroupBadge } from '@/components/group-badge'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   Select,
@@ -49,6 +50,8 @@ export function GroupPricingEditor(props: GroupPricingEditorProps) {
   const configuredGroups = Object.keys(props.expressions).sort((left, right) =>
     left.localeCompare(right)
   )
+  const activeGroupSet = new Set(props.groups)
+  const hasActiveGroups = props.groups.length > 0
   const activeTab =
     selected === DEFAULT_TAB || Object.hasOwn(props.expressions, selected)
       ? selected
@@ -117,6 +120,12 @@ export function GroupPricingEditor(props: GroupPricingEditorProps) {
           {configuredGroups.map((group) => (
             <TabsTrigger key={group} value={group} className='gap-1.5'>
               <span>{group}</span>
+              {hasActiveGroups && !activeGroupSet.has(group) ? (
+                <AlertTriangle
+                  className='text-destructive size-3.5 shrink-0'
+                  aria-hidden='true'
+                />
+              ) : null}
             </TabsTrigger>
           ))}
         </TabsList>
@@ -166,17 +175,32 @@ export function GroupPricingEditor(props: GroupPricingEditorProps) {
         const ratio = props.groupRatio[group]
         const displayRatio =
           typeof ratio === 'number' && Number.isFinite(ratio) ? ratio : 1
+        const isInactiveGroup = hasActiveGroups && !activeGroupSet.has(group)
         return (
           <TabsContent key={group} value={group} className='space-y-4 pt-0'>
             <div className='bg-muted/30 flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2'>
               <div className='flex flex-wrap items-center gap-2 text-xs'>
                 <GroupBadge group={group} size='sm' />
-                <span className='text-muted-foreground'>
-                  {t(
-                    'Group pricing multiplies by group ratio ({{ratio}}x) on settlement.',
-                    { ratio: displayRatio }
-                  )}
-                </span>
+                {isInactiveGroup ? (
+                  <>
+                    <Badge variant='destructive' className='gap-1'>
+                      <AlertTriangle className='size-3' />
+                      {t('Inactive group')}
+                    </Badge>
+                    <span className='text-destructive'>
+                      {t(
+                        'This group is not in active billing groups. Rename the group from Group Pricing or remove this override.'
+                      )}
+                    </span>
+                  </>
+                ) : (
+                  <span className='text-muted-foreground'>
+                    {t(
+                      'Group pricing multiplies by group ratio ({{ratio}}x) on settlement.',
+                      { ratio: displayRatio }
+                    )}
+                  </span>
+                )}
               </div>
               <Button
                 type='button'

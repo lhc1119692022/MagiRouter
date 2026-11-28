@@ -651,7 +651,7 @@ func DryRun(ctx context.Context, input DryRunInput) DryRunResult {
 	if input.Instance != nil {
 		instance := *input.Instance
 		// An unsaved instance runs on every model and channel.
-		instance.Enabled, instance.Global, instance.Models, instance.PluginScope = true, true, nil, nil
+		instance.Enabled, instance.Global, instance.Groups, instance.ExcludeGroups, instance.Models, instance.ExcludeModels, instance.PluginScope = true, true, nil, nil, nil, nil, nil
 		plan = newPlanOf([]request_plugin_setting.Instance{instance})
 	}
 	if plan == nil {

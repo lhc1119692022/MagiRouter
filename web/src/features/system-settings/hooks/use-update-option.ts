@@ -24,11 +24,13 @@ import { handleServerError } from '@/lib/handle-server-error'
 import { requireServerSuccess } from '@/lib/server-error-message'
 
 import {
+  renameGroup,
   updateGroupSettings,
   updatePasskeyDomains,
   updateSystemOption,
 } from '../api'
 import type {
+  RenameGroupRequest,
   UpdateGroupSettingsRequest,
   UpdateOptionRequest,
   UpdatePasskeyDomainsRequest,
@@ -159,7 +161,16 @@ export function useUpdateGroupSettings() {
       if (data.success) {
         void queryClient.invalidateQueries({ queryKey: ['system-options'] })
         void queryClient.invalidateQueries({ queryKey: ['groups'] })
+        void queryClient.invalidateQueries({ queryKey: ['billing-groups'] })
         void queryClient.invalidateQueries({ queryKey: ['user-groups'] })
+        void queryClient.invalidateQueries({ queryKey: ['pricing'] })
+        void queryClient.invalidateQueries({
+          queryKey: ['model-pricing-config'],
+        })
+        void queryClient.invalidateQueries({
+          queryKey: ['model-pricing-preview'],
+        })
+        void queryClient.invalidateQueries({ queryKey: ['models'] })
         toast.success(i18next.t('Setting updated successfully'))
       } else {
         handleServerError(data, i18next.t('Failed to update setting'))
@@ -167,6 +178,32 @@ export function useUpdateGroupSettings() {
     },
     onError: (error: Error) => {
       handleServerError(error, i18next.t('Failed to update setting'))
+    },
+  })
+}
+
+export function useRenameGroup() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (request: RenameGroupRequest) =>
+      requireServerSuccess(await renameGroup(request)),
+    onSuccess: (data, variables) => {
+      if (!data.success || variables.dry_run) {
+        return
+      }
+      void queryClient.invalidateQueries({ queryKey: ['system-options'] })
+      void queryClient.invalidateQueries({ queryKey: ['groups'] })
+      void queryClient.invalidateQueries({ queryKey: ['billing-groups'] })
+      void queryClient.invalidateQueries({ queryKey: ['user-groups'] })
+      void queryClient.invalidateQueries({ queryKey: ['pricing'] })
+      void queryClient.invalidateQueries({ queryKey: ['model-pricing-config'] })
+      void queryClient.invalidateQueries({
+        queryKey: ['model-pricing-preview'],
+      })
+      void queryClient.invalidateQueries({ queryKey: ['models'] })
+      void queryClient.invalidateQueries({ queryKey: ['channels'] })
+      void queryClient.invalidateQueries({ queryKey: ['users'] })
+      void queryClient.invalidateQueries({ queryKey: ['tokens'] })
     },
   })
 }

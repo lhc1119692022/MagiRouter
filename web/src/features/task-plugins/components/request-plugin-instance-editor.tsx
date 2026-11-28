@@ -21,10 +21,12 @@ import {
   Boxes,
   Globe,
   ListChecks,
+  ListX,
   Pencil,
   Plug,
   Sparkles,
   Users,
+  UserX,
 } from 'lucide-react'
 import { useId, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -85,7 +87,7 @@ type RequestPluginInstanceEditorProps = {
  * Which requests an instance processes besides the channels that add it;
  * plugin follows the scope its plugin suggests.
  */
-type InstanceScope = 'plugin' | 'all' | 'groups' | 'channels'
+type InstanceScope = 'plugin' | 'all' | 'groups' | 'exclude_groups' | 'channels'
 
 const PLUGIN_SCOPE = {
   value: 'plugin',
@@ -108,6 +110,12 @@ const SCOPES = [
     hint: 'Only requests from the groups you pick',
   },
   {
+    value: 'exclude_groups',
+    icon: UserX,
+    title: 'Excluded groups',
+    hint: 'Every group except the ones you pick',
+  },
+  {
     value: 'channels',
     icon: Plug,
     title: 'Channels that add it',
@@ -115,8 +123,8 @@ const SCOPES = [
   },
 ] as const
 
-/** Whether an instance runs for every model or only for the ones picked. */
-type ModelScope = 'all' | 'chosen'
+/** Whether an instance runs for every model, only chosen ones, or all except excluded ones. */
+type ModelScope = 'all' | 'chosen' | 'excluded'
 
 const MODEL_SCOPES = [
   {
@@ -130,6 +138,12 @@ const MODEL_SCOPES = [
     icon: ListChecks,
     title: 'Chosen models',
     hint: 'Only requests for the models you pick',
+  },
+  {
+    value: 'excluded',
+    icon: ListX,
+    title: 'Excluded models',
+    hint: 'Every model except the ones you pick',
   },
 ] as const
 
@@ -208,14 +222,25 @@ function InstanceEditorDialog(props: RequestPluginInstanceEditorProps) {
   // A new instance takes its place once a plugin is picked.
   const [scope, setScope] = useState<InstanceScope>(() => {
     if (props.instance?.plugin_scope) return 'plugin'
-    if (!props.instance || props.instance.global) return 'all'
+    if (!props.instance) return 'all'
+    if ((props.instance.exclude_groups ?? []).length > 0) {
+      return 'exclude_groups'
+    }
+    if (props.instance.global) return 'all'
     return props.instance.groups.length > 0 ? 'groups' : 'channels'
   })
   const [groups, setGroups] = useState(props.instance?.groups ?? [])
-  const [models, setModels] = useState(props.instance?.models ?? [])
-  const [modelScope, setModelScope] = useState<ModelScope>(
-    models.length > 0 ? 'chosen' : 'all'
+  const [excludeGroups, setExcludeGroups] = useState(
+    props.instance?.exclude_groups ?? []
   )
+  const [models, setModels] = useState(props.instance?.models ?? [])
+  const [excludeModels, setExcludeModels] = useState(
+    props.instance?.exclude_models ?? []
+  )
+  const [modelScope, setModelScope] = useState<ModelScope>(() => {
+    if ((props.instance?.exclude_models ?? []).length > 0) return 'excluded'
+    return (props.instance?.models ?? []).length > 0 ? 'chosen' : 'all'
+  })
   const plugin = props.plugins.find((item) => item.key === pluginKey)
   const [draft, setDraft] = useState(() =>
     toRequestPluginConfigDraft(
@@ -246,9 +271,31 @@ function InstanceEditorDialog(props: RequestPluginInstanceEditorProps) {
     !samePluginScope(savedScope, declaredScope)
   const followsPlugin = scope === 'plugin' && confirmedScope !== null
   const scopeOptions = confirmedScope ? [PLUGIN_SCOPE, ...SCOPES] : SCOPES
-  const groupsMissing = scope === 'groups' && groups.length === 0
+  const groupsMissing =
+    (scope === 'groups' && groups.length === 0) ||
+    (scope === 'exclude_groups' && excludeGroups.length === 0)
   const modelsMissing =
-    !followsPlugin && modelScope === 'chosen' && models.length === 0
+    !followsPlugin &&
+    ((modelScope === 'chosen' && models.length === 0) ||
+      (modelScope === 'excluded' && excludeModels.length === 0))
+  const groupOptions = useMemo(() => {
+    const selectedGroups = scope === 'exclude_groups' ? excludeGroups : groups
+    return [...new Set([...props.groups, ...selectedGroups])].map((group) => ({
+      value: group,
+      label: group,
+    }))
+  }, [props.groups, scope, groups, excludeGroups])
+  const modelOptions = useMemo(() => {
+    const selectedModels = modelScope === 'excluded' ? excludeModels : models
+    return [...new Set([...props.models, ...selectedModels])].map((model) => {
+      const provider = resolveModelProvider(model)
+      return {
+        value: model,
+        label: model,
+        icon: provider ? getLobeIcon(provider.icon, 16) : undefined,
+      }
+    })
+  }, [props.models, modelScope, models, excludeModels])
 
   const pick = (key: string) => {
     const next = props.plugins.find((item) => item.key === key)
@@ -279,7 +326,9 @@ function InstanceEditorDialog(props: RequestPluginInstanceEditorProps) {
       enabled,
       global: scope === 'all',
       groups: scope === 'groups' ? groups : [],
+      exclude_groups: scope === 'exclude_groups' ? excludeGroups : [],
       models: modelScope === 'chosen' ? models : [],
+      exclude_models: modelScope === 'excluded' ? excludeModels : [],
       config,
     }
     if (!followsPlugin) return instance
@@ -287,7 +336,9 @@ function InstanceEditorDialog(props: RequestPluginInstanceEditorProps) {
       ...instance,
       global: false,
       groups: [],
+      exclude_groups: [],
       models: [],
+      exclude_models: [],
       plugin_scope: confirmedScope,
     }
   }
@@ -479,11 +530,7 @@ function InstanceEditorDialog(props: RequestPluginInstanceEditorProps) {
               value={scope}
               options={scopeOptions}
               disabled={props.saving}
-              className={
-                confirmedScope
-                  ? 'grid gap-2 sm:grid-cols-2'
-                  : 'grid gap-2 sm:grid-cols-3'
-              }
+              className='grid gap-2 sm:grid-cols-2'
               onValueChange={setScope}
             />
             {followsPlugin && (
@@ -508,14 +555,21 @@ function InstanceEditorDialog(props: RequestPluginInstanceEditorProps) {
             {scope === 'groups' && (
               <MultiSelect
                 id={`${formId}-groups`}
-                options={props.groups.map((group) => ({
-                  value: group,
-                  label: group,
-                }))}
+                options={groupOptions}
                 selected={groups}
                 onChange={setGroups}
                 disabled={props.saving}
                 placeholder={t('Select groups')}
+              />
+            )}
+            {scope === 'exclude_groups' && (
+              <MultiSelect
+                id={`${formId}-exclude-groups`}
+                options={groupOptions}
+                selected={excludeGroups}
+                onChange={setExcludeGroups}
+                disabled={props.saving}
+                placeholder={t('Select groups to exclude')}
               />
             )}
             {showAllErrors && groupsMissing && (
@@ -528,29 +582,31 @@ function InstanceEditorDialog(props: RequestPluginInstanceEditorProps) {
                 value={modelScope}
                 options={MODEL_SCOPES}
                 disabled={props.saving}
-                className='grid gap-2 pt-1 sm:grid-cols-2'
+                className='grid gap-2 pt-1 sm:grid-cols-3'
                 onValueChange={setModelScope}
               />
             )}
             {!followsPlugin && modelScope === 'chosen' && (
               <MultiSelect
                 id={`${formId}-model-list`}
-                options={[...new Set([...props.models, ...models])].map(
-                  (model) => {
-                    const provider = resolveModelProvider(model)
-                    return {
-                      value: model,
-                      label: model,
-                      icon: provider
-                        ? getLobeIcon(provider.icon, 16)
-                        : undefined,
-                    }
-                  }
-                )}
+                options={modelOptions}
                 selected={models}
                 onChange={setModels}
                 disabled={props.saving}
                 placeholder={t('Select models or add custom ones')}
+                allowCreate
+                createLabel='Add custom model "{{value}}"'
+                maxVisibleChips={8}
+              />
+            )}
+            {!followsPlugin && modelScope === 'excluded' && (
+              <MultiSelect
+                id={`${formId}-exclude-model-list`}
+                options={modelOptions}
+                selected={excludeModels}
+                onChange={setExcludeModels}
+                disabled={props.saving}
+                placeholder={t('Select models to exclude or add custom ones')}
                 allowCreate
                 createLabel='Add custom model "{{value}}"'
                 maxVisibleChips={8}

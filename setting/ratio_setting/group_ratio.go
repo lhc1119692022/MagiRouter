@@ -256,6 +256,18 @@ func GetBillingGroupNames() []string {
 	return names
 }
 
+func GetBillingGroupRatioCopy() map[string]float64 {
+	ratios := GetGroupRatioCopy()
+	result := make(map[string]float64, len(ratios))
+	for groupName, ratio := range ratios {
+		if IsUserManagementGroup(groupName) {
+			continue
+		}
+		result[groupName] = ratio
+	}
+	return result
+}
+
 func GetAllGroupNames() []string {
 	ratios := GetGroupRatioCopy()
 	userManaged := GetUserManagementGroupsCopy()

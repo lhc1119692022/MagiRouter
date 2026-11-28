@@ -295,8 +295,12 @@ func handleDailyTopUpLimitError(c *gin.Context, err error) bool {
 	if !errors.As(err, &limitErr) {
 		return false
 	}
+	messageKey := "Daily top-up limit of {{limit}} exceeded (remaining today: {{remaining}}). Please contact us via email for larger top-ups."
+	if limitErr.Status.ContactMethod == operation_setting.DailyTopUpContactMethodWeChat {
+		messageKey = "Daily top-up limit of {{limit}} exceeded (remaining today: {{remaining}}). Please scan the WeChat QR code to contact us for larger top-ups."
+	}
 	msg := common.NewMessage(
-		"Daily top-up limit of {{limit}} exceeded (remaining today: {{remaining}}). Please scan the WeChat QR code to contact us for larger top-ups.",
+		messageKey,
 		map[string]any{
 			"limit":     formatDailyLimitMoney(limitErr.Status.Limit),
 			"remaining": formatDailyLimitMoney(limitErr.Status.Remaining),

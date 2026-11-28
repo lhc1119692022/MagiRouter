@@ -873,6 +873,7 @@ export async function getGroups(): Promise<{
   success: boolean
   message?: string
   data?: string[]
+  group_ratio?: Record<string, number>
 }> {
   const res = await api.get('/api/group/', {
     params: { scope: 'billing' },

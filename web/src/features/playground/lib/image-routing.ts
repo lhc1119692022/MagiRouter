@@ -179,6 +179,7 @@ export function resolveImageRoute(options: {
   prompt: string
   referenceCount: number
   layerDecomposition?: boolean
+  alwaysUseEditsWithReferences?: boolean
 }): ImageRouteResolution {
   if (options.layerDecomposition) {
     return {
@@ -195,6 +196,16 @@ export function resolveImageRoute(options: {
       intent: 'text-to-image',
       endpoint: '/v1/images/generations',
       task: 'generate',
+      matchedKeywords: [],
+      isFallback: false,
+    }
+  }
+
+  if (options.alwaysUseEditsWithReferences) {
+    return {
+      intent: 'image-edit',
+      endpoint: '/v1/images/edits',
+      task: 'edit',
       matchedKeywords: [],
       isFallback: false,
     }
@@ -246,6 +257,23 @@ export function resolveImageRoute(options: {
 export function extractImageReferenceCountFromPayload(
   payload: Record<string, unknown>
 ): number {
+  const imagesField = payload.images
+  if (Array.isArray(imagesField)) {
+    return imagesField.filter((item) => {
+      if (typeof item === 'string') {
+        return item.trim().length > 0
+      }
+      if (item && typeof item === 'object' && !Array.isArray(item)) {
+        const entry = item as Record<string, unknown>
+        return (
+          (typeof entry.image_url === 'string' &&
+            entry.image_url.trim().length > 0) ||
+          (typeof entry.file_id === 'string' && entry.file_id.trim().length > 0)
+        )
+      }
+      return false
+    }).length
+  }
   const imageField = payload.image
   if (typeof imageField === 'string') {
     return imageField.trim() ? 1 : 0

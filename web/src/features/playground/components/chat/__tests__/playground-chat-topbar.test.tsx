@@ -19,10 +19,11 @@ For commercial licensing, please contact support@quantumnous.com
 import {
   createMemoryHistory,
   createRootRoute,
+  createRoute,
   createRouter,
   RouterProvider,
 } from '@tanstack/react-router'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { describe, expect, test, vi } from 'vitest'
@@ -49,10 +50,19 @@ const baseProps = {
 type TopbarProps = Parameters<typeof PlaygroundChatTopbar>[0]
 
 async function renderTopbar(props: Partial<TopbarProps> = {}) {
+  const root = createRootRoute()
+  const indexRoute = createRoute({
+    getParentRoute: () => root,
+    path: '/',
+    component: () => <PlaygroundChatTopbar {...baseProps} {...props} />,
+  })
+  const keysRoute = createRoute({
+    getParentRoute: () => root,
+    path: '/keys',
+    component: () => <div>Keys page</div>,
+  })
   const router = createRouter({
-    routeTree: createRootRoute({
-      component: () => <PlaygroundChatTopbar {...baseProps} {...props} />,
-    }),
+    routeTree: root.addChildren([indexRoute, keysRoute]),
     history: createMemoryHistory({ initialEntries: ['/'] }),
   })
   await router.load()
@@ -193,5 +203,117 @@ describe('playground chat top bar', () => {
     ).toHaveClass('pg-topbar-btn')
     expect(detailsButton).toHaveClass('pg-topbar-btn')
     expect(screen.queryByRole('status', { name: 'Billing group' })).toBeNull()
+  })
+
+  test('always shows Create an API key at the end of the key dropdown and triggers onCreateKey without clearing selection', async () => {
+    const user = userEvent.setup()
+    const onSelect = vi.fn()
+    const onCreateKey = vi.fn()
+    const renderBillingWithSelection = (selection: number | null) =>
+      renderTopbar({
+        renderBilling: (actions) => (
+          <PlaygroundBilling
+            layout='media'
+            selection={selection}
+            onSelect={onSelect}
+            onCreateKey={onCreateKey}
+            keys={{
+              eligible: [
+                {
+                  id: 42,
+                  name: 'Primary key',
+                  group: 'default',
+                  status: 1,
+                  expires: -1,
+                  hasQuota: true,
+                },
+              ],
+              loading: false,
+              error: false,
+              retry: vi.fn(),
+            }}
+            disabled={false}
+            group={selection ? 'default' : ''}
+            models={[]}
+            modelId=''
+            editingPreset={false}
+            returnSearch={{ mode: 'image', model: 'gpt-image-1.5' }}
+            onSelectModel={vi.fn()}
+            loadingModels={false}
+            modelsError={null}
+            retryModels={vi.fn()}
+            onDetails={vi.fn()}
+            actions={actions}
+          />
+        ),
+      })
+
+    const unselected = await renderBillingWithSelection(null)
+    await user.click(screen.getByRole('combobox', { name: 'API Key' }))
+    const unselectedOptions = await screen.findAllByRole('option')
+    expect(unselectedOptions.at(-1)).toHaveAccessibleName('Create an API key')
+    await user.click(unselectedOptions.at(-1) as HTMLElement)
+    expect(onCreateKey).toHaveBeenCalledTimes(1)
+    expect(onSelect).not.toHaveBeenCalled()
+    unselected.unmount()
+
+    await renderBillingWithSelection(42)
+    await user.click(screen.getByRole('combobox', { name: 'API Key' }))
+    const selectedOptions = await screen.findAllByRole('option')
+    expect(selectedOptions.at(-2)).toHaveAccessibleName('Clear selection')
+    expect(selectedOptions.at(-1)).toHaveAccessibleName('Create an API key')
+    await user.click(selectedOptions.at(-1) as HTMLElement)
+    expect(onCreateKey).toHaveBeenCalledTimes(2)
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+
+  test('falls back to navigating to /keys create flow when onCreateKey is omitted', async () => {
+    const user = userEvent.setup()
+    const { router } = await renderTopbar({
+      renderBilling: (actions) => (
+        <PlaygroundBilling
+          layout='chat'
+          selection={null}
+          onSelect={vi.fn()}
+          keys={{
+            eligible: [
+              {
+                id: 42,
+                name: 'Primary key',
+                group: 'default',
+                status: 1,
+                expires: -1,
+                hasQuota: true,
+              },
+            ],
+            loading: false,
+            error: false,
+            retry: vi.fn(),
+          }}
+          disabled={false}
+          group=''
+          models={[]}
+          modelId=''
+          editingPreset={false}
+          returnSearch={{ mode: 'chat', model: 'gpt-4o' }}
+          onSelectModel={vi.fn()}
+          loadingModels={false}
+          modelsError={null}
+          retryModels={vi.fn()}
+          onDetails={vi.fn()}
+          actions={actions}
+        />
+      ),
+    })
+
+    await user.click(screen.getByRole('combobox', { name: 'API Key' }))
+    await user.click(
+      await screen.findByRole('option', { name: 'Create an API key' })
+    )
+    await waitFor(() => expect(router.state.location.pathname).toBe('/keys'))
+    expect(router.state.location.search).toEqual({
+      action: 'create',
+      playground: { mode: 'chat', model: 'gpt-4o' },
+    })
   })
 })

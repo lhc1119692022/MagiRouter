@@ -164,9 +164,15 @@ export function RequestProcessing() {
               const plugin = plugins.find(
                 (item) => item.key === instance.plugin
               )
+              const excludeGroups = instance.exclude_groups ?? []
+              const excludeModels = instance.exclude_models ?? []
               let scope = t('Channels only')
               if (instance.global) scope = t('All requests')
-              else if (instance.groups.length) {
+              else if (excludeGroups.length) {
+                scope = t('All except groups: {{groups}}', {
+                  groups: excludeGroups.join(', '),
+                })
+              } else if (instance.groups.length) {
                 scope = instance.groups.join(', ')
               }
               const needsReview = pluginScopeNeedsReview(instance, plugin)
@@ -257,6 +263,13 @@ export function RequestProcessing() {
                           })}
                         </span>
                       )}
+                    {!instance.plugin_scope && excludeModels.length > 0 && (
+                      <span className='text-muted-foreground block text-xs'>
+                        {t('Except models: {{models}}', {
+                          models: excludeModels.join(', '),
+                        })}
+                      </span>
+                    )}
                   </TableCell>
                   <TableCell>
                     <Switch

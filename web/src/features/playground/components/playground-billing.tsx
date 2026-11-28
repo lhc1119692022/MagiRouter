@@ -1,4 +1,5 @@
-import { Link } from '@tanstack/react-router'
+import { Link, useNavigate } from '@tanstack/react-router'
+import { Plus } from 'lucide-react'
 import { useId, type ReactNode, type Ref } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -8,6 +9,7 @@ import {
   Select,
   SelectContent,
   SelectItem,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
@@ -20,6 +22,7 @@ import type { PlaygroundSearch } from '../lib/workspace-search'
 import type { ModelOption } from '../types'
 
 const CLEAR_KEY_VALUE = '__clear__'
+const CREATE_KEY_VALUE = '__create__'
 
 export function PlaygroundBilling(props: {
   layout: 'chat' | 'media'
@@ -42,9 +45,11 @@ export function PlaygroundBilling(props: {
   keyTriggerRef?: Ref<HTMLButtonElement>
   keyPickerOpen?: boolean
   onKeyPickerOpenChange?: (open: boolean) => void
+  onCreateKey?: () => void
   actions?: ReactNode
 }) {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const keyField = useId()
   const modelField = useId()
   const userGroup = useAuthStore((state) => state.auth.user?.group || '')
@@ -85,6 +90,18 @@ export function PlaygroundBilling(props: {
     ? t('Selected key is unavailable')
     : t('Select an API key')
 
+  const handleCreateKey = () => {
+    props.onKeyPickerOpenChange?.(false)
+    if (props.onCreateKey) {
+      props.onCreateKey()
+      return
+    }
+    void navigate({
+      to: '/keys',
+      search: { action: 'create', playground: props.returnSearch },
+    })
+  }
+
   const renderKeyPicker = (isChat: boolean) =>
     noKeys ? (
       <Link
@@ -97,7 +114,8 @@ export function PlaygroundBilling(props: {
             : 'el-btn-primary pg-media-create-link'
         )}
       >
-        {t('Create an API key')}
+        <Plus className='size-3.5 shrink-0' aria-hidden='true' />
+        <span>{t('Create an API key')}</span>
       </Link>
     ) : (
       <Select
@@ -108,6 +126,10 @@ export function PlaygroundBilling(props: {
         onOpenChange={(nextOpen) => props.onKeyPickerOpenChange?.(nextOpen)}
         disabled={props.disabled || !props.keys.eligible.length}
         onValueChange={(value) => {
+          if (value === CREATE_KEY_VALUE) {
+            handleCreateKey()
+            return
+          }
           if (!value || value === CLEAR_KEY_VALUE) {
             props.onSelect(null)
             return
@@ -145,11 +167,22 @@ export function PlaygroundBilling(props: {
               {renderKeyOption(option)}
             </SelectItem>
           ))}
+          <SelectSeparator className='pg-key-option-separator' />
           {props.selection !== null && (
             <SelectItem value={CLEAR_KEY_VALUE} className='pg-key-option-clear'>
               {t('Clear selection')}
             </SelectItem>
           )}
+          <SelectItem
+            value={CREATE_KEY_VALUE}
+            aria-label={t('Create an API key')}
+            className='pg-key-option-create'
+          >
+            <span className='pg-key-option-create-inner'>
+              <Plus className='size-3.5 shrink-0' aria-hidden='true' />
+              <span>{t('Create an API key')}</span>
+            </span>
+          </SelectItem>
         </SelectContent>
       </Select>
     )

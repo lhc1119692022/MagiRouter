@@ -119,6 +119,8 @@ export interface WaffoPayMethod {
 /**
  * Per-user daily top-up money limit status
  */
+export type DailyTopUpContactMethod = 'email' | 'wechat'
+
 export interface DailyTopUpLimitStatus {
   enabled: boolean
   limit: number
@@ -127,6 +129,8 @@ export interface DailyTopUpLimitStatus {
   remaining: number
   exempt: boolean
   pending_hold_minutes?: number
+  contact_method?: DailyTopUpContactMethod
+  contact_email?: string
   contact_wechat_qrcode: string
   contact_note: string
 }

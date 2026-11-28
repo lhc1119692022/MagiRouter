@@ -22,16 +22,24 @@ import (
 )
 
 func withDailyTopUpTestConfig(t *testing.T, limit float64, exemptUsers []string, qr string, note string) {
+	withDailyTopUpContactTestConfig(t, limit, exemptUsers, operation_setting.DailyTopUpContactMethodWeChat, "", qr, note)
+}
+
+func withDailyTopUpContactTestConfig(t *testing.T, limit float64, exemptUsers []string, method string, email string, qr string, note string) {
 	t.Helper()
 	ps := operation_setting.GetPaymentSetting()
 	oldLimit := ps.DailyTopUpLimit
 	oldExempt := append([]string(nil), ps.DailyTopUpExemptUsers...)
+	oldMethod := ps.DailyTopUpContactMethod
+	oldEmail := ps.DailyTopUpContactEmail
 	oldQR := ps.DailyTopUpContactWeChatQRCode
 	oldNote := ps.DailyTopUpContactNote
 
 	common.OptionMapRWMutex.Lock()
 	ps.DailyTopUpLimit = limit
 	ps.DailyTopUpExemptUsers = append([]string(nil), exemptUsers...)
+	ps.DailyTopUpContactMethod = method
+	ps.DailyTopUpContactEmail = email
 	ps.DailyTopUpContactWeChatQRCode = qr
 	ps.DailyTopUpContactNote = note
 	common.OptionMapRWMutex.Unlock()
@@ -40,6 +48,8 @@ func withDailyTopUpTestConfig(t *testing.T, limit float64, exemptUsers []string,
 		common.OptionMapRWMutex.Lock()
 		ps.DailyTopUpLimit = oldLimit
 		ps.DailyTopUpExemptUsers = oldExempt
+		ps.DailyTopUpContactMethod = oldMethod
+		ps.DailyTopUpContactEmail = oldEmail
 		ps.DailyTopUpContactWeChatQRCode = oldQR
 		ps.DailyTopUpContactNote = oldNote
 		common.OptionMapRWMutex.Unlock()
@@ -85,6 +95,8 @@ func TestCreateTopUpWithDailyLimit_EnforcesMoneyCapAndStatusFiltering(t *testing
 	assert.Equal(t, 120.0, status.Used)
 	assert.Equal(t, 30.0, status.Pending)
 	assert.Equal(t, 50.0, status.Remaining)
+	assert.Equal(t, operation_setting.DailyTopUpContactMethodWeChat, status.ContactMethod)
+	assert.Empty(t, status.ContactEmail)
 	assert.Equal(t, "https://example.com/wechat-qr.png", status.ContactWeChatQR)
 	assert.Equal(t, "Scan WeChat for >200", status.ContactNote)
 
@@ -366,4 +378,42 @@ func TestCreateTopUpWithDailyLimit_DatabaseMatrix(t *testing.T) {
 			}, 500, now))
 		})
 	}
+}
+
+func TestGetUserDailyTopUpStatus_IsolatesInactiveContactChannel(t *testing.T) {
+	truncateTables(t)
+	user := &User{Id: 306, Username: "contact_isolation_user", Email: "iso@example.com", Status: common.UserStatusEnabled}
+	require.NoError(t, DB.Create(user).Error)
+
+	now := time.Date(2026, 11, 25, 16, 0, 0, 0, time.Local)
+
+	withDailyTopUpContactTestConfig(
+		t,
+		200,
+		nil,
+		operation_setting.DailyTopUpContactMethodEmail,
+		"billing@example.com",
+		"https://cdn.example.com/private-wechat-qr.png",
+		"Email us for large top-ups",
+	)
+	emailStatus, err := GetUserDailyTopUpStatus(user.Id, now)
+	require.NoError(t, err)
+	assert.Equal(t, operation_setting.DailyTopUpContactMethodEmail, emailStatus.ContactMethod)
+	assert.Equal(t, "billing@example.com", emailStatus.ContactEmail)
+	assert.Empty(t, emailStatus.ContactWeChatQR)
+
+	withDailyTopUpContactTestConfig(
+		t,
+		200,
+		nil,
+		operation_setting.DailyTopUpContactMethodWeChat,
+		"billing@example.com",
+		"https://cdn.example.com/private-wechat-qr.png",
+		"Scan WeChat for large top-ups",
+	)
+	wechatStatus, err := GetUserDailyTopUpStatus(user.Id, now)
+	require.NoError(t, err)
+	assert.Equal(t, operation_setting.DailyTopUpContactMethodWeChat, wechatStatus.ContactMethod)
+	assert.Empty(t, wechatStatus.ContactEmail)
+	assert.Equal(t, "https://cdn.example.com/private-wechat-qr.png", wechatStatus.ContactWeChatQR)
 }

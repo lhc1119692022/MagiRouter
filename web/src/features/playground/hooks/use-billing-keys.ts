@@ -6,8 +6,27 @@ import { API_KEY_STATUS } from '@/features/keys/constants'
 import { requireServerSuccess } from '@/lib/server-error-message'
 import { useAuthStore } from '@/stores/auth-store'
 
+export type BillingKeySummary = {
+  id: number
+  name: string
+  group: string
+  status: number
+  expires: number
+  hasQuota: boolean
+}
+
+export function isEligibleBillingKey(key: BillingKeySummary, now = Date.now()) {
+  return (
+    Number.isSafeInteger(key.id) &&
+    key.id > 0 &&
+    key.status === API_KEY_STATUS.ENABLED &&
+    key.hasQuota &&
+    (key.expires === -1 || key.expires > now / 1000)
+  )
+}
+
 async function getBillingKeySummaries(signal: AbortSignal) {
-  const keys = []
+  const keys: BillingKeySummary[] = []
   for (let page = 1; ; page++) {
     const { data } = requireServerSuccess(
       await getApiKeys({ p: page, size: 100 }, signal)
@@ -19,7 +38,7 @@ async function getBillingKeySummaries(signal: AbortSignal) {
       keys.push({
         id: key.id,
         name: key.name,
-        group: key.group,
+        group: key.group ?? '',
         status: key.status,
         expires: key.expired_time,
         hasQuota: key.unlimited_quota || key.remain_quota > 0,
@@ -42,13 +61,8 @@ export function useBillingKeys() {
     retry: false,
   })
   const confirmed = !!user && query.isSuccess && query.isFetchedAfterMount
-  const eligible = (confirmed ? query.data : []).filter(
-    (key) =>
-      Number.isSafeInteger(key.id) &&
-      key.id > 0 &&
-      key.status === API_KEY_STATUS.ENABLED &&
-      key.hasQuota &&
-      (key.expires === -1 || key.expires > Date.now() / 1000)
+  const eligible = (confirmed ? query.data : []).filter((key) =>
+    isEligibleBillingKey(key)
   )
   const nextExpiry = Math.min(
     ...eligible

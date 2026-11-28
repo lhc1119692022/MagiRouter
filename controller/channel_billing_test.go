@@ -181,3 +181,36 @@ func TestUpdateChannelNewAPIBalanceUsesTheSmallerRemainingQuota(t *testing.T) {
 		})
 	}
 }
+
+func TestUpdateChannelNewAPIBalanceRetriesStatusWithAuthOnForbidden(t *testing.T) {
+	setupSub2APIBalanceTest(t)
+	var statusAttempts int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/usage/token/":
+			assert.Equal(t, "Bearer sk-upstream", r.Header.Get("Authorization"))
+			_, _ = w.Write([]byte(`{"code":true,"data":{"total_available":12500000,"unlimited_quota":false}}`))
+		case "/api/status":
+			statusAttempts++
+			if r.Header.Get("Authorization") == "" {
+				http.Error(w, "403 Forbidden", http.StatusForbidden)
+				return
+			}
+			assert.Equal(t, "Bearer sk-upstream", r.Header.Get("Authorization"))
+			_, _ = w.Write([]byte(`{"success":true,"data":{"quota_per_unit":1000000}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	baseURL := server.URL + "/"
+	channel := &model.Channel{Type: constant.ChannelTypeNewAPI, BaseURL: &baseURL, Key: "sk-upstream", Name: "cdn-new-api"}
+	require.NoError(t, model.DB.Create(channel).Error)
+
+	result, err := updateChannelBalance(channel)
+	require.NoError(t, err)
+	assert.Equal(t, 2, statusAttempts)
+	assert.InDelta(t, 12.5, result.Balance, 1e-9)
+	assert.InDelta(t, 12.5, channel.Balance, 1e-9)
+}

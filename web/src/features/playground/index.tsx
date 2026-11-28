@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { Link } from '@tanstack/react-router'
-import { KeyRound, XIcon } from 'lucide-react'
+import { KeyRound, Plus, XIcon } from 'lucide-react'
 import {
   lazy,
   Suspense,
@@ -92,6 +92,11 @@ const PlaygroundModelDetails = lazy(async () => ({
     .PlaygroundModelDetails,
 }))
 
+const ApiKeysMutateDrawer = lazy(async () => ({
+  default: (await import('@/features/keys/components/api-keys-mutate-drawer'))
+    .ApiKeysMutateDrawer,
+}))
+
 export function Playground(props: {
   initialMode?: StudioTab
   initialModel?: string
@@ -117,6 +122,8 @@ export function Playground(props: {
   const parameterButton = useRef<HTMLButtonElement>(null)
   const keyTriggerRef = useRef<HTMLButtonElement>(null)
   const [keyPickerOpen, setKeyPickerOpen] = useState(false)
+  const [createKeyOpen, setCreateKeyOpen] = useState(false)
+  const [createKeyMounted, setCreateKeyMounted] = useState(false)
   const closeParameters = () => {
     setParametersOpen(false)
     parameterButton.current?.focus()
@@ -128,6 +135,11 @@ export function Playground(props: {
     })
     keyTriggerRef.current?.focus()
     setKeyPickerOpen(true)
+  }
+  const openCreateKeyDrawer = () => {
+    setKeyPickerOpen(false)
+    setCreateKeyMounted(true)
+    setCreateKeyOpen(true)
   }
   const [detailsModel, setDetailsModel] = useState('')
   const [codeOpen, setCodeOpen] = useState(false)
@@ -154,6 +166,7 @@ export function Playground(props: {
     keys: billingKeys,
     id: billingKeyId,
     select: selectKey,
+    selectCreated: selectCreatedKey,
   } = usePlaygroundKeySelection()
   const selectedKey = billingKeys.eligible.find(
     (key) => key.id === billingKeyId
@@ -222,6 +235,17 @@ export function Playground(props: {
     setDetailsModel('')
     setCodeOpen(false)
     selectKey(id)
+  }
+  const handleKeyCreated = (createdId?: number) => {
+    const previousKeyId = billingKeyId
+    void selectCreatedKey(createdId).then((selectedId) => {
+      if (selectedId === null) return
+      if (previousKeyId !== null && previousKeyId !== selectedId) {
+        resetParameterOverrides()
+      }
+      setDetailsModel('')
+      setCodeOpen(false)
+    })
   }
   const controls = useMemo(
     () =>
@@ -364,9 +388,17 @@ export function Playground(props: {
     !catalog.isLoading &&
     scope &&
     !activeModel ? (
-      <p role='status' className='pg-media-status-notice'>
-        {modelHint}
-      </p>
+      <div role='status' className='pg-media-status-notice'>
+        <p className='pg-media-status-notice-text'>{modelHint}</p>
+        <button
+          type='button'
+          className='el-btn el-btn-xs el-btn-white'
+          onClick={openCreateKeyDrawer}
+        >
+          <Plus size={12} aria-hidden='true' />
+          <span>{t('Create an API key')}</span>
+        </button>
+      </div>
     ) : undefined
   const chatPriceQuote =
     chatReady && scope && activeModel ? (
@@ -394,6 +426,7 @@ export function Playground(props: {
       keyTriggerRef={keyTriggerRef}
       keyPickerOpen={keyPickerOpen}
       onKeyPickerOpenChange={setKeyPickerOpen}
+      onCreateKey={openCreateKeyDrawer}
       selection={billingKeyId}
       onSelect={selectBillingKey}
       keys={billingKeys}
@@ -547,6 +580,14 @@ export function Playground(props: {
                 {t('Select an API key')}
               </button>
             )}
+            <button
+              type='button'
+              className='el-btn el-btn-sm el-btn-white'
+              onClick={openCreateKeyDrawer}
+            >
+              <Plus size={13} aria-hidden='true' />
+              <span>{t('Create an API key')}</span>
+            </button>
             <Link to='/keys' className='el-btn el-btn-sm el-btn-white'>
               {t('Manage API keys')}
             </Link>
@@ -1016,6 +1057,16 @@ export function Playground(props: {
                 : undefined
             }
             onClose={() => setDetailsModel('')}
+          />
+        </Suspense>
+      )}
+      {createKeyMounted && (
+        <Suspense fallback={null}>
+          <ApiKeysMutateDrawer
+            open={createKeyOpen}
+            singleCreate
+            onCreated={handleKeyCreated}
+            onOpenChange={(nextOpen) => setCreateKeyOpen(nextOpen)}
           />
         </Suspense>
       )}

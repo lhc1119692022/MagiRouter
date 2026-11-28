@@ -1639,6 +1639,11 @@ func TestReplyDryRun(t *testing.T) {
 	result = DryRun(context.Background(), DryRunInput{Format: "claude", Model: "gpt", Body: []byte(`{"model":"gpt"}`), Reply: &reply,
 		Instance: &request_plugin_setting.Instance{ID: "try", Name: "Try", Plugin: "rp-reply", Models: []string{"other"}, Config: []byte(`{"words":["beta"]}`)}})
 	assert.JSONEq(t, `{"text":"alpha ***","stopped":null}`, string(result.Reply))
+
+	// An unsaved instance with exclusions still runs on the sample model and group.
+	result = DryRun(context.Background(), DryRunInput{Format: "claude", Model: "gpt", Group: "vip", Body: []byte(`{"model":"gpt"}`), Reply: &reply,
+		Instance: &request_plugin_setting.Instance{ID: "try-exclude", Name: "TryExclude", Plugin: "rp-reply", ExcludeGroups: []string{"vip"}, ExcludeModels: []string{"gpt"}, Config: []byte(`{"words":["beta"]}`)}})
+	assert.JSONEq(t, `{"text":"alpha ***","stopped":null}`, string(result.Reply))
 }
 
 func TestReplyDryRunAfterARejection(t *testing.T) {
@@ -1674,6 +1679,70 @@ func TestPlanScopeModels(t *testing.T) {
 	assert.Equal(t, []string{"any", "listed"}, ids("gpt-4o@effort:high"))
 	assert.Equal(t, []string{"any"}, ids("gpt-4o-mini"))
 	assert.Equal(t, []string{"any"}, ids("GPT-4O"))
+}
+
+func TestPlanScopeExclusions(t *testing.T) {
+	setupPlugins(t, `[
+		{"id":"global-ex","name":"GlobalEx","plugin":"rp-stages","enabled":true,"global":true,"exclude_models":["gpt-4o","claude"]},
+		{"id":"group-ex","name":"GroupEx","plugin":"rp-stages","enabled":true,"exclude_groups":["vip"]},
+		{"id":"global-after","name":"GlobalAfter","plugin":"rp-stages","enabled":true,"global":true},
+		{"id":"vip-ex-model","name":"VipExModel","plugin":"rp-stages","enabled":true,"groups":["vip"],"exclude_models":["gpt-4o"]},
+		{"id":"chan-ex-model","name":"ChanExModel","plugin":"rp-stages","enabled":true,"exclude_models":["gpt-4o"]}
+	]`)
+	plan := NewPlan()
+	require.NotNil(t, plan)
+	ids := func(group, model string, bound []string) []string {
+		var scoped []string
+		for _, instance := range plan.scope(StageRequest, group, model, 0, bound) {
+			scoped = append(scoped, instance.ID)
+		}
+		return scoped
+	}
+
+	// Excluded models skip exact matches and @ modifiers, while keeping other models and case sensitivity.
+	assert.Equal(t, []string{"group-ex", "global-after"}, ids("default", "gpt-4o", []string{"chan-ex-model"}))
+	assert.Equal(t, []string{"group-ex", "global-after"}, ids("default", "gpt-4o@effort:high", []string{"chan-ex-model"}))
+	assert.Equal(t, []string{"global-ex", "group-ex", "global-after", "chan-ex-model"}, ids("default", "gpt-4o-mini", []string{"chan-ex-model"}))
+	assert.Equal(t, []string{"global-ex", "group-ex", "global-after", "chan-ex-model"}, ids("default", "GPT-4O", []string{"chan-ex-model"}))
+
+	// Excluded groups skip the listed group and keep top-to-bottom order beside global instances.
+	assert.Equal(t, []string{"global-ex", "global-after", "vip-ex-model"}, ids("vip", "gemini", nil))
+	assert.Equal(t, []string{"global-after"}, ids("vip", "gpt-4o", nil))
+	assert.Equal(t, []string{"global-ex", "group-ex", "global-after"}, ids("", "gemini", nil))
+
+	// DryRun on saved instances honors both model and group exclusions.
+	result := DryRun(context.Background(), DryRunInput{Format: "openai", Model: "gpt-4o", Group: "vip", Body: []byte(`{"model":"gpt-4o"}`)})
+	for _, step := range result.Steps {
+		assert.Equal(t, "global-after", step.Instance)
+	}
+}
+
+func TestAutoGroupExcludeGroupsScoping(t *testing.T) {
+	setupPlugins(t, `[{"id":"no-vip","name":"NoVip","plugin":"rp-stages","enabled":true,"exclude_groups":["vip"],"config":{"echo":"outbound"}}]`)
+
+	// Settling to an excluded group skips every stage.
+	excluded := newContext(`{"model":"gpt","messages":[]}`, "auto")
+	steps, _, apiErr := Ingress(excluded, types.RelayFormatOpenAI)
+	require.Nil(t, apiErr)
+	assert.Empty(t, steps, "exclude_groups waits for auto group to settle")
+	common.SetContextKey(excluded, constant.ContextKeyAutoGroup, "vip")
+	excludedInfo := newInfo()
+	excludedBody, apiErr := Outbound(excluded, excludedInfo, []byte(`{"model":"gpt-up","messages":[]}`))
+	require.Nil(t, apiErr)
+	assert.Empty(t, excludedInfo.RequestPluginSteps)
+	assert.False(t, gjson.GetBytes(excludedBody, "echo_no-vip").Exists())
+
+	// Settling to a non-excluded group runs the late ingress and outbound hooks.
+	allowed := newContext(`{"model":"gpt","messages":[]}`, "auto")
+	steps, _, apiErr = Ingress(allowed, types.RelayFormatOpenAI)
+	require.Nil(t, apiErr)
+	assert.Empty(t, steps)
+	common.SetContextKey(allowed, constant.ContextKeyAutoGroup, "default")
+	allowedInfo := newInfo()
+	allowedBody, apiErr := Outbound(allowed, allowedInfo, []byte(`{"model":"gpt-up","messages":[]}`))
+	require.Nil(t, apiErr)
+	assert.Equal(t, "continue", stepOf(t, allowedInfo.RequestPluginSteps, "no-vip", StageIngress).Action)
+	assert.True(t, gjson.GetBytes(allowedBody, "echo_no-vip").Exists())
 }
 
 // scopedPlugin declares a scope: requests for gpt-4o or claude sent through

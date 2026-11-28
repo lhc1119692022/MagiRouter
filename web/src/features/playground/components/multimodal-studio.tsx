@@ -54,7 +54,7 @@ import {
   parseEditedJsonPayload,
   resolveImageModelProfile,
   syncImageParamsFromJson,
-  validateSeedreamPixelSize,
+  validateImagePixelSize,
   type ImageStudioParams,
 } from '../lib/image-model-params'
 import {
@@ -239,7 +239,14 @@ function extractGeneratedImagesFromPayload(
     if (typeof entry.url === 'string' && entry.url) {
       url = entry.url
     } else if (typeof entry.b64_json === 'string' && entry.b64_json) {
-      url = `data:image/${itemFormat};base64,${entry.b64_json}`
+      const normalizedFormat = itemFormat.toLowerCase()
+      let mimeSubtype = normalizedFormat
+      if (normalizedFormat === 'svg') {
+        mimeSubtype = 'svg+xml'
+      } else if (normalizedFormat === 'jpg') {
+        mimeSubtype = 'jpeg'
+      }
+      url = `data:image/${mimeSubtype};base64,${entry.b64_json}`
     }
     if (!url) continue
     const zIndex =
@@ -282,7 +289,9 @@ function parseSseGeneratedImages(
   rawText: string,
   fallbackFormat: string
 ): GeneratedImageItem[] {
-  const results: GeneratedImageItem[] = []
+  const completedResults: GeneratedImageItem[] = []
+  const partialResults: GeneratedImageItem[] = []
+  const otherResults: GeneratedImageItem[] = []
   for (const line of rawText.split(/\r?\n/)) {
     const trimmed = line.trim()
     if (!trimmed.startsWith('data:')) continue
@@ -292,7 +301,7 @@ function parseSseGeneratedImages(
       const parsed: unknown = JSON.parse(dataStr)
       const batch = extractGeneratedImagesFromPayload(parsed, fallbackFormat)
       if (batch.length > 0) {
-        results.push(...batch)
+        otherResults.push(...batch)
         continue
       }
       if (parsed && typeof parsed === 'object') {
@@ -300,13 +309,28 @@ function parseSseGeneratedImages(
           { data: [parsed] },
           fallbackFormat
         )
-        results.push(...single)
+        const eventType = (parsed as Record<string, unknown>).type
+        if (
+          eventType === 'image_generation.completed' ||
+          eventType === 'image_edit.completed'
+        ) {
+          completedResults.push(...single)
+        } else if (
+          eventType === 'image_generation.partial_image' ||
+          eventType === 'image_edit.partial_image'
+        ) {
+          partialResults.push(...single)
+        } else {
+          otherResults.push(...single)
+        }
       }
     } catch {
       // ignore non-JSON SSE keepalive lines
     }
   }
-  return results
+  if (completedResults.length > 0) return completedResults
+  if (otherResults.length > 0) return otherResults
+  return partialResults
 }
 
 function getVideoTaskLabel(task: 't2v' | 'i2v' | 'ref2v' | 'edit'): string {
@@ -476,6 +500,10 @@ export function MultimodalStudio(props: MultimodalStudioProps) {
   }
 
   const promptOptional = props.mode === 'image' && layerDecompositionActive
+  const promptMaxLength =
+    props.mode === 'image'
+      ? resolveImageModelProfile(props.currentModel?.model_name).maxPromptLength
+      : 2000
 
   return (
     <div className='pg-workspace-grid' id='pg-workspace-grid'>
@@ -524,7 +552,7 @@ export function MultimodalStudio(props: MultimodalStudioProps) {
                   )}
                 </span>
                 <span className='pg-char-count' aria-hidden='true'>
-                  {props.draft.length} / 2000
+                  {props.draft.length} / {promptMaxLength}
                 </span>
               </span>
               <Textarea
@@ -695,8 +723,15 @@ function MediaSession(
         prompt: effectivePrompt,
         referenceCount: references.length,
         layerDecomposition: layerDecompositionEnabled,
+        alwaysUseEditsWithReferences:
+          imageProfile.referenceRoutingMode === 'always-edits',
       }),
-    [effectivePrompt, layerDecompositionEnabled, references.length]
+    [
+      effectivePrompt,
+      imageProfile.referenceRoutingMode,
+      layerDecompositionEnabled,
+      references.length,
+    ]
   )
 
   const payloadObject = useMemo(() => {
@@ -778,10 +813,19 @@ function MediaSession(
         prompt: jsonPrompt,
         referenceCount: jsonRefCount,
         layerDecomposition: jsonLayerMode,
+        alwaysUseEditsWithReferences:
+          imageProfile.referenceRoutingMode === 'always-edits',
       })
     }
     return formImageRoute
-  }, [formImageRoute, jsonDirty, parsedJson, props.inputView, props.mode])
+  }, [
+    formImageRoute,
+    imageProfile.referenceRoutingMode,
+    jsonDirty,
+    parsedJson,
+    props.inputView,
+    props.mode,
+  ])
 
   const endpointPath = getEndpointPath(
     props.mode,
@@ -903,12 +947,17 @@ function MediaSession(
   const insufficientReferences =
     presetRequiresReference || layerNeedsSingleReference || videoNeedsReference
 
-  const invalidCustomPixels =
+  const customPixelValidation =
     mode === 'image' &&
     props.inputView === 'form' &&
     !layerDecompositionEnabled &&
-    imageParams.sizeMode === 'pixels' &&
-    !validateSeedreamPixelSize(imageParams.pixelSize, imageProfile).valid
+    imageProfile.sizeSpec.supportsCustomPixels &&
+    imageParams.sizeMode === 'pixels'
+      ? validateImagePixelSize(imageParams.pixelSize, imageProfile)
+      : null
+  const invalidCustomPixels = Boolean(
+    customPixelValidation && !customPixelValidation.valid
+  )
 
   const supportedSceneModel =
     !!current &&
@@ -969,10 +1018,30 @@ function MediaSession(
     blockingReason = t('Add reference materials first ({{count}} required).', {
       count: 1,
     })
-  } else if (invalidCustomPixels) {
-    blockingReason = t(
-      'Total pixels are outside the supported range for this model.'
-    )
+  } else if (customPixelValidation && !customPixelValidation.valid) {
+    if (customPixelValidation.reason === 'format') {
+      blockingReason = t(
+        'Enter dimensions in WIDTHxHEIGHT format (e.g. 2048x2048).'
+      )
+    } else if (customPixelValidation.reason === 'multiple') {
+      blockingReason = t(
+        'Width and height must both be multiples of {{multiple}} px.',
+        { multiple: imageProfile.pixelRange?.edgeMultiple ?? 16 }
+      )
+    } else if (customPixelValidation.reason === 'maxEdge') {
+      blockingReason = t('Each edge must not exceed {{maxEdge}} px.', {
+        maxEdge: imageProfile.pixelRange?.maxEdge ?? 3840,
+      })
+    } else if (customPixelValidation.reason === 'ratio') {
+      blockingReason =
+        imageProfile.pixelRange?.maxRatio === 3
+          ? t('Aspect ratio must stay between 1:3 and 3:1.')
+          : t('Aspect ratio must stay between 1:16 and 16:1.')
+    } else {
+      blockingReason = t(
+        'Total pixels are outside the supported range for this model.'
+      )
+    }
   } else if (!keyAllowed) {
     blockingReason = t('Choose a key that allows this model and group.')
   }
@@ -1005,6 +1074,15 @@ function MediaSession(
       if (prev.length >= maxLimit) return prev
       return [...prev, { id: entryId, url: cleaned, name }]
     })
+    if (
+      mode === 'image' &&
+      imageProfile.supportsSvgOutput &&
+      imageParams.outputFormat === 'svg'
+    ) {
+      setImageParams((prev) =>
+        prev.outputFormat === 'svg' ? { ...prev, outputFormat: 'png' } : prev
+      )
+    }
   }
 
   const addVideoReference = () => {
@@ -1267,7 +1345,20 @@ function MediaSession(
       ]
         .filter(Boolean)
         .join(' · ')
-    : `${activeImageSize} · ${imageParams.imageCount} 张 · ${imageParams.outputFormat}`
+    : [
+        activeImageSize,
+        imageProfile.maxImageCount > 1
+          ? t('{{count}} image(s)', {
+              count:
+                imageParams.outputFormat === 'svg' ? 1 : imageParams.imageCount,
+            })
+          : null,
+        imageProfile.outputFormats.length > 0
+          ? imageParams.outputFormat.toUpperCase()
+          : null,
+      ]
+        .filter(Boolean)
+        .join(' · ')
 
   const estSpeechSeconds = Math.max(
     3,
@@ -1447,6 +1538,22 @@ function MediaSession(
         imageParams.imageCount === 2 || imageParams.imageCount === 4
           ? imageParams.imageCount
           : 1
+      let normalizedQuality: 'auto' | 'low' | 'medium' | 'high' = 'high'
+      if (
+        imageParams.quality === 'auto' ||
+        imageParams.quality === 'low' ||
+        imageParams.quality === 'medium' ||
+        imageParams.quality === 'high'
+      ) {
+        normalizedQuality = imageParams.quality
+      } else if (imageParams.quality === 'standard') {
+        normalizedQuality = 'medium'
+      }
+      const normalizedFormat: 'png' | 'jpeg' | 'webp' =
+        imageParams.outputFormat === 'jpeg' ||
+        imageParams.outputFormat === 'webp'
+          ? imageParams.outputFormat
+          : 'png'
       return {
         mode,
         model,
@@ -1454,9 +1561,9 @@ function MediaSession(
         parameters: {
           imageTask: effectiveImageTask,
           imageSize: normalizedPresetSize,
-          quality: imageParams.quality,
+          quality: normalizedQuality,
           imageCount: normalizedCount,
-          imageFormat: imageParams.outputFormat,
+          imageFormat: normalizedFormat,
         },
       }
     }
@@ -1493,7 +1600,7 @@ function MediaSession(
     <>
       {props.inputView === 'form' ? (
         <div className='pg-form-body'>
-          {props.mode === 'image' && (
+          {props.mode === 'image' && maxImageReferences > 0 && (
             <ImageReferenceSlots
               references={references}
               maxReferences={maxImageReferences}

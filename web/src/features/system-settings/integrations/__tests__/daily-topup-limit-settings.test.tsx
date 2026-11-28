@@ -27,6 +27,8 @@ const defaults: PaymentValues = {
   AmountDiscount: '{}',
   DailyTopUpLimit: 200,
   DailyTopUpExemptUsers: '[]',
+  DailyTopUpContactMethod: 'email',
+  DailyTopUpContactEmail: '',
   DailyTopUpContactWeChatQRCode: '',
   DailyTopUpContactNote: '',
   OrderExpireMinutes: 20,
@@ -103,7 +105,7 @@ describe('PaymentSettingsSection daily top-up limit settings', () => {
     vi.restoreAllMocks()
   })
 
-  it('saves daily limit, whitelist entries, WeChat QR code, and contact note', async () => {
+  it('saves daily limit, whitelist entries, contact email, and contact note by default', async () => {
     const user = userEvent.setup()
     const putSpy = vi
       .spyOn(api, 'put')
@@ -126,17 +128,11 @@ describe('PaymentSettingsSection daily top-up limit settings', () => {
     expect(limitInput).toHaveValue(200)
     fireEvent.change(limitInput, { target: { value: '300' } })
 
-    const noteInput = screen.getByLabelText('Over-limit contact message')
-    await user.type(noteInput, 'Scan WeChat to arrange large top-up')
+    const emailInput = screen.getByLabelText('Contact Email')
+    await user.type(emailInput, 'billing@example.com')
 
-    const qrInput = screen.getByPlaceholderText(
-      'Paste QR code image URL (https://...) or upload a local image'
-    )
-    await user.type(qrInput, 'https://cdn.example.com/wechat-qr.png')
-    expect(screen.getByAltText('WeChat QR code preview')).toHaveAttribute(
-      'src',
-      'https://cdn.example.com/wechat-qr.png'
-    )
+    const noteInput = screen.getByLabelText('Over-limit contact message')
+    await user.type(noteInput, 'Email us to arrange large top-up')
 
     const whitelistInput = screen.getByPlaceholderText(
       'Search user or enter User ID / username / email, press Enter to add'
@@ -167,17 +163,64 @@ describe('PaymentSettingsSection daily top-up limit settings', () => {
         value: JSON.stringify(['88', 'manual_vip']),
       })
       expect(putSpy).toHaveBeenCalledWith('/api/option/', {
-        key: 'payment_setting.daily_topup_contact_wechat_qrcode',
-        value: 'https://cdn.example.com/wechat-qr.png',
+        key: 'payment_setting.daily_topup_contact_email',
+        value: 'billing@example.com',
       })
       expect(putSpy).toHaveBeenCalledWith('/api/option/', {
         key: 'payment_setting.daily_topup_contact_note',
-        value: 'Scan WeChat to arrange large top-up',
+        value: 'Email us to arrange large top-up',
       })
       expect(putSpy).toHaveBeenCalledWith('/api/option/', {
         key: 'payment_setting.order_expire_minutes',
         value: 30,
       })
+    })
+  })
+
+  it('switches between email and WeChat QR code while preserving saved values', async () => {
+    const user = userEvent.setup()
+    const putSpy = vi
+      .spyOn(api, 'put')
+      .mockResolvedValue({ data: { success: true, message: '' } })
+
+    renderFixture({
+      DailyTopUpContactMethod: 'email',
+      DailyTopUpContactEmail: 'billing@example.com',
+    })
+
+    expect(screen.getByLabelText('Contact Email')).toHaveValue(
+      'billing@example.com'
+    )
+
+    await user.click(screen.getByLabelText('Large top-up contact method'))
+    await user.click(
+      await screen.findByRole('option', { name: 'WeChat QR Code' })
+    )
+
+    const qrInput = screen.getByPlaceholderText(
+      'Paste QR code image URL (https://...) or upload a local image'
+    )
+    await user.type(qrInput, 'https://cdn.example.com/wechat-qr.png')
+    expect(screen.getByAltText('WeChat QR code preview')).toHaveAttribute(
+      'src',
+      'https://cdn.example.com/wechat-qr.png'
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Save all settings' }))
+
+    await waitFor(() => {
+      expect(putSpy).toHaveBeenCalledWith('/api/option/', {
+        key: 'payment_setting.daily_topup_contact_method',
+        value: 'wechat',
+      })
+      expect(putSpy).toHaveBeenCalledWith('/api/option/', {
+        key: 'payment_setting.daily_topup_contact_wechat_qrcode',
+        value: 'https://cdn.example.com/wechat-qr.png',
+      })
+    })
+    expect(putSpy).not.toHaveBeenCalledWith('/api/option/', {
+      key: 'payment_setting.daily_topup_contact_email',
+      value: '',
     })
   })
 })

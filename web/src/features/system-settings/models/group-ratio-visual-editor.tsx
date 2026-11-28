@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import {
   AlertTriangle,
   ChevronDown,
+  PencilLine,
   Search,
   X,
   Info,
@@ -83,7 +84,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { toIntlLocale } from '@/i18n/languages'
 import { formatNumber } from '@/lib/format'
 
+import type { GroupRenameImpact } from '../types'
 import { safeJsonParse } from '../utils/json-parser'
+import { GroupRenameDialog } from './group-rename-dialog'
 import { GroupSpecialUsableRulesEditor } from './group-special-usable-editor'
 import { SmartRoutingEditor } from './smart-routing-editor'
 
@@ -108,6 +111,16 @@ type GroupRatioVisualEditorProps = {
   smartRoutingConfig?: string
   maxTokenAutoGroupsField: ReactNode
   groupSpecialUsableGroup: string
+  savedGroupNames?: ReadonlySet<string>
+  hasUnsavedGroupChanges?: boolean
+  onPreviewRenameGroup?: (
+    oldName: string,
+    newName: string
+  ) => Promise<GroupRenameImpact>
+  onConfirmRenameGroup?: (
+    oldName: string,
+    newName: string
+  ) => Promise<GroupRenameImpact>
   onChange: (field: string, value: string) => void
 }
 
@@ -310,6 +323,7 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor(
   const { t, i18n } = useTranslation()
   const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
   const [detailGroup, setDetailGroup] = useState<string | null>(null)
+  const [renameTarget, setRenameTarget] = useState<string | null>(null)
   const onChange = props.onChange
 
   const registry = useMemo<RegistryEntry[]>(() => {
@@ -450,8 +464,14 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor(
           topupGroupRatio={props.topupGroupRatio}
           userManagementGroups={props.userManagementGroups}
           pricingError={props.pricingError}
+          savedGroupNames={props.savedGroupNames}
           onChange={onChange}
           onShowDetail={setDetailGroup}
+          onRequestRename={
+            props.onPreviewRenameGroup && props.onConfirmRenameGroup
+              ? setRenameTarget
+              : undefined
+          }
         />
       </TabsContent>
       <TabsContent value='overrides' keepMounted>
@@ -561,6 +581,19 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor(
         autoGroups={autoGroupsList}
         groupSpecialUsableGroup={props.groupSpecialUsableGroup}
       />
+      {props.onPreviewRenameGroup && props.onConfirmRenameGroup ? (
+        <GroupRenameDialog
+          open={renameTarget !== null}
+          groupName={renameTarget}
+          existingGroupNames={allGroupNames}
+          hasUnsavedChanges={props.hasUnsavedGroupChanges}
+          onOpenChange={(open) => {
+            if (!open) setRenameTarget(null)
+          }}
+          onPreview={props.onPreviewRenameGroup}
+          onConfirm={props.onConfirmRenameGroup}
+        />
+      ) : null}
     </Tabs>
   )
 })
@@ -571,8 +604,10 @@ type GroupPricingTableProps = {
   topupGroupRatio: string
   userManagementGroups: string
   pricingError?: string
+  savedGroupNames?: ReadonlySet<string>
   onChange: (field: string, value: string) => void
   onShowDetail: (name: string) => void
+  onRequestRename?: (name: string) => void
 }
 
 function GroupPricingTable(props: GroupPricingTableProps) {
@@ -857,22 +892,33 @@ function GroupPricingTable(props: GroupPricingTableProps) {
                 id: 'group',
                 header: t('Group name'),
                 className: 'min-w-40',
-                cell: (row) => (
-                  <Input
-                    value={row.name}
-                    aria-label={t('Group name')}
-                    disabled={row.isProtectedDefault === true}
-                    title={
-                      row.isProtectedDefault
-                        ? t('The default group cannot be renamed')
-                        : undefined
-                    }
-                    onChange={(event) =>
-                      updateRow(row._id, 'name', event.target.value)
-                    }
-                    aria-invalid={duplicateNames.includes(row.name.trim())}
-                  />
-                ),
+                cell: (row) => {
+                  const isProtectedDefault = row.isProtectedDefault === true
+                  const isPersisted =
+                    !isProtectedDefault &&
+                    Boolean(props.onRequestRename) &&
+                    props.savedGroupNames?.has(row.name.trim()) === true
+                  let nameInputTitle: string | undefined
+                  if (isProtectedDefault) {
+                    nameInputTitle = t('The default group cannot be renamed')
+                  } else if (isPersisted) {
+                    nameInputTitle = t(
+                      'Use the Rename action to safely sync channels, users, tokens, and model pricing.'
+                    )
+                  }
+                  return (
+                    <Input
+                      value={row.name}
+                      aria-label={t('Group name')}
+                      disabled={isProtectedDefault || isPersisted}
+                      title={nameInputTitle}
+                      onChange={(event) =>
+                        updateRow(row._id, 'name', event.target.value)
+                      }
+                      aria-invalid={duplicateNames.includes(row.name.trim())}
+                    />
+                  )
+                },
               },
               {
                 id: 'user-management-only',
@@ -994,6 +1040,10 @@ function GroupPricingTable(props: GroupPricingTableProps) {
                 cellClassName: 'text-right',
                 cell: (row) => {
                   const isProtectedDefault = row.isProtectedDefault === true
+                  const canRename =
+                    !isProtectedDefault &&
+                    Boolean(props.onRequestRename) &&
+                    props.savedGroupNames?.has(row.name.trim()) === true
                   const isOnlyBillingGroup =
                     !row.userManagementOnly &&
                     row.name.trim() !== '' &&
@@ -1008,6 +1058,19 @@ function GroupPricingTable(props: GroupPricingTableProps) {
                   }
                   return (
                     <div className='flex justify-end gap-1'>
+                      {canRename ? (
+                        <Button
+                          variant='ghost'
+                          size='sm'
+                          onClick={() =>
+                            props.onRequestRename?.(row.name.trim())
+                          }
+                          title={t('Rename group')}
+                          aria-label={t('Rename')}
+                        >
+                          <PencilLine className='h-4 w-4' />
+                        </Button>
+                      ) : null}
                       <Button
                         variant='ghost'
                         size='sm'

@@ -184,6 +184,9 @@ export function ApiKeysProvider({ children }: { children: React.ReactNode }) {
 }
 
 // eslint-disable-next-line react-refresh/only-export-components
+export const useOptionalApiKeys = () => React.useContext(ApiKeysContext)
+
+// eslint-disable-next-line react-refresh/only-export-components
 export const useApiKeys = () => {
   const apiKeysContext = React.useContext(ApiKeysContext)
 

@@ -42,11 +42,13 @@ import { handleServerError } from '@/lib/handle-server-error'
 import { SettingsPageTitleStatusPortal } from '../components/settings-page-context'
 import { SettingsSection } from '../components/settings-section'
 import {
+  useRenameGroup,
   useUpdateGroupSettings,
   useUpdateOption,
 } from '../hooks/use-update-option'
 import { isObjectRecord } from '../utils/json-validators'
 import { positiveIntegerSchema } from '../utils/numeric-field'
+import type { GroupRenameImpact } from '../types'
 import { GroupRatioForm } from './group-ratio-form'
 import { ModelRatioForm } from './model-ratio-form'
 import { ToolPriceSettings } from './tool-price-settings'
@@ -247,17 +249,13 @@ export function RatioSettingsCard({
   const isMobile = useMediaQuery('(max-width: 639px)')
   const updateOption = useUpdateOption()
   const updateGroupSettings = useUpdateGroupSettings()
+  const renameGroupMutation = useRenameGroup()
   const [confirmOpen, setConfirmOpen] = useState(false)
 
   const pricingQuery = useModelPricing()
   const savePricing = useSaveModelPricing()
   const [pricingBaseline, setPricingBaseline] =
     useState<ModelPricingConfig | null>(null)
-  useEffect(() => {
-    if (!pricingBaseline && pricingQuery.data) {
-      setPricingBaseline(pricingQuery.data)
-    }
-  }, [pricingBaseline, pricingQuery.data])
   const modelDefaults = useMemo(
     () =>
       pricingBaseline
@@ -265,13 +263,18 @@ export function RatioSettingsCard({
             ...initialModelDefaults,
             ...pricingBaseline.options,
             BillingMode:
-              pricingBaseline.options['billing_setting.billing_mode'],
+              pricingBaseline.options['billing_setting.billing_mode'] ??
+              initialModelDefaults.BillingMode,
             BillingExpr:
-              pricingBaseline.options['billing_setting.billing_expr'],
+              pricingBaseline.options['billing_setting.billing_expr'] ??
+              initialModelDefaults.BillingExpr,
             PluginBillingExpr:
-              pricingBaseline.options['billing_setting.plugin_billing_expr'],
+              pricingBaseline.options['billing_setting.plugin_billing_expr'] ??
+              initialModelDefaults.PluginBillingExpr,
             GroupBillingExpr:
-              pricingBaseline.options['billing_setting.group_billing_expr'],
+              pricingBaseline.options['billing_setting.group_billing_expr'] ??
+              initialModelDefaults.GroupBillingExpr ??
+              '{}',
           }
         : initialModelDefaults,
     [initialModelDefaults, pricingBaseline]
@@ -386,6 +389,56 @@ export function RatioSettingsCard({
       ),
     },
   })
+
+  useEffect(() => {
+    if (!pricingQuery.data) return
+    if (
+      pricingBaseline !== pricingQuery.data &&
+      (!pricingBaseline || !modelForm.formState.isDirty)
+    ) {
+      setPricingBaseline(pricingQuery.data)
+    }
+  }, [pricingBaseline, pricingQuery.data, modelForm.formState.isDirty])
+
+  const extractPersistedGroupNames = useCallback(
+    (source: {
+      GroupRatio: string
+      TopupGroupRatio: string
+      UserUsableGroups: string
+      UserManagementGroups: string
+    }) => {
+      const names = new Set<string>()
+      for (const raw of [
+        source.GroupRatio,
+        source.TopupGroupRatio,
+        source.UserUsableGroups,
+        source.UserManagementGroups,
+      ]) {
+        if (!raw) continue
+        try {
+          const parsed = JSON.parse(raw)
+          if (isObjectRecord(parsed)) {
+            for (const key of Object.keys(parsed)) {
+              const trimmed = key.trim()
+              if (trimmed) names.add(trimmed)
+            }
+          }
+        } catch {
+          // Ignore malformed draft JSON.
+        }
+      }
+      return names
+    },
+    []
+  )
+
+  const [savedGroupNames, setSavedGroupNames] = useState<ReadonlySet<string>>(
+    () => extractPersistedGroupNames(groupDefaults)
+  )
+
+  useEffect(() => {
+    setSavedGroupNames(extractPersistedGroupNames(groupDefaults))
+  }, [groupDefaults, extractPersistedGroupNames])
 
   useEffect(() => {
     modelNormalizedDefaults.current = {
@@ -563,8 +616,62 @@ export function RatioSettingsCard({
 
       await updateGroupSettings.mutateAsync({ options })
       groupNormalizedDefaults.current = normalized
+      setSavedGroupNames(extractPersistedGroupNames(normalized))
+      groupForm.reset(values)
     },
-    [updateGroupSettings]
+    [updateGroupSettings, extractPersistedGroupNames, groupForm]
+  )
+
+  const handlePreviewRenameGroup = useCallback(
+    async (oldName: string, newName: string): Promise<GroupRenameImpact> => {
+      const response = await renameGroupMutation.mutateAsync({
+        old_name: oldName,
+        new_name: newName,
+        dry_run: true,
+      })
+      if (!response.data) {
+        throw new Error(response.message || t('Failed to update setting'))
+      }
+      return response.data
+    },
+    [renameGroupMutation, t]
+  )
+
+  const handleConfirmRenameGroup = useCallback(
+    async (oldName: string, newName: string): Promise<GroupRenameImpact> => {
+      const response = await renameGroupMutation.mutateAsync({
+        old_name: oldName,
+        new_name: newName,
+        dry_run: false,
+      })
+      if (!response.data) {
+        throw new Error(response.message || t('Failed to update setting'))
+      }
+      const impact = response.data
+      setSavedGroupNames((previous) => {
+        const next = new Set(previous)
+        next.delete(oldName)
+        next.add(newName)
+        return next
+      })
+      const refreshed = await pricingQuery.refetch()
+      if (refreshed.data) {
+        setPricingBaseline(refreshed.data)
+      }
+      toast.success(
+        t(
+          'Group renamed from {{oldName}} to {{newName}} ({{channels}} channels, {{prices}} model prices synced)',
+          {
+            oldName: impact.old_name,
+            newName: impact.new_name,
+            channels: impact.channels,
+            prices: impact.model_group_prices,
+          }
+        )
+      )
+      return impact
+    },
+    [renameGroupMutation, pricingQuery, t]
   )
 
   const handleResetRatios = useCallback(() => {
@@ -637,6 +744,9 @@ export function RatioSettingsCard({
           form={groupForm}
           onSave={saveGroupRatios}
           isSaving={updateGroupSettings.isPending}
+          savedGroupNames={savedGroupNames}
+          onPreviewRenameGroup={handlePreviewRenameGroup}
+          onConfirmRenameGroup={handleConfirmRenameGroup}
         />
       )
     }

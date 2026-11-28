@@ -22,6 +22,7 @@ import {
   FileText,
   Info,
   Loader2,
+  Mail,
   QrCode,
   Receipt,
   ShieldCheck,
@@ -29,7 +30,8 @@ import {
 import { useState, useEffect } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 
-import { Button } from '@/components/ui/button'
+import { CopyButton } from '@/components/copy-button'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
@@ -42,12 +44,14 @@ import { formatNumber } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 import {
+  buildDailyLimitMailtoHref,
   formatCurrency,
   getDiscountLabel,
   getPaymentIcon,
   getMinTopupAmount,
   calculatePresetPricing,
   isAmountOverDailyLimit,
+  resolveDailyTopUpContactMethod,
 } from '../lib'
 import type {
   DailyTopUpLimitStatus,
@@ -156,7 +160,46 @@ export function RechargeFormCard({
   const redemptionEnabled = topupInfo?.enable_redemption !== false
   const showDailyLimit = Boolean(dailyLimit?.enabled)
   const isOverDailyLimit = isAmountOverDailyLimit(dailyLimit, paymentAmount)
+  const contactMethod = resolveDailyTopUpContactMethod(dailyLimit)
+  const isWeChatContact = contactMethod === 'wechat'
+  const contactEmail = dailyLimit?.contact_email?.trim() || ''
   const qrCode = dailyLimit?.contact_wechat_qrcode?.trim() || ''
+  const mailtoHref = buildDailyLimitMailtoHref(
+    contactEmail,
+    t('Large Top-up / Whitelist Request')
+  )
+  let overDailyLimitMessage = ''
+  if (dailyLimit) {
+    if (dailyLimit.remaining <= 0) {
+      overDailyLimitMessage = isWeChatContact
+        ? t(
+            'You have reached today’s online top-up limit of {{limit}}. Scan the WeChat QR code to contact us for larger top-ups.',
+            { limit: formatCurrency(dailyLimit.limit) }
+          )
+        : t(
+            'You have reached today’s online top-up limit of {{limit}}. Send us an email to contact us for larger top-ups.',
+            { limit: formatCurrency(dailyLimit.limit) }
+          )
+    } else {
+      overDailyLimitMessage = isWeChatContact
+        ? t(
+            'Payment amount {{amount}} exceeds today’s remaining limit of {{remaining}} (daily cap: {{limit}}). Scan the WeChat QR code to contact us.',
+            {
+              amount: formatCurrency(paymentAmount),
+              remaining: formatCurrency(dailyLimit.remaining),
+              limit: formatCurrency(dailyLimit.limit),
+            }
+          )
+        : t(
+            'Payment amount {{amount}} exceeds today’s remaining limit of {{remaining}} (daily cap: {{limit}}). Send us an email to contact us.',
+            {
+              amount: formatCurrency(paymentAmount),
+              remaining: formatCurrency(dailyLimit.remaining),
+              limit: formatCurrency(dailyLimit.limit),
+            }
+          )
+    }
+  }
 
   if (loading) {
     return (
@@ -262,8 +305,17 @@ export function RechargeFormCard({
                         onClick={() => onOpenDailyLimitContact()}
                         className='h-7 shrink-0 gap-1.5 self-start text-xs sm:self-auto'
                       >
-                        <QrCode className='h-3.5 w-3.5' />
-                        {t('Large top-up? WeChat QR')}
+                        {isWeChatContact ? (
+                          <>
+                            <QrCode className='h-3.5 w-3.5' />
+                            {t('Large top-up? WeChat QR')}
+                          </>
+                        ) : (
+                          <>
+                            <Mail className='h-3.5 w-3.5' />
+                            {t('Large top-up? Email Us')}
+                          </>
+                        )}
                       </Button>
                     )}
                   </div>
@@ -277,9 +329,13 @@ export function RechargeFormCard({
                       aria-hidden='true'
                     />
                     <span className='min-w-0'>
-                      {t(
-                        'During our early launch stage, online top-ups are capped daily to protect payment channel stability and cashflow security. For larger top-ups or whitelist access, please contact us via WeChat.'
-                      )}
+                      {isWeChatContact
+                        ? t(
+                            'During our early launch stage, online top-ups are capped daily to protect payment channel stability and cashflow security. For larger top-ups or whitelist access, please contact us via WeChat.'
+                          )
+                        : t(
+                            'During our early launch stage, online top-ups are capped daily to protect payment channel stability and cashflow security. For larger top-ups or whitelist access, please contact us via email.'
+                          )}
                     </span>
                   </div>
                 </div>
@@ -408,19 +464,7 @@ export function RechargeFormCard({
                         <span>{t('Daily Top-up Limit Exceeded')}</span>
                       </div>
                       <p className='text-muted-foreground text-xs leading-relaxed'>
-                        {dailyLimit.remaining <= 0
-                          ? t(
-                              'You have reached today’s online top-up limit of {{limit}}. Scan the WeChat QR code to contact us for larger top-ups.',
-                              { limit: formatCurrency(dailyLimit.limit) }
-                            )
-                          : t(
-                              'Payment amount {{amount}} exceeds today’s remaining limit of {{remaining}} (daily cap: {{limit}}). Scan the WeChat QR code to contact us.',
-                              {
-                                amount: formatCurrency(paymentAmount),
-                                remaining: formatCurrency(dailyLimit.remaining),
-                                limit: formatCurrency(dailyLimit.limit),
-                              }
-                            )}
+                        {overDailyLimitMessage}
                       </p>
                       {dailyLimit.contact_note && (
                         <p className='text-foreground text-xs'>
@@ -440,19 +484,61 @@ export function RechargeFormCard({
                             }
                             className='h-8 gap-1.5 text-xs'
                           >
-                            <QrCode className='h-3.5 w-3.5' />
-                            {t('View WeChat QR Code')}
+                            {isWeChatContact ? (
+                              <>
+                                <QrCode className='h-3.5 w-3.5' />
+                                {t('View WeChat QR Code')}
+                              </>
+                            ) : (
+                              <>
+                                <Mail className='h-3.5 w-3.5' />
+                                {t('View Contact Email')}
+                              </>
+                            )}
                           </Button>
                         </div>
                       )}
                     </div>
-                    {qrCode && (
+                    {isWeChatContact && qrCode && (
                       <div className='shrink-0 self-center rounded-lg border bg-white p-2 shadow-xs sm:self-auto'>
                         <img
                           src={qrCode}
                           alt={t('WeChat Contact QR Code')}
                           className='h-28 w-28 object-contain'
                         />
+                      </div>
+                    )}
+                    {!isWeChatContact && contactEmail && (
+                      <div className='bg-background flex shrink-0 flex-col gap-2 rounded-lg border p-3 shadow-xs sm:max-w-xs sm:min-w-56'>
+                        <div className='text-muted-foreground flex items-center gap-1.5 text-[11px] font-medium'>
+                          <Mail className='h-3.5 w-3.5' />
+                          <span>{t('Contact Email')}</span>
+                        </div>
+                        <div className='flex items-center justify-between gap-2'>
+                          <span className='font-mono text-xs font-medium break-all select-all'>
+                            {contactEmail}
+                          </span>
+                          <CopyButton
+                            value={contactEmail}
+                            variant='outline'
+                            size='icon'
+                            className='h-7 w-7'
+                            iconClassName='h-3.5 w-3.5'
+                            aria-label={t('Copy email')}
+                            tooltip={t('Copy email')}
+                            successTooltip={t('Email copied')}
+                          />
+                        </div>
+                        <a
+                          href={mailtoHref}
+                          className={cn(
+                            buttonVariants({ variant: 'default', size: 'xs' }),
+                            'w-full gap-1.5'
+                          )}
+                        >
+                          <Mail className='h-3 w-3' />
+                          {t('Send Email')}
+                        </a>
                       </div>
                     )}
                   </div>

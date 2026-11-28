@@ -31,10 +31,12 @@ import { useForm } from 'react-hook-form'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 
+import { USD_PRICING_CURRENCY } from '@/features/model-pricing/currency'
 import { api } from '@/lib/api'
 
 import { SettingsPageProvider } from '../../components/settings-page-context'
 import { positiveIntegerSchema } from '../../utils/numeric-field'
+import { GroupPricingEditor } from '../group-pricing-editor'
 import { GroupRatioForm } from '../group-ratio-form'
 import { RatioSettingsCard } from '../ratio-settings-card'
 
@@ -801,5 +803,127 @@ describe('group settings workspace', () => {
       ).toBeVisible()
     )
     expect(putSpy).not.toHaveBeenCalled()
+  })
+
+  it('locks persisted non-default group names and executes atomic rename with impact preview and cache invalidation', async () => {
+    const user = userEvent.setup()
+    const postSpy = vi.spyOn(api, 'post').mockImplementation(async (url, body) => {
+      if (url === '/api/option/group_settings/rename') {
+        const payload = body as {
+          old_name: string
+          new_name: string
+          dry_run?: boolean
+        }
+        return {
+          data: {
+            success: true,
+            message: '',
+            data: {
+              old_name: payload.old_name,
+              new_name: payload.new_name,
+              dry_run: Boolean(payload.dry_run),
+              channels: 3,
+              users: 4,
+              tokens: 5,
+              subscriptions: 1,
+              model_group_prices: 2,
+              updated_options: [
+                'GroupRatio',
+                'billing_setting.group_billing_expr',
+              ],
+            },
+          },
+        }
+      }
+      return { data: { success: true } }
+    })
+    vi.spyOn(api, 'get').mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          options: {
+            'billing_setting.billing_mode': '{}',
+            'billing_setting.billing_expr': '{}',
+            'billing_setting.plugin_billing_expr': '{}',
+            'billing_setting.group_billing_expr': '{}',
+          },
+          entries: [],
+        },
+      },
+    })
+
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    })
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
+
+    render(<RatioCardFixture queryClient={queryClient} />)
+
+    const vipInput = screen.getByDisplayValue('vip')
+    expect(vipInput).toBeDisabled()
+    const vipRow = vipInput.closest('tr') as HTMLTableRowElement
+    await user.click(within(vipRow).getByRole('button', { name: 'Rename' }))
+
+    const renameInput = screen.getByRole('textbox', { name: 'New group name' })
+    await user.type(renameInput, 'gold')
+    await user.click(screen.getByRole('button', { name: 'Preview impact' }))
+
+    await waitFor(() =>
+      expect(screen.getByText('Impact preview')).toBeVisible()
+    )
+    expect(postSpy).toHaveBeenCalledWith('/api/option/group_settings/rename', {
+      old_name: 'vip',
+      new_name: 'gold',
+      dry_run: true,
+    })
+
+    await user.click(screen.getByRole('button', { name: 'Confirm rename' }))
+    await waitFor(() =>
+      expect(postSpy).toHaveBeenCalledWith('/api/option/group_settings/rename', {
+        old_name: 'vip',
+        new_name: 'gold',
+        dry_run: false,
+      })
+    )
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['billing-groups'] })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['pricing'] })
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ['model-pricing-config'],
+    })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['channels'] })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['models'] })
+  })
+
+  it('flags inactive groups in GroupPricingEditor while displaying real active billing group ratios', async () => {
+    const user = userEvent.setup()
+    render(
+      <GroupPricingEditor
+        modelName='gpt-5'
+        groups={['default', 'gold']}
+        groupRatio={{ default: 1, gold: 0.75 }}
+        expressions={{
+          legacy_vip: 'tier("base", p * 2 + c * 4)',
+          gold: 'tier("base", p * 1.5 + c * 3)',
+        }}
+        onChange={vi.fn()}
+        defaultExpression='tier("base", p * 1 + c * 2)'
+        currency={USD_PRICING_CURRENCY}
+      >
+        <div>Default form</div>
+      </GroupPricingEditor>
+    )
+
+    await user.click(screen.getByRole('tab', { name: 'gold' }))
+    expect(
+      screen.getByText(
+        'Group pricing multiplies by group ratio (0.75x) on settlement.'
+      )
+    ).toBeVisible()
+
+    await user.click(screen.getByRole('tab', { name: 'legacy_vip' }))
+    expect(screen.getByText('Inactive group')).toBeVisible()
   })
 })

@@ -45,6 +45,8 @@ const defaults: PaymentValues = {
   AmountDiscount: '{}',
   DailyTopUpLimit: 200,
   DailyTopUpExemptUsers: '[]',
+  DailyTopUpContactMethod: 'email',
+  DailyTopUpContactEmail: '',
   DailyTopUpContactWeChatQRCode: '',
   DailyTopUpContactNote: '',
   OrderExpireMinutes: 20,

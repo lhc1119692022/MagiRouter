@@ -400,7 +400,9 @@ test('scope and config values reach the saved list', async () => {
     enabled: true,
     global: false,
     groups: ['vip'],
+    exclude_groups: [],
     models: [],
+    exclude_models: [],
     config: {
       message: 'Custom refusal',
       mode: 'reject',
@@ -503,6 +505,92 @@ test('switching back to all models saves an empty model list', async () => {
   const saved = (put.mock.calls[0][1] as { instances: RequestPluginInstance[] })
     .instances
   expect(saved[1]).toMatchObject({ groups: ['vip', 'svip'], models: [] })
+})
+
+test('excluded models, picked or typed in, reach the saved instance and reopen cleanly', async () => {
+  const put = mockSave()
+  const { user, dialog } = await openNewInstance()
+
+  await user.click(
+    within(dialog).getByRole('radio', { name: /Excluded models/ })
+  )
+  await user.click(within(dialog).getByRole('button', { name: 'Save' }))
+  expect(within(dialog).getByText('Pick at least one model')).toBeVisible()
+  expect(put).not.toHaveBeenCalled()
+
+  const picker = within(dialog).getByRole('combobox', {
+    name: 'Select models to exclude or add custom ones',
+  })
+  await user.click(picker)
+  await user.click(await screen.findByRole('option', { name: 'gpt-4o' }))
+  await user.type(picker, 'bypass-model{Enter}')
+  await user.click(within(dialog).getByRole('button', { name: 'Save' }))
+
+  await waitFor(() => expect(put).toHaveBeenCalledOnce())
+  const saved = (put.mock.calls[0][1] as { instances: RequestPluginInstance[] })
+    .instances
+  expect(saved[3]).toMatchObject({
+    global: true,
+    models: [],
+    exclude_models: ['gpt-4o', 'bypass-model'],
+  })
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+  const rows = screen.getAllByRole('row').slice(1)
+  expect(rows[3]).toHaveTextContent('Except models: gpt-4o, bypass-model')
+  expect(rows[3]).not.toHaveTextContent('Models:')
+
+  await user.click(screen.getByRole('button', { name: 'Edit Request filter' }))
+  const reopened = await screen.findByRole('dialog')
+  expect(
+    within(reopened).getByRole('radio', { name: /Excluded models/ })
+  ).toBeChecked()
+  await user.click(within(reopened).getByRole('radio', { name: /All models/ }))
+  await user.click(within(reopened).getByRole('button', { name: 'Save' }))
+
+  await waitFor(() => expect(put).toHaveBeenCalledTimes(2))
+  const cleared = (
+    put.mock.calls[1][1] as { instances: RequestPluginInstance[] }
+  ).instances
+  expect(cleared[3]).toMatchObject({ models: [], exclude_models: [] })
+})
+
+test('excluded groups need at least one group, save, render, and reopen cleanly', async () => {
+  const put = mockSave()
+  const { user, dialog } = await openNewInstance()
+
+  await user.click(
+    within(dialog).getByRole('radio', { name: /Excluded groups/ })
+  )
+  await user.click(within(dialog).getByRole('button', { name: 'Save' }))
+  expect(within(dialog).getByText('Pick at least one group')).toBeVisible()
+  expect(put).not.toHaveBeenCalled()
+
+  await user.click(
+    within(dialog).getByRole('combobox', { name: 'Select groups to exclude' })
+  )
+  await user.click(await screen.findByRole('option', { name: 'vip' }))
+  await user.keyboard('{Escape}')
+  await user.click(within(dialog).getByRole('button', { name: 'Save' }))
+
+  await waitFor(() => expect(put).toHaveBeenCalledOnce())
+  const saved = (put.mock.calls[0][1] as { instances: RequestPluginInstance[] })
+    .instances
+  expect(saved[3]).toMatchObject({
+    global: false,
+    groups: [],
+    exclude_groups: ['vip'],
+  })
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+  const rows = screen.getAllByRole('row').slice(1)
+  expect(rows[3]).toHaveTextContent('All except groups: vip')
+
+  await user.click(screen.getByRole('button', { name: 'Edit Request filter' }))
+  const reopened = await screen.findByRole('dialog')
+  expect(
+    within(reopened).getByRole('radio', { name: /Excluded groups/ })
+  ).toBeChecked()
 })
 
 test('a config the gateway rejects keeps the editor open with its message', async () => {
