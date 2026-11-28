@@ -37,7 +37,11 @@ import {
 } from '@/features/creation/presets'
 import { usePricingData } from '@/features/pricing/hooks'
 import { getModelPlaygroundModes } from '@/features/pricing/lib/filters'
-import { getConfiguredTaskCapabilities } from '@/lib/model-task-capabilities'
+import {
+  getConfiguredModelCategories,
+  getConfiguredTaskCapabilities,
+  getModelCategories,
+} from '@/lib/model-task-capabilities'
 import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -171,16 +175,20 @@ export function Playground(props: {
   const { executionModels, authoringModels } = useMemo(() => {
     const matchesMode = (option: ModelOption) => {
       const model = catalogByName.get(option.value)
+      if (activeTab === 'chat') {
+        return Boolean(model && getModelCategories(model).includes('text'))
+      }
       if (
         model &&
         (model.supported_endpoint_types?.length ||
           model.input_modalities?.length ||
           model.output_modalities?.length ||
+          getConfiguredModelCategories(model.tags) !== undefined ||
           getConfiguredTaskCapabilities(model.tags) !== undefined)
       ) {
         return getModelPlaygroundModes(model).includes(activeTab)
       }
-      return activeTab === 'chat' || option.value === requestedModel
+      return option.value === requestedModel
     }
     return {
       executionModels: (scope?.models ?? []).filter(matchesMode),
@@ -312,9 +320,9 @@ export function Playground(props: {
   }
   const studioTabs: { id: StudioTab; label: string }[] = [
     { id: 'chat', label: t('Text Chat') },
-    { id: 'video', label: t('Video Generation') },
     { id: 'image', label: t('Image Generation') },
-    { id: 'audio', label: t('Audio Synthesis') },
+    { id: 'video', label: t('Video Generation') },
+    { id: 'audio', label: t('Audio Generation') },
   ]
 
   const returnSearch: PlaygroundSearch =
@@ -328,7 +336,7 @@ export function Playground(props: {
   const superadminAuthoringChat =
     canSavePresets &&
     !billingKeys.loading &&
-    (!isLoadingModels || !!activeModel) &&
+    Boolean(activeModel) &&
     (editingPreset || (!!props.preset && !selectedKey))
   const showChatComposer = chatReady || superadminAuthoringChat
   const mediaKeyGuide =
@@ -565,9 +573,31 @@ export function Playground(props: {
         </div>
       )
     }
+    if (catalog.error && !catalog.models.length) {
+      return (
+        <div className={compactClass} role='status'>
+          <span className='pg-chat-gate-icon' aria-hidden='true'>
+            <KeyRound size={18} />
+          </span>
+          <p className='pg-chat-gate-text'>{t('Failed to load models')}</p>
+          <div className='pg-chat-gate-actions'>
+            <button
+              type='button'
+              className='el-btn el-btn-md el-btn-primary'
+              onClick={() => void catalog.refetch()}
+            >
+              {t('Retry')}
+            </button>
+          </div>
+        </div>
+      )
+    }
     if (!executionModel) {
       const selectedKeyName = selectedKey.name || `#${selectedKey.id}`
       const firstModel = executionModels[0]?.value
+      const requestedModelAllowedByKey =
+        Boolean(requestedModel) &&
+        scope.models.some((option) => option.value === requestedModel)
       return (
         <div className={compactClass} role='status'>
           <span className='pg-chat-gate-icon' aria-hidden='true'>
@@ -586,18 +616,34 @@ export function Playground(props: {
           {requestedModel && firstModel ? (
             <>
               <p className='pg-chat-gate-text'>
-                {t('Selected key ({{key}}) does not support model {{model}}.', {
-                  key: selectedKeyName,
-                  model: requestedModel,
-                  interpolation: { escapeValue: false },
-                })}
+                {requestedModelAllowedByKey
+                  ? t(
+                      'Model {{model}} does not support reasoning generation and cannot be used in Text Chat.',
+                      {
+                        model: requestedModel,
+                        interpolation: { escapeValue: false },
+                      }
+                    )
+                  : t(
+                      'Selected key ({{key}}) does not support model {{model}}.',
+                      {
+                        key: selectedKeyName,
+                        model: requestedModel,
+                        interpolation: { escapeValue: false },
+                      }
+                    )}
               </p>
-              <p className='pg-chat-gate-subtext'>
-                {t('Requested model is unavailable in this group: {{model}}', {
-                  model: requestedModel,
-                  interpolation: { escapeValue: false },
-                })}
-              </p>
+              {!requestedModelAllowedByKey && (
+                <p className='pg-chat-gate-subtext'>
+                  {t(
+                    'Requested model is unavailable in this group: {{model}}',
+                    {
+                      model: requestedModel,
+                      interpolation: { escapeValue: false },
+                    }
+                  )}
+                </p>
+              )}
               <div className='pg-chat-gate-actions'>
                 <button
                   type='button'
@@ -641,13 +687,21 @@ export function Playground(props: {
               </p>
               {requestedModel && (
                 <p className='pg-chat-gate-subtext'>
-                  {t(
-                    'Requested model is unavailable in this group: {{model}}',
-                    {
-                      model: requestedModel,
-                      interpolation: { escapeValue: false },
-                    }
-                  )}
+                  {requestedModelAllowedByKey
+                    ? t(
+                        'Model {{model}} does not support reasoning generation and cannot be used in Text Chat.',
+                        {
+                          model: requestedModel,
+                          interpolation: { escapeValue: false },
+                        }
+                      )
+                    : t(
+                        'Requested model is unavailable in this group: {{model}}',
+                        {
+                          model: requestedModel,
+                          interpolation: { escapeValue: false },
+                        }
+                      )}
                 </p>
               )}
               <div className='pg-chat-gate-actions'>
@@ -874,10 +928,6 @@ export function Playground(props: {
                       onChange: (enabled) =>
                         updateConfig('web_search', enabled),
                     }}
-                    fileOutput={{
-                      value: controls.config.fileOutput,
-                      onChange: (value) => updateConfig('fileOutput', value),
-                    }}
                     disabled={isGenerating}
                     showWelcome={!isLoadingMessages && !messages.length}
                     draft={{ value: draft, onChange: setDraft }}
@@ -887,13 +937,11 @@ export function Playground(props: {
                     isModelLoading={isLoadingModels}
                     modelValue={activeModel}
                     models={executionModels}
-                    onClearMessages={handleClearMessages}
                     onModelChange={selectModel}
                     onStop={stopGeneration}
                     onSubmit={(text, attachments) => {
                       if (chatReady) handleSendMessage(text, attachments)
                     }}
-                    hasMessages={messages.length > 0}
                     showModelSelector={executionModels.length > 0}
                   />
                 </div>

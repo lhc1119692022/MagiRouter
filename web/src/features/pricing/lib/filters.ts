@@ -18,9 +18,11 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import {
   getConfiguredTaskCapabilities,
+  getConfiguredModelCategories,
   getModelCategories,
   getModelTaskCapabilities,
   getOrdinaryModelTags,
+  hasConfiguredModelCategoryDeclaration,
   MODEL_CAPABILITY_CATEGORIES,
   type ModelCapabilityCategory,
   type ModelTaskCapability,
@@ -826,8 +828,30 @@ export type ModelPlaygroundMode = 'chat' | 'image' | 'video' | 'audio'
 export function getModelPlaygroundModes(
   model: PricingModel
 ): ModelPlaygroundMode[] {
+  const hasCategoryDeclaration = hasConfiguredModelCategoryDeclaration(
+    model.tags
+  )
+  if (hasCategoryDeclaration) {
+    const configuredCategories = getConfiguredModelCategories(model.tags)
+    if (configuredCategories !== undefined) {
+      const modes = new Set<ModelPlaygroundMode>()
+      for (const category of configuredCategories) {
+        if (category === 'text') modes.add('chat')
+        if (
+          category === 'image' ||
+          category === 'video' ||
+          category === 'audio'
+        ) {
+          modes.add(category)
+        }
+      }
+      return [...modes]
+    }
+  }
   const declared = getConfiguredTaskCapabilities(model.tags)
-  const tasks = declared ?? getModelTaskCapabilities(model)
+  const tasks = hasCategoryDeclaration
+    ? getModelTaskCapabilities({ ...model, tags: undefined })
+    : (declared ?? getModelTaskCapabilities(model))
   const modes = new Set<ModelPlaygroundMode>()
   for (const task of tasks) {
     if (task === 'text-generation') modes.add('chat')
@@ -840,7 +864,7 @@ export function getModelPlaygroundModes(
     if (task === 'text-to-speech') modes.add('audio')
   }
   if (
-    declared === undefined &&
+    (hasCategoryDeclaration || declared === undefined) &&
     !model.input_modalities?.length &&
     !model.supported_endpoint_types?.length
   ) {

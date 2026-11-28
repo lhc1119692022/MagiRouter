@@ -10,6 +10,7 @@ import { usePricingData } from '@/features/pricing/hooks'
 import type { PricingModel } from '@/features/pricing/types'
 import { api } from '@/lib/api'
 import {
+  getModelCategories,
   getModelTaskCapabilities,
   type ModelTaskCapability,
 } from '@/lib/model-task-capabilities'
@@ -226,6 +227,9 @@ export function supportsStudioTask(
   mode: StudioMode,
   task?: string
 ): boolean {
+  if (mode === 'chat' && !getModelCategories(model).includes('text')) {
+    return false
+  }
   const endpoints = new Set(
     (model.supported_endpoint_types ?? []).map((value) =>
       value.trim().toLowerCase()

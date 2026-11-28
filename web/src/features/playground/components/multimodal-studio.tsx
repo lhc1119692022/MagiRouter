@@ -10,25 +10,55 @@ import {
   Pause,
   Play,
   Plus,
+  RotateCcw,
   X,
 } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MutableRefObject,
+  type ReactNode,
+} from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 
+import { JsonCodeEditor } from '@/components/json-code-editor'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import {
   supportsStudioTask,
   type CreationPreset,
 } from '@/features/creation/presets'
-import { HighlightedCode } from '@/features/docs/components/highlighted-code'
 import { resolveApiKeyValue } from '@/features/keys/api'
 import { resolveBaseUrl } from '@/features/magirouter-home/lib/snippets'
 import type { PricingModel } from '@/features/pricing/types'
 import { useStatus } from '@/hooks/use-status'
+import { copyToClipboard } from '@/lib/copy-to-clipboard'
 import { cn } from '@/lib/utils'
 
+import {
+  buildImageRequestPayload,
+  createDefaultImageParams,
+  extractReferencesFromPayload,
+  getActiveImageSize,
+  parseEditedJsonPayload,
+  resolveImageModelProfile,
+  syncImageParamsFromJson,
+  validateSeedreamPixelSize,
+  type ImageStudioParams,
+} from '../lib/image-model-params'
+import {
+  extractImageReferenceCountFromPayload,
+  resolveImageRoute,
+  type ImageRouteResolution,
+} from '../lib/image-routing'
+import { ImageParameterControls } from './image-parameter-controls'
+import {
+  ImageReferenceSlots,
+  type ImageReferenceItem,
+} from './image-reference-slots'
 import { SavePresetAction } from './save-preset-action'
 
 export type MultimodalMode = 'video' | 'image' | 'audio'
@@ -55,9 +85,11 @@ interface MediaOption {
   summary: string
 }
 
-interface ReferenceEntry {
+interface GeneratedImageItem {
   id: string
   url: string
+  label?: string
+  size?: string
 }
 
 interface SessionRunRecord {
@@ -93,11 +125,15 @@ const AUDIO_WAVE_HEIGHTS = [
   38, 72, 90, 66, 44, 78, 84, 52, 34, 60, 74, 46, 30,
 ]
 
-function getEndpointPath(mode: MultimodalMode, imageTask: string): string {
+function getModeTitleKey(mode: MultimodalMode): string {
+  if (mode === 'image') return 'Image generation'
+  if (mode === 'video') return 'Video Generation'
+  return 'Audio Generation'
+}
+
+function getEndpointPath(mode: MultimodalMode, imageEndpoint?: string): string {
   if (mode === 'video') return '/v1/video/generations'
-  if (mode === 'image') {
-    return imageTask === 'edit' ? '/v1/images/edits' : '/v1/images/generations'
-  }
+  if (mode === 'image') return imageEndpoint ?? '/v1/images/generations'
   return '/v1/audio/speech'
 }
 
@@ -123,10 +159,94 @@ function getStageStatusLabel(
   return '就绪'
 }
 
-function getPromptPlaceholder(mode: MultimodalMode): string {
+function getPromptPlaceholder(
+  mode: MultimodalMode,
+  layerDecomposition?: boolean
+): string {
   if (mode === 'video') return '描述画面主体、动作、镜头运动与声音…'
+  if (mode === 'image' && layerDecomposition) {
+    return '可选：指定需要拆分的图层元素，留空将自动识别主体、背景与文字…'
+  }
   if (mode === 'image') return '描述画面主体、光影、材质与构图…'
   return '输入要合成为拟真语音的文本内容…'
+}
+
+function getImageIntentLabelKey(
+  intent: ImageRouteResolution['intent']
+): string {
+  if (intent === 'layer-decomposition') return 'Layer decomposition'
+  if (intent === 'reference-generation') return 'Reference generation'
+  if (intent === 'image-edit') return 'Image edit'
+  return 'Text to Image'
+}
+
+function extractGeneratedImagesFromPayload(
+  payload: unknown,
+  fallbackFormat: string
+): GeneratedImageItem[] {
+  if (!payload || typeof payload !== 'object') return []
+  const record = payload as Record<string, unknown>
+  const items: unknown[] = Array.isArray(record.data) ? record.data : []
+  const results: GeneratedImageItem[] = []
+  for (const item of items) {
+    if (!item || typeof item !== 'object') continue
+    const entry = item as Record<string, unknown>
+    const itemFormat =
+      typeof entry.output_format === 'string' && entry.output_format
+        ? entry.output_format
+        : fallbackFormat
+    let url = ''
+    if (typeof entry.url === 'string' && entry.url) {
+      url = entry.url
+    } else if (typeof entry.b64_json === 'string' && entry.b64_json) {
+      url = `data:image/${itemFormat};base64,${entry.b64_json}`
+    }
+    if (!url) continue
+    let label: string | undefined
+    if (typeof entry.name === 'string' && entry.name.trim()) {
+      label = entry.name.trim()
+    } else if (typeof entry.z_index === 'number') {
+      label = entry.z_index === 0 ? 'Base' : `Layer #${entry.z_index}`
+    }
+    results.push({
+      id: `${label ?? 'img'}-${url.slice(0, 64)}-${results.length + 1}`,
+      url,
+      label,
+      size: typeof entry.size === 'string' ? entry.size : undefined,
+    })
+  }
+  return results
+}
+
+function parseSseGeneratedImages(
+  rawText: string,
+  fallbackFormat: string
+): GeneratedImageItem[] {
+  const results: GeneratedImageItem[] = []
+  for (const line of rawText.split(/\r?\n/)) {
+    const trimmed = line.trim()
+    if (!trimmed.startsWith('data:')) continue
+    const dataStr = trimmed.slice(5).trim()
+    if (!dataStr || dataStr === '[DONE]') continue
+    try {
+      const parsed: unknown = JSON.parse(dataStr)
+      const batch = extractGeneratedImagesFromPayload(parsed, fallbackFormat)
+      if (batch.length > 0) {
+        results.push(...batch)
+        continue
+      }
+      if (parsed && typeof parsed === 'object') {
+        const single = extractGeneratedImagesFromPayload(
+          { data: [parsed] },
+          fallbackFormat
+        )
+        results.push(...single)
+      }
+    } catch {
+      // ignore non-JSON SSE keepalive lines
+    }
+  }
+  return results
 }
 
 function getVideoTaskLabel(task: 't2v' | 'i2v' | 'ref2v' | 'edit'): string {
@@ -259,41 +379,124 @@ function StageArtwork(props: { mode: 'video' | 'image' }) {
   )
 }
 
-export function MultimodalStudio({
-  sessionKey,
-  billing,
-  ...sessionProps
-}: MultimodalStudioProps) {
+export function MultimodalStudio(props: MultimodalStudioProps) {
   const { t } = useTranslation()
   const [stage, setStage] = useState<HTMLDivElement | null>(null)
+  const [footerSlot, setFooterSlot] = useState<HTMLDivElement | null>(null)
+  const [inputView, setInputView] = useState<'form' | 'json'>('form')
+  const [layerDecompositionActive, setLayerDecompositionActive] =
+    useState(false)
+  const syncFromJsonRef = useRef<(() => void) | null>(null)
+
+  useEffect(() => {
+    setInputView('form')
+    setLayerDecompositionActive(false)
+  }, [props.mode])
+
+  useEffect(() => {
+    setLayerDecompositionActive(false)
+  }, [props.sessionKey])
+
+  const handleSelectInputView = (nextView: 'form' | 'json') => {
+    if (nextView === inputView) return
+    if (inputView === 'json' && nextView === 'form') {
+      syncFromJsonRef.current?.()
+    }
+    setInputView(nextView)
+  }
+
+  const promptOptional = props.mode === 'image' && layerDecompositionActive
+
   return (
     <div className='pg-workspace-grid' id='pg-workspace-grid'>
       <div className='pg-panel pg-config-panel'>
-        {billing}
-        <label className='pg-field'>
-          <span className='pg-field-head'>
-            <span className='pg-field-label'>{t('Prompt')}</span>
-            <span className='pg-char-count' aria-hidden='true'>
-              {sessionProps.draft.length} / 2000
-            </span>
-          </span>
-          <Textarea
-            className='pg-textarea'
-            rows={4}
-            value={sessionProps.draft}
-            onChange={(event) => sessionProps.onDraftChange(event.target.value)}
-            placeholder={getPromptPlaceholder(sessionProps.mode)}
-          />
-        </label>
-        {stage && (
-          <MediaSession key={sessionKey} {...sessionProps} stage={stage} />
-        )}
+        <div className='pg-studio-panel-head'>
+          <h2 className='pg-studio-panel-title'>
+            {t(getModeTitleKey(props.mode))}
+          </h2>
+          <div
+            className='pg-mode-tabs pg-mode-slider'
+            role='tablist'
+            aria-label={t('Input mode')}
+            data-active={inputView}
+          >
+            <span className='pg-mode-slider-thumb' aria-hidden='true' />
+            <button
+              type='button'
+              role='tab'
+              aria-selected={inputView === 'form'}
+              onClick={() => handleSelectInputView('form')}
+              className={cn('pg-mode-tab', inputView === 'form' && 'is-active')}
+            >
+              {t('Form')}
+            </button>
+            <button
+              type='button'
+              role='tab'
+              aria-selected={inputView === 'json'}
+              onClick={() => handleSelectInputView('json')}
+              className={cn('pg-mode-tab', inputView === 'json' && 'is-active')}
+            >
+              {t('JSON')}
+            </button>
+          </div>
+        </div>
+
+        <div className='pg-panel-scroll'>
+          <div hidden={inputView === 'json'} className='pg-studio-top-fields'>
+            {props.billing}
+            <label className='pg-field'>
+              <span className='pg-field-head'>
+                <span className='pg-field-label'>
+                  {t('Prompt')}
+                  {promptOptional && (
+                    <span className='pg-optional-tag'>{t('Optional')}</span>
+                  )}
+                </span>
+                <span className='pg-char-count' aria-hidden='true'>
+                  {props.draft.length} / 2000
+                </span>
+              </span>
+              <Textarea
+                className='pg-textarea'
+                rows={4}
+                value={props.draft}
+                onChange={(event) => props.onDraftChange(event.target.value)}
+                placeholder={getPromptPlaceholder(props.mode, promptOptional)}
+              />
+            </label>
+          </div>
+
+          {stage && (
+            <MediaSession
+              key={props.sessionKey}
+              canSavePresets={props.canSavePresets}
+              mode={props.mode}
+              currentModel={props.currentModel}
+              draft={props.draft}
+              onDraftChange={props.onDraftChange}
+              keyGuide={props.keyGuide}
+              priceQuote={props.priceQuote}
+              statusNotice={props.statusNotice}
+              preset={props.preset}
+              billingKeyId={props.billingKeyId}
+              onRunningChange={props.onRunningChange}
+              inputView={inputView}
+              onLayerDecompositionChange={setLayerDecompositionActive}
+              syncFromJsonRef={syncFromJsonRef}
+              stage={stage}
+              footerSlot={footerSlot}
+            />
+          )}
+        </div>
+
+        <div ref={setFooterSlot} className='pg-studio-footer-slot' />
       </div>
       <div
         ref={setStage}
         className={cn(
           'pg-panel',
-          sessionProps.currentModel ? 'pg-stage-panel' : 'pg-preview-panel'
+          props.currentModel ? 'pg-stage-panel' : 'pg-preview-panel'
         )}
       />
     </div>
@@ -302,16 +505,18 @@ export function MultimodalStudio({
 
 function MediaSession(
   props: Omit<MultimodalStudioProps, 'billing' | 'sessionKey'> & {
+    inputView: 'form' | 'json'
+    onLayerDecompositionChange: (active: boolean) => void
+    syncFromJsonRef: MutableRefObject<(() => void) | null>
     stage: HTMLDivElement
+    footerSlot: HTMLDivElement | null
   }
 ) {
   const { t } = useTranslation()
-  const {
-    mode,
-    currentModel: current,
-    draft: prompt,
-    onDraftChange: setPrompt,
-  } = props
+  const mode = props.mode
+  const current = props.currentModel
+  const prompt = props.draft
+  const setPrompt = props.onDraftChange
   const { status } = useStatus()
   const baseUrl = resolveBaseUrl(status?.server_address)
 
@@ -322,7 +527,10 @@ function MediaSession(
     summary: current?.description?.trim() || MODE_COPY[mode].summary,
   }
 
-  const [inputView, setInputView] = useState<'form' | 'json'>('form')
+  const imageProfile = useMemo(
+    () => resolveImageModelProfile(current?.model_name),
+    [current?.model_name]
+  )
   const imagePreset =
     props.preset?.mode === 'image' ? props.preset.parameters : undefined
   const videoPreset =
@@ -345,18 +553,8 @@ function MediaSession(
   const [cameraFixed, setCameraFixed] = useState(
     videoPreset?.cameraFixed ?? false
   )
-  const [imageTask, setImageTask] = useState<'generate' | 'edit'>(
-    imagePreset?.imageTask ?? 'generate'
-  )
-  const [imageSize, setImageSize] = useState(
-    imagePreset?.imageSize ?? '1536x1024'
-  )
-  const [imageQuality, setImageQuality] = useState<
-    'auto' | 'low' | 'medium' | 'high'
-  >(imagePreset?.quality ?? 'high')
-  const [imageCount, setImageCount] = useState(imagePreset?.imageCount ?? 1)
-  const [imageFormat, setImageFormat] = useState<'png' | 'jpeg' | 'webp'>(
-    imagePreset?.imageFormat ?? 'png'
+  const [imageParams, setImageParams] = useState<ImageStudioParams>(() =>
+    createDefaultImageParams(imageProfile, imagePreset)
   )
   const [voice, setVoice] = useState(audioPreset?.voice ?? 'marin')
   const [audioFormat, setAudioFormat] = useState<
@@ -366,29 +564,21 @@ function MediaSession(
   const [instructions, setInstructions] = useState(
     audioPreset?.instructions ?? ''
   )
-  const [references, setReferences] = useState<ReferenceEntry[]>([])
-  const needsReference =
-    (mode === 'image' && imageTask === 'edit') ||
-    (mode === 'video' && videoTask !== 't2v')
-  const insufficientReferences = needsReference && !references.length
-  const supportedSceneModel =
-    !!current &&
-    supportsStudioTask(current, mode, mode === 'image' ? imageTask : videoTask)
-  const selectedKey = props.billingKeyId
-  const keyAllowed = !!selectedKey
+  const [references, setReferences] = useState<ImageReferenceItem[]>([])
+  const [jsonDraft, setJsonDraft] = useState('')
+  const [jsonDirty, setJsonDirty] = useState(false)
   const [showRefInput, setShowRefInput] = useState(false)
-  let blockingReason: string | undefined
-  if (!supportedSceneModel) {
-    blockingReason = t('This model is not available for this preset.')
-  } else if (insufficientReferences) {
-    blockingReason = t('Add reference materials first ({{count}} required).', {
-      count: 1,
-    })
-  } else if (!keyAllowed) {
-    blockingReason = t('Choose a key that allows this model and group.')
-  }
   const [refInput, setRefInput] = useState('')
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
+
+  const layerDecompositionEnabled =
+    mode === 'image' &&
+    imageProfile.supportsLayerDecomposition &&
+    imageParams.layerDecomposition
+  const { onLayerDecompositionChange } = props
+  useEffect(() => {
+    onLayerDecompositionChange(layerDecompositionEnabled)
+  }, [layerDecompositionEnabled, onLayerDecompositionChange])
 
   const [runStatus, setRunStatus] = useState<
     'idle' | 'running' | 'done' | 'error'
@@ -401,7 +591,10 @@ function MediaSession(
     if (runStatus === 'running') return () => onRunningChange(false)
   }, [onRunningChange, runStatus])
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
-  const [generatedImages, setGeneratedImages] = useState<string[]>([])
+  const [generatedImages, setGeneratedImages] = useState<GeneratedImageItem[]>(
+    []
+  )
+  const [selectedImageIndex, setSelectedImageIndex] = useState(0)
   const [generatedVideoUrl, setGeneratedVideoUrl] = useState<string | null>(
     null
   )
@@ -424,8 +617,16 @@ function MediaSession(
     }
   }, [audioUrl])
 
-  const endpointPath = getEndpointPath(props.mode, imageTask)
   const effectivePrompt = prompt.trim()
+  const formImageRoute = useMemo(
+    () =>
+      resolveImageRoute({
+        prompt: effectivePrompt,
+        referenceCount: references.length,
+        layerDecomposition: layerDecompositionEnabled,
+      }),
+    [effectivePrompt, layerDecompositionEnabled, references.length]
+  )
 
   const payloadObject = useMemo(() => {
     if (props.mode === 'video') {
@@ -444,17 +645,13 @@ function MediaSession(
       }
     }
     if (props.mode === 'image') {
-      return {
+      return buildImageRequestPayload({
         model: activeModel.id,
         prompt: effectivePrompt,
-        size: imageSize,
-        quality: imageQuality,
-        n: imageCount,
-        output_format: imageFormat,
-        ...(imageTask === 'edit' && references.length > 0
-          ? { image: references.map((item) => item.url) }
-          : {}),
-      }
+        references: references.map((item) => item.url),
+        profile: imageProfile,
+        params: imageParams,
+      })
     }
     return {
       model: activeModel.id,
@@ -471,11 +668,8 @@ function MediaSession(
     cameraFixed,
     duration,
     effectivePrompt,
-    imageCount,
-    imageFormat,
-    imageQuality,
-    imageSize,
-    imageTask,
+    imageParams,
+    imageProfile,
     instructions,
     nativeAudio,
     props.mode,
@@ -491,25 +685,262 @@ function MediaSession(
     [payloadObject]
   )
 
+  const activeJsonText =
+    props.inputView === 'json' && jsonDirty ? jsonDraft : payloadJson
+  const parsedJson = useMemo(
+    () => parseEditedJsonPayload(activeJsonText),
+    [activeJsonText]
+  )
+
+  const effectiveImageRoute = useMemo(() => {
+    if (props.mode !== 'image') return formImageRoute
+    if (props.inputView === 'json' && jsonDirty && parsedJson.ok) {
+      const jsonPrompt =
+        typeof parsedJson.value.prompt === 'string'
+          ? parsedJson.value.prompt
+          : ''
+      const jsonRefCount = extractImageReferenceCountFromPayload(
+        parsedJson.value
+      )
+      const jsonLayerMode = parsedJson.value.layer_decomposition === true
+      return resolveImageRoute({
+        prompt: jsonPrompt,
+        referenceCount: jsonRefCount,
+        layerDecomposition: jsonLayerMode,
+      })
+    }
+    return formImageRoute
+  }, [formImageRoute, jsonDirty, parsedJson, props.inputView, props.mode])
+
+  const endpointPath = getEndpointPath(
+    props.mode,
+    props.mode === 'image' ? effectiveImageRoute.endpoint : undefined
+  )
+
+  let activePayloadForSend: Record<string, unknown> | null = payloadObject
+  if (props.inputView === 'json') {
+    activePayloadForSend = parsedJson.ok ? parsedJson.value : null
+  }
+  const activePayloadJson =
+    props.inputView === 'json' ? activeJsonText : payloadJson
+
+  props.syncFromJsonRef.current = () => {
+    if (!jsonDirty || !parsedJson.ok) {
+      setJsonDirty(false)
+      setJsonDraft('')
+      return
+    }
+    const record = parsedJson.value
+    if (props.mode === 'image') {
+      if (typeof record.prompt === 'string') {
+        setPrompt(record.prompt)
+      }
+      const extractedRefs = extractReferencesFromPayload(record)
+      if (extractedRefs !== undefined) {
+        setReferences(
+          extractedRefs.map((url, idx) => ({
+            id: `ref-json-${Date.now()}-${idx}`,
+            url,
+          }))
+        )
+      } else {
+        setReferences([])
+      }
+      setImageParams((prev) =>
+        syncImageParamsFromJson(record, imageProfile, prev)
+      )
+    } else if (props.mode === 'video') {
+      if (typeof record.prompt === 'string') setPrompt(record.prompt)
+      if (
+        record.resolution === '480p' ||
+        record.resolution === '720p' ||
+        record.resolution === '1080p'
+      ) {
+        setResolution(record.resolution)
+      }
+      if (
+        record.ratio === '16:9' ||
+        record.ratio === '9:16' ||
+        record.ratio === '1:1' ||
+        record.ratio === '4:3' ||
+        record.ratio === '3:4' ||
+        record.ratio === '21:9'
+      ) {
+        setAspectRatio(record.ratio)
+      }
+      if (typeof record.duration === 'number') {
+        setDuration(Math.min(15, Math.max(4, Math.round(record.duration))))
+      }
+      if (typeof record.generate_audio === 'boolean') {
+        setNativeAudio(record.generate_audio)
+      }
+      if (typeof record.camera_fixed === 'boolean') {
+        setCameraFixed(record.camera_fixed)
+      }
+    } else {
+      if (typeof record.input === 'string') setPrompt(record.input)
+      if (
+        record.voice === 'marin' ||
+        record.voice === 'cedar' ||
+        record.voice === 'alloy' ||
+        record.voice === 'ash' ||
+        record.voice === 'coral' ||
+        record.voice === 'nova' ||
+        record.voice === 'sage'
+      ) {
+        setVoice(record.voice)
+      }
+      if (
+        record.response_format === 'mp3' ||
+        record.response_format === 'wav' ||
+        record.response_format === 'opus' ||
+        record.response_format === 'aac' ||
+        record.response_format === 'flac'
+      ) {
+        setAudioFormat(record.response_format)
+      }
+      if (typeof record.speed === 'number') {
+        setSpeed(Math.min(2, Math.max(0.5, record.speed)))
+      }
+      if (typeof record.instructions === 'string') {
+        setInstructions(record.instructions)
+      }
+    }
+    setJsonDirty(false)
+    setJsonDraft('')
+  }
+
+  const presetRequiresReference =
+    mode === 'image' &&
+    props.inputView === 'form' &&
+    imagePreset?.imageTask === 'edit' &&
+    references.length === 0
+  const effectiveImageTask: 'generate' | 'edit' = presetRequiresReference
+    ? 'edit'
+    : effectiveImageRoute.task
+
+  const layerNeedsSingleReference =
+    mode === 'image' &&
+    props.inputView === 'form' &&
+    layerDecompositionEnabled &&
+    references.length !== 1
+  const videoNeedsReference =
+    mode === 'video' &&
+    props.inputView === 'form' &&
+    videoTask !== 't2v' &&
+    references.length === 0
+  const insufficientReferences =
+    presetRequiresReference || layerNeedsSingleReference || videoNeedsReference
+
+  const invalidSeedreamPixels =
+    mode === 'image' &&
+    props.inputView === 'form' &&
+    imageProfile.isSeedream &&
+    !layerDecompositionEnabled &&
+    imageParams.sizeMode === 'pixels' &&
+    !validateSeedreamPixelSize(imageParams.pixelSize, imageProfile).valid
+
+  const supportedSceneModel =
+    !!current &&
+    supportsStudioTask(
+      current,
+      mode,
+      mode === 'image' ? effectiveImageTask : videoTask
+    )
+  const selectedKey = props.billingKeyId
+  const keyAllowed = !!selectedKey
+  const jsonInvalid = props.inputView === 'json' && !parsedJson.ok
+
+  const jsonHasPromptOrLayer = (() => {
+    if (props.inputView !== 'json') return true
+    if (!parsedJson.ok) return false
+    if (mode === 'image') {
+      if (parsedJson.value.layer_decomposition === true) return true
+      return (
+        typeof parsedJson.value.prompt === 'string' &&
+        parsedJson.value.prompt.trim().length > 0
+      )
+    }
+    if (mode === 'audio') {
+      return (
+        typeof parsedJson.value.input === 'string' &&
+        parsedJson.value.input.trim().length > 0
+      )
+    }
+    return (
+      typeof parsedJson.value.prompt === 'string' &&
+      parsedJson.value.prompt.trim().length > 0
+    )
+  })()
+
+  const promptReady =
+    props.inputView === 'json'
+      ? jsonHasPromptOrLayer
+      : Boolean(effectivePrompt) || layerDecompositionEnabled
+
+  let blockingReason: string | undefined
+  if (jsonInvalid) {
+    blockingReason = t(parsedJson.errorKey)
+  } else if (!supportedSceneModel) {
+    if (props.preset) {
+      blockingReason = t('This model is not available for this preset.')
+    } else if (mode === 'image') {
+      blockingReason = t('This model does not have {{endpoint}} configured.', {
+        endpoint: endpointPath,
+      })
+    } else {
+      blockingReason = t('This model is not available for this preset.')
+    }
+  } else if (layerNeedsSingleReference) {
+    blockingReason = t(
+      'Layer decomposition requires exactly 1 reference image.'
+    )
+  } else if (insufficientReferences) {
+    blockingReason = t('Add reference materials first ({{count}} required).', {
+      count: 1,
+    })
+  } else if (invalidSeedreamPixels) {
+    blockingReason = t(
+      'Total pixels are outside the supported range for this model.'
+    )
+  } else if (!keyAllowed) {
+    blockingReason = t('Choose a key that allows this model and group.')
+  }
+
   const curlCommand = useMemo(
     () =>
-      `curl ${baseUrl}${endpointPath} \\\n  -H "Authorization: Bearer $MAGIROUTER_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '${payloadJson}'`,
-    [baseUrl, endpointPath, payloadJson]
+      `curl ${baseUrl}${endpointPath} \\\n  -H "Authorization: Bearer $MAGIROUTER_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '${activePayloadJson}'`,
+    [activePayloadJson, baseUrl, endpointPath]
   )
 
   const copyWithFeedback = async (key: string, value: string) => {
-    await navigator.clipboard.writeText(value)
+    const copied = await copyToClipboard(value)
+    if (!copied) return
     setCopiedKey(key)
     window.setTimeout(() => {
       setCopiedKey((current) => (current === key ? null : current))
     }, 1800)
   }
 
-  const addReference = () => {
+  const maxImageReferences = layerDecompositionEnabled
+    ? 1
+    : imageProfile.maxReferences
+
+  const appendReferenceItem = (url: string, name?: string) => {
+    const cleaned = url.trim()
+    const maxLimit = mode === 'image' ? maxImageReferences : 9
+    if (!cleaned) return
+    const entryId = `ref-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+    setReferences((prev) => {
+      if (prev.length >= maxLimit) return prev
+      return [...prev, { id: entryId, url: cleaned, name }]
+    })
+  }
+
+  const addVideoReference = () => {
     const cleaned = refInput.trim()
     if (!cleaned || references.length >= 9) return
-    const entryId = `ref-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
-    setReferences((prev) => [...prev, { id: entryId, url: cleaned }])
+    appendReferenceItem(cleaned)
     setRefInput('')
     setShowRefInput(false)
   }
@@ -536,16 +967,19 @@ function MediaSession(
     setDuration(5)
     setNativeAudio(true)
     setCameraFixed(false)
-    setImageSize('1536x1024')
-    setImageQuality('high')
-    setImageCount(1)
-    setImageFormat('png')
+    setImageParams(createDefaultImageParams(imageProfile))
     setVoice('marin')
     setAudioFormat('mp3')
     setSpeed(1)
     setInstructions('')
     setReferences([])
+    setJsonDirty(false)
+    setJsonDraft('')
     setErrorMessage(null)
+  }
+
+  const handlePatchImageParams = (patch: Partial<ImageStudioParams>) => {
+    setImageParams((prev) => ({ ...prev, ...patch }))
   }
 
   const appendRunRecord = (
@@ -574,9 +1008,12 @@ function MediaSession(
       pendingRun.current ||
       !selectedKey ||
       insufficientReferences ||
+      invalidSeedreamPixels ||
+      jsonInvalid ||
+      !activePayloadForSend ||
       !supportedSceneModel ||
       !hasModels ||
-      !effectivePrompt
+      !promptReady
     ) {
       return
     }
@@ -599,33 +1036,35 @@ function MediaSession(
             Authorization: authHeader,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify(payloadObject),
+          body: JSON.stringify(activePayloadForSend),
         })
-        const json = await response.json().catch(() => null)
-        if (request.signal.aborted) return
-        if (!response.ok) {
-          throw new Error(
-            extractErrorMessage(json, `请求失败（HTTP ${response.status}）`)
+        const contentType = response.headers.get('content-type') ?? ''
+        let items: GeneratedImageItem[] = []
+        if (response.ok && contentType.includes('text/event-stream')) {
+          const rawText = await response.text()
+          if (request.signal.aborted) return
+          items = parseSseGeneratedImages(rawText, imageParams.outputFormat)
+        } else {
+          const json = await response.json().catch(() => null)
+          if (request.signal.aborted) return
+          if (!response.ok) {
+            throw new Error(
+              extractErrorMessage(json, `请求失败（HTTP ${response.status}）`)
+            )
+          }
+          items = extractGeneratedImagesFromPayload(
+            json,
+            imageParams.outputFormat
           )
         }
-        const items: unknown[] = Array.isArray(json?.data) ? json.data : []
-        const urls: string[] = []
-        for (const item of items) {
-          if (item && typeof item === 'object') {
-            const record = item as Record<string, unknown>
-            if (typeof record.url === 'string' && record.url) {
-              urls.push(record.url)
-            } else if (typeof record.b64_json === 'string' && record.b64_json) {
-              urls.push(`data:image/${imageFormat};base64,${record.b64_json}`)
-            }
-          }
-        }
-        if (urls.length === 0) {
+        if (items.length === 0) {
           throw new Error('接口已返回成功，但未包含可预览的图像地址或 Base64。')
         }
-        setGeneratedImages(urls)
+        setGeneratedImages(items)
+        setSelectedImageIndex(0)
         setRunStatus('done')
-        appendRunRecord('done', `生成 ${urls.length} 张图像 · ${imageSize}`)
+        const activeSize = getActiveImageSize(imageProfile, imageParams)
+        appendRunRecord('done', `生成 ${items.length} 张图像 · ${activeSize}`)
         return
       }
 
@@ -639,7 +1078,7 @@ function MediaSession(
             Authorization: authHeader,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify(payloadObject),
+          body: JSON.stringify(activePayloadForSend),
         })
         if (!response.ok) {
           const errJson = await response.json().catch(() => null)
@@ -670,7 +1109,7 @@ function MediaSession(
           Authorization: authHeader,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(payloadObject),
+        body: JSON.stringify(activePayloadForSend),
       })
       const json = await response.json().catch(() => null)
       if (request.signal.aborted) return
@@ -727,14 +1166,27 @@ function MediaSession(
     }
   }
 
-  const showReferenceZone =
-    (props.mode === 'video' && videoTask !== 't2v') ||
-    (props.mode === 'image' && imageTask === 'edit')
+  const showVideoReferenceZone = props.mode === 'video' && videoTask !== 't2v'
 
   const stageStatusLabel = getStageStatusLabel(runStatus)
+  const activeImageSize = getActiveImageSize(imageProfile, imageParams)
+  const imageIntentLabel = t(getImageIntentLabelKey(effectiveImageRoute.intent))
   const videoStageBadge = `VIDEO · ${getVideoTaskLabel(videoTask)} · ${resolution}`
-  const imageStageBadge = `IMAGE · ${imageTask === 'edit' ? '多图参考编辑' : '文生图'} · ${imageQuality}`
+  const imageStageBadge = imageProfile.isSeedream
+    ? `IMAGE · ${imageIntentLabel} · ${imageProfile.family}`
+    : `IMAGE · ${imageIntentLabel} · ${imageParams.quality}`
   const stageModeBadge = mode === 'video' ? videoStageBadge : imageStageBadge
+  const imageStageSpec = imageProfile.isSeedream
+    ? [
+        activeImageSize,
+        imageProfile.outputFormats.length > 0
+          ? imageParams.outputFormat.toUpperCase()
+          : null,
+        imageParams.responseFormat,
+      ]
+        .filter(Boolean)
+        .join(' · ')
+    : `${imageParams.pixelSize} · ${imageParams.imageCount} 张 · ${imageParams.outputFormat}`
 
   const estSpeechSeconds = Math.max(
     3,
@@ -742,17 +1194,101 @@ function MediaSession(
   )
   const displayDurationSec = audioUrl ? audioDurationSec : estSpeechSeconds
   const activeWaveBars = Math.round(audioProgress * AUDIO_WAVE_HEIGHTS.length)
+  const activePreviewImage =
+    generatedImages[selectedImageIndex] ?? generatedImages[0]
+
+  const jsonEditorView = (
+    <div className='pg-json-panel'>
+      <div className='pg-json-toolbar'>
+        <code className='pg-json-endpoint'>
+          POST {baseUrl}
+          {endpointPath}
+        </code>
+        <div className='pg-json-toolbar-actions'>
+          {jsonDirty && (
+            <button
+              type='button'
+              className='el-btn el-btn-xs el-btn-ghost'
+              onClick={() => {
+                setJsonDirty(false)
+                setJsonDraft('')
+              }}
+            >
+              <RotateCcw size={12} aria-hidden='true' />
+              <span>{t('Sync from form')}</span>
+            </button>
+          )}
+          <button
+            type='button'
+            className='el-btn el-btn-xs el-btn-white'
+            onClick={() => void copyWithFeedback('json', activeJsonText)}
+          >
+            {copiedKey === 'json' ? t('Copied') : t('Copy JSON')}
+          </button>
+          <button
+            type='button'
+            className='el-btn el-btn-xs el-btn-white'
+            onClick={() => void copyWithFeedback('curl', curlCommand)}
+          >
+            {copiedKey === 'curl' ? t('Copied') : t('Copy cURL')}
+          </button>
+        </div>
+      </div>
+
+      <JsonCodeEditor
+        value={activeJsonText}
+        onChange={(nextValue) => {
+          setJsonDraft(nextValue)
+          setJsonDirty(true)
+        }}
+        ariaLabel={t('Request body JSON')}
+        heightClassName='pg-json-code-editor-area'
+        className='pg-json-code-editor'
+      />
+
+      {!parsedJson.ok && (
+        <p className='pg-field-error' role='alert'>
+          {t(parsedJson.errorKey)}
+        </p>
+      )}
+    </div>
+  )
+
+  const canSubmitRequest =
+    runStatus !== 'running' &&
+    hasModels &&
+    promptReady &&
+    keyAllowed &&
+    !insufficientReferences &&
+    !invalidSeedreamPixels &&
+    !jsonInvalid &&
+    supportedSceneModel
 
   if (!hasModels) {
     return (
       <>
-        <div className='pg-empty-multimodal'>
-          {props.statusNotice}
-          {props.keyGuide}
-          <Button type='button' disabled>
-            {t('Generate')}
-          </Button>
-        </div>
+        {props.inputView === 'json' ? (
+          jsonEditorView
+        ) : (
+          <div className='pg-empty-multimodal'>
+            {props.statusNotice}
+            {props.keyGuide}
+            <Button type='button' disabled>
+              {t('Generate')}
+            </Button>
+          </div>
+        )}
+        {props.inputView === 'json' &&
+          props.footerSlot &&
+          createPortal(
+            <div className='pg-cost-footer'>
+              {props.keyGuide}
+              <Button type='button' disabled>
+                {t('Generate')}
+              </Button>
+            </div>,
+            props.footerSlot
+          )}
         {createPortal(
           <div className='pg-empty-preview'>
             <span>{t('Output Preview')}</span>
@@ -763,94 +1299,92 @@ function MediaSession(
     )
   }
 
+  const capturePreset = () => {
+    const model = activeModel.id
+    if (mode === 'image') {
+      const normalizedPresetSize: '1024x1024' | '1024x1536' | '1536x1024' =
+        imageParams.pixelSize === '1024x1024' ||
+        imageParams.pixelSize === '1024x1536' ||
+        imageParams.pixelSize === '1536x1024'
+          ? imageParams.pixelSize
+          : '1536x1024'
+      const normalizedCount: 1 | 2 | 4 =
+        imageParams.imageCount === 2 || imageParams.imageCount === 4
+          ? imageParams.imageCount
+          : 1
+      return {
+        mode,
+        model,
+        prompt,
+        parameters: {
+          imageTask: effectiveImageTask,
+          imageSize: normalizedPresetSize,
+          quality: imageParams.quality,
+          imageCount: normalizedCount,
+          imageFormat: imageParams.outputFormat,
+        },
+      }
+    }
+    if (mode === 'audio') {
+      return {
+        mode,
+        model,
+        prompt,
+        parameters: {
+          voice,
+          audioFormat,
+          speed,
+          ...(instructions.trim() ? { instructions } : {}),
+        },
+      }
+    }
+    if (videoTask === 'edit') return null
+    return {
+      mode,
+      model,
+      prompt,
+      parameters: {
+        videoTask,
+        resolution,
+        aspectRatio,
+        duration,
+        nativeAudio,
+        cameraFixed,
+      },
+    }
+  }
+
   return (
     <>
-      <div className='pg-panel-scroll'>
-        <div className='pg-model-section'>
-          <div className='pg-model-head-row'>
-            <span className='pg-field-label'>{t('Parameters')}</span>
-            <div className='pg-mode-tabs' role='tablist'>
-              <button
-                type='button'
-                onClick={() => setInputView('form')}
-                className={cn(
-                  'pg-mode-tab',
-                  inputView === 'form' && 'is-active'
-                )}
-              >
-                表单
-              </button>
-              <button
-                type='button'
-                onClick={() => setInputView('json')}
-                className={cn(
-                  'pg-mode-tab',
-                  inputView === 'json' && 'is-active'
-                )}
-              >
-                JSON
-              </button>
+      {props.inputView === 'form' ? (
+        <div className='pg-form-body'>
+          {props.mode === 'image' && (
+            <ImageReferenceSlots
+              references={references}
+              maxReferences={maxImageReferences}
+              route={formImageRoute}
+              layerDecomposition={layerDecompositionEnabled}
+              disabled={runStatus === 'running'}
+              onAddUrl={appendReferenceItem}
+              onMove={moveReference}
+              onRemove={removeReference}
+            />
+          )}
+
+          <div className='pg-model-section'>
+            <div className='pg-model-head-row'>
+              <span className='pg-field-label'>{t('Parameters')}</span>
+              {props.canSavePresets && (
+                <SavePresetAction
+                  available={supportedSceneModel}
+                  capture={capturePreset}
+                />
+              )}
             </div>
+            <span className='pg-field-hint'>{activeModel.summary}</span>
           </div>
 
-          <div className='pg-model-select-row'>
-            {props.canSavePresets && (
-              <SavePresetAction
-                available={supportedSceneModel}
-                capture={() => {
-                  const model = activeModel.id
-                  if (mode === 'image') {
-                    return {
-                      mode,
-                      model,
-                      prompt,
-                      parameters: {
-                        imageTask,
-                        imageSize,
-                        quality: imageQuality,
-                        imageCount,
-                        imageFormat,
-                      },
-                    }
-                  }
-                  if (mode === 'audio') {
-                    return {
-                      mode,
-                      model,
-                      prompt,
-                      parameters: {
-                        voice,
-                        audioFormat,
-                        speed,
-                        ...(instructions.trim() ? { instructions } : {}),
-                      },
-                    }
-                  }
-                  if (videoTask === 'edit') return null
-                  return {
-                    mode,
-                    model,
-                    prompt,
-                    parameters: {
-                      videoTask,
-                      resolution,
-                      aspectRatio,
-                      duration,
-                      nativeAudio,
-                      cameraFixed,
-                    },
-                  }
-                }}
-              />
-            )}
-          </div>
-          <span className='pg-field-hint'>{activeModel.summary}</span>
-        </div>
-
-        {inputView === 'form' ? (
-          <div
-            style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}
-          >
+          <div className='pg-params-stack'>
             {props.mode === 'video' && (
               <div className='pg-field'>
                 <span className='pg-field-label'>生成方式</span>
@@ -879,33 +1413,7 @@ function MediaSession(
               </div>
             )}
 
-            {props.mode === 'image' && (
-              <div className='pg-field'>
-                <span className='pg-field-label'>生成方式</span>
-                <div className='pg-seg-row'>
-                  {(
-                    [
-                      ['generate', '文生图'],
-                      ['edit', '多图参考编辑'],
-                    ] as const
-                  ).map(([modeKey, label]) => (
-                    <button
-                      key={modeKey}
-                      type='button'
-                      onClick={() => setImageTask(modeKey)}
-                      className={cn(
-                        'pg-seg-btn',
-                        imageTask === modeKey && 'is-active'
-                      )}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {showReferenceZone && (
+            {showVideoReferenceZone && (
               <div className='pg-upload-zone'>
                 <div className='pg-upload-top'>
                   <span className='pg-upload-lead'>
@@ -947,14 +1455,14 @@ function MediaSession(
                       onKeyDown={(event) => {
                         if (event.key === 'Enter') {
                           event.preventDefault()
-                          addReference()
+                          addVideoReference()
                         }
                       }}
                     />
                     <button
                       type='button'
                       className='el-btn el-btn-xs el-btn-primary'
-                      onClick={addReference}
+                      onClick={addVideoReference}
                     >
                       添加
                     </button>
@@ -1086,90 +1594,13 @@ function MediaSession(
             )}
 
             {props.mode === 'image' && (
-              <>
-                <div className='pg-field'>
-                  <span className='pg-field-label'>输出尺寸</span>
-                  <div className='pg-seg-row'>
-                    {(['1536x1024', '1024x1024', '1024x1536'] as const).map(
-                      (size) => (
-                        <button
-                          key={size}
-                          type='button'
-                          onClick={() => setImageSize(size)}
-                          className={cn(
-                            'pg-seg-btn',
-                            imageSize === size && 'is-active'
-                          )}
-                        >
-                          {size}
-                        </button>
-                      )
-                    )}
-                  </div>
-                </div>
-
-                <div className='pg-field'>
-                  <span className='pg-field-label'>画质档位</span>
-                  <div className='pg-seg-row'>
-                    {(['auto', 'low', 'medium', 'high'] as const).map(
-                      (level) => (
-                        <button
-                          key={level}
-                          type='button'
-                          onClick={() => setImageQuality(level)}
-                          className={cn(
-                            'pg-seg-btn',
-                            imageQuality === level && 'is-active'
-                          )}
-                        >
-                          {level}
-                        </button>
-                      )
-                    )}
-                  </div>
-                </div>
-
-                <div className='pg-field'>
-                  <div className='pg-field-head'>
-                    <span className='pg-field-label'>生成张数</span>
-                    <span className='pg-slider-val'>{imageCount} 张</span>
-                  </div>
-                  <div className='pg-seg-row'>
-                    {([1, 2, 4] as const).map((count) => (
-                      <button
-                        key={count}
-                        type='button'
-                        onClick={() => setImageCount(count)}
-                        className={cn(
-                          'pg-seg-btn',
-                          imageCount === count && 'is-active'
-                        )}
-                      >
-                        {count} 张
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className='pg-field'>
-                  <span className='pg-field-label'>输出格式</span>
-                  <div className='pg-seg-row'>
-                    {(['png', 'jpeg', 'webp'] as const).map((fmt) => (
-                      <button
-                        key={fmt}
-                        type='button'
-                        onClick={() => setImageFormat(fmt)}
-                        className={cn(
-                          'pg-seg-btn',
-                          imageFormat === fmt && 'is-active'
-                        )}
-                      >
-                        {fmt.toUpperCase()}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </>
+              <ImageParameterControls
+                profile={imageProfile}
+                params={imageParams}
+                referenceCount={references.length}
+                disabled={runStatus === 'running'}
+                onChange={handlePatchImageParams}
+              />
             )}
 
             {props.mode === 'audio' && (
@@ -1253,99 +1684,58 @@ function MediaSession(
               </>
             )}
           </div>
-        ) : (
-          <div
-            style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}
-          >
+        </div>
+      ) : (
+        jsonEditorView
+      )}
+
+      {props.footerSlot &&
+        createPortal(
+          <div className='pg-cost-footer'>
+            {props.priceQuote && (
+              <div className='pg-cost-price-bar'>{props.priceQuote}</div>
+            )}
             <div
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
                 gap: '8px',
-                flexWrap: 'wrap',
+                flexWrap: 'nowrap',
               }}
             >
-              <span className='pg-field-hint'>
-                POST {baseUrl}
-                {endpointPath}
-              </span>
-              <div style={{ display: 'flex', gap: '6px' }}>
-                <button
-                  type='button'
-                  className='el-btn el-btn-xs el-btn-white'
-                  onClick={() => void copyWithFeedback('json', payloadJson)}
-                >
-                  {copiedKey === 'json' ? '已复制' : '复制 JSON'}
-                </button>
-                <button
-                  type='button'
-                  className='el-btn el-btn-xs el-btn-white'
-                  onClick={() => void copyWithFeedback('curl', curlCommand)}
-                >
-                  {copiedKey === 'curl' ? '已复制' : '复制 cURL'}
-                </button>
-              </div>
+              <button
+                type='button'
+                className='el-btn el-btn-xs el-btn-ghost'
+                onClick={handleReset}
+              >
+                {t('Reset')}
+              </button>
+              <button
+                type='button'
+                disabled={!canSubmitRequest}
+                className='el-btn el-btn-sm el-btn-primary'
+                onClick={() => void handleSubmit()}
+              >
+                {runStatus === 'running' ? (
+                  <>
+                    <Loader2 size={14} className='animate-spin' />
+                    <span>{t('Generating...')}</span>
+                  </>
+                ) : (
+                  <span>{t('Generate')} →</span>
+                )}
+              </button>
             </div>
-            <HighlightedCode
-              code={payloadJson}
-              language='json'
-              className='pg-json-pre'
-            />
-          </div>
-        )}
-      </div>
-
-      <div className='pg-cost-footer'>
-        {props.priceQuote && (
-          <div className='pg-cost-price-bar'>{props.priceQuote}</div>
-        )}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '8px',
-            flexWrap: 'nowrap',
-          }}
-        >
-          <button
-            type='button'
-            className='el-btn el-btn-xs el-btn-ghost'
-            onClick={handleReset}
-          >
-            {t('Reset')}
-          </button>
-          <button
-            type='button'
-            disabled={
-              runStatus === 'running' ||
-              !hasModels ||
-              !effectivePrompt ||
-              !keyAllowed ||
-              insufficientReferences ||
-              !supportedSceneModel
-            }
-            className='el-btn el-btn-sm el-btn-primary'
-            onClick={() => void handleSubmit()}
-          >
-            {runStatus === 'running' ? (
-              <>
-                <Loader2 size={14} className='animate-spin' />
-                <span>{t('Generating...')}</span>
-              </>
-            ) : (
-              <span>{t('Generate')} →</span>
+            {props.keyGuide}
+            {keyAllowed && blockingReason && (
+              <p className='el-body-sm' role='status'>
+                {blockingReason}
+              </p>
             )}
-          </button>
-        </div>
-        {props.keyGuide}
-        {keyAllowed && blockingReason && (
-          <p className='el-body-sm' role='status'>
-            {blockingReason}
-          </p>
+          </div>,
+          props.footerSlot
         )}
-      </div>
       {createPortal(
         <>
           <div className='pg-panel-head'>
@@ -1560,11 +1950,11 @@ function MediaSession(
             </div>
           ) : (
             <div className='create-stage-box' id='create-stage-box'>
-              {mode === 'image' && generatedImages.length > 0 && (
+              {mode === 'image' && activePreviewImage && (
                 <>
                   <img
-                    src={generatedImages[0]}
-                    alt={effectivePrompt}
+                    src={activePreviewImage.url}
+                    alt={activePreviewImage.label || effectivePrompt}
                     className='create-stage-art bg-black/80 object-contain'
                   />
                   <div
@@ -1578,18 +1968,46 @@ function MediaSession(
                   >
                     <span className='sr-card-route-tag'>
                       IMAGE · {activeModel.id}
+                      {activePreviewImage.label
+                        ? ` · ${activePreviewImage.label}`
+                        : ''}
+                      {activePreviewImage.size
+                        ? ` · ${activePreviewImage.size}`
+                        : ''}
                     </span>
                     <a
-                      href={generatedImages[0]}
+                      href={activePreviewImage.url}
                       target='_blank'
                       rel='noreferrer'
-                      download={`magirouter-image.${imageFormat}`}
+                      download={`magirouter-image.${imageParams.outputFormat}`}
                       className='sr-card-route-tag no-underline'
                     >
                       下载原图 ↗
                     </a>
                   </div>
-                  <div />
+                  {generatedImages.length > 1 ? (
+                    <div className='pg-stage-thumb-strip'>
+                      {generatedImages.map((item, idx) => (
+                        <button
+                          key={item.id}
+                          type='button'
+                          onClick={() => setSelectedImageIndex(idx)}
+                          className={cn(
+                            'pg-stage-thumb',
+                            idx === selectedImageIndex && 'is-active'
+                          )}
+                        >
+                          <img
+                            src={item.url}
+                            alt={item.label || `#${idx + 1}`}
+                          />
+                          <span>{item.label || `#${idx + 1}`}</span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div />
+                  )}
                 </>
               )}
               {mode === 'video' && generatedVideoUrl && (
@@ -1644,7 +2062,7 @@ function MediaSession(
                       <span className='sr-card-route-tag tabular-nums'>
                         {mode === 'video'
                           ? `${resolution} · ${duration}s · ${aspectRatio}`
-                          : `${imageSize} · ${imageCount} 张 · ${imageFormat}`}
+                          : imageStageSpec}
                       </span>
                     </div>
 

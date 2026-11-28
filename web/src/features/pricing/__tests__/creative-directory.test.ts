@@ -65,3 +65,24 @@ test('an explicitly empty declaration stays empty; unconfigured models use evide
     matchesTaskFilter({ ...entry, tags: '@mr:tasks:v1=none' }, 'all')
   ).toBe(true)
 })
+
+test('explicit catalog category declarations override inferred endpoints for playground modes', () => {
+  const imageOnly = {
+    model_name: 'seedream-5.5',
+    tags: '@mr:catalog:v1=image',
+    supported_endpoint_types: ['openai', 'image-generation'],
+  } as PricingModel
+  expect(getModelPlaygroundModes(imageOnly)).toEqual(['image'])
+  expect(
+    getModelPlaygroundModes({ ...imageOnly, tags: '@mr:catalog:v1=none' })
+  ).toEqual([])
+  expect(
+    getModelPlaygroundModes({ ...imageOnly, tags: '@mr:catalog:v1=text' })
+  ).toEqual(['chat'])
+  expect(
+    getModelPlaygroundModes({
+      ...imageOnly,
+      tags: '@mr:tasks:v1=i2i,@mr:catalog:v1=auto',
+    })
+  ).toEqual(['image', 'chat'])
+})

@@ -11,6 +11,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { DEFAULT_CONFIG } from '../../../constants'
 import {
   buildChatCompletionPayload,
+  buildFileOutputSystemInstruction,
   createLoadingAssistantMessage,
   createUserMessage,
   previewChatImageUrls,
@@ -84,7 +85,8 @@ it('shows only verified English effort values and keeps the provider default dis
   )
   const composer = within(screen.getByRole('form', { name: 'Text Chat' }))
   const select = composer.getByRole('combobox', { name: 'Thinking level' })
-  expect(select).toHaveTextContent('Thinking · Default')
+  expect(select).toHaveTextContent('Default')
+  expect(select).not.toHaveTextContent('Thinking')
   await user.click(select)
   expect(
     screen.getAllByRole('option').map((option) => option.textContent)
@@ -99,6 +101,24 @@ it('shows only verified English effort values and keeps the provider default dis
     <PlaygroundInput
       {...defaults}
       onSubmit={vi.fn()}
+      reasoning={{
+        choices: ['low', 'high'],
+        value: 'low',
+        defaultValue: 'high',
+        onChange,
+      }}
+    />
+  )
+  expect(
+    composer.getByRole('combobox', { name: 'Thinking level' })
+  ).toHaveTextContent('Low')
+  expect(
+    composer.getByRole('combobox', { name: 'Thinking level' })
+  ).not.toHaveTextContent('Thinking')
+  view.rerender(
+    <PlaygroundInput
+      {...defaults}
+      onSubmit={vi.fn()}
       reasoning={{ choices: [], value: '', onChange }}
     />
   )
@@ -107,7 +127,8 @@ it('shows only verified English effort values and keeps the provider default dis
   ).not.toBeInTheDocument()
   const mutedThinking = composer.getByRole('button', { name: 'Thinking level' })
   expect(mutedThinking).toBeDisabled()
-  expect(mutedThinking).toHaveTextContent('Thinking · Default')
+  expect(mutedThinking).toHaveTextContent('Default')
+  expect(mutedThinking).not.toHaveTextContent('Thinking')
 })
 
 it('renders synced model switching, real web search toggle, and price readout beside Send without fake stubs', async () => {
@@ -150,6 +171,7 @@ it('renders synced model switching, real web search toggle, and price readout be
   const searchToggle = composer.getByRole('button', { name: 'Online search' })
   expect(searchToggle).toBeEnabled()
   expect(searchToggle).toHaveAttribute('aria-pressed', 'false')
+  expect(searchToggle).toHaveTextContent('')
   await user.click(searchToggle)
   expect(onWebSearchChange).toHaveBeenCalledWith(true)
 
@@ -179,6 +201,7 @@ it('renders synced model switching, real web search toggle, and price readout be
   })
   expect(disabledSearch).toBeDisabled()
   expect(disabledSearch).toHaveAttribute('aria-pressed', 'false')
+  expect(disabledSearch).toHaveTextContent('')
 })
 
 it('previews removable local images and files, rejects unsupported or oversized uploads, and sends validated attachments', async () => {
@@ -258,12 +281,16 @@ it('previews removable local images and files, rejects unsupported or oversized 
   const body = buildChatCompletionPayload(messages, DEFAULT_CONFIG, undefined, [
     sampleImage,
   ])
-  expect(body.messages[0].content).toEqual([
+  expect(body.messages[0]).toEqual({
+    role: 'system',
+    content: buildFileOutputSystemInstruction('auto'),
+  })
+  expect(body.messages[1].content).toEqual([
     { type: 'text', text: 'Describe the fixture' },
     { type: 'image_url', image_url: { url: sampleImage } },
   ])
   expect(
-    buildChatCompletionPayload(messages, DEFAULT_CONFIG).messages[0].content
+    buildChatCompletionPayload(messages, DEFAULT_CONFIG).messages[1].content
   ).toBe('Describe the fixture')
   expect(JSON.stringify(messages)).not.toContain('data:image')
   expect(previewChatImageUrls(1)).toEqual([
@@ -271,19 +298,11 @@ it('previews removable local images and files, rejects unsupported or oversized 
   ])
 })
 
-it('allows submitting an attachment without text and toggles file output format in the composer', async () => {
+it('allows submitting an attachment without text and omits file output selector and clear history button', async () => {
   const { image } = installLocalImagePreview()
   const user = userEvent.setup()
   const submit = vi.fn()
-  const onFileOutputChange = vi.fn()
-  const view = render(
-    <PlaygroundInput
-      {...defaults}
-      acceptsAttachments
-      onSubmit={submit}
-      fileOutput={{ value: 'off', onChange: onFileOutputChange }}
-    />
-  )
+  render(<PlaygroundInput {...defaults} acceptsAttachments onSubmit={submit} />)
 
   expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled()
   await user.upload(screen.getByLabelText('Upload files'), image)
@@ -299,23 +318,15 @@ it('allows submitting an attachment without text and toggles file output format 
     ])
   )
 
-  const fileOutputSelect = screen.getByRole('combobox', { name: 'File output' })
-  expect(fileOutputSelect).toHaveTextContent('File output')
-  await user.click(fileOutputSelect)
-  await user.click(screen.getByRole('option', { name: 'CSV (.csv)' }))
-  expect(onFileOutputChange).toHaveBeenCalledWith('csv')
-
-  view.rerender(
-    <PlaygroundInput
-      {...defaults}
-      acceptsAttachments
-      onSubmit={submit}
-      fileOutput={{ value: 'csv', onChange: onFileOutputChange }}
-    />
-  )
   expect(
-    screen.getByRole('combobox', { name: 'File output' })
-  ).toHaveTextContent('File output · CSV')
+    screen.queryByRole('combobox', { name: 'File output' })
+  ).not.toBeInTheDocument()
+  expect(
+    screen.queryByRole('button', { name: 'Clear chat history' })
+  ).not.toBeInTheDocument()
+  expect(
+    screen.getByRole('button', { name: 'Attach images or files' })
+  ).toBeEnabled()
 })
 
 it('discards attachments on a route change without losing text or accepting incompatible pasted files', async () => {
@@ -397,12 +408,7 @@ it('keeps the same composer and unsent text when a conversation is restored', ()
   const input = screen.getByRole('textbox', { name: 'Ask anything' })
 
   view.rerender(
-    <PlaygroundInput
-      {...defaults}
-      onSubmit={submit}
-      hasMessages
-      showWelcome={false}
-    />
+    <PlaygroundInput {...defaults} onSubmit={submit} showWelcome={false} />
   )
 
   expect(screen.getByRole('textbox', { name: 'Ask anything' })).toBe(input)

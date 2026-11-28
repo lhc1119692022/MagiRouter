@@ -6,6 +6,7 @@ import { useAuthStore } from '@/stores/auth-store'
 
 import { DEFAULT_CONFIG, STORAGE_KEYS } from '../constants'
 import { usePlaygroundState } from '../hooks/use-playground-state'
+import { buildFileOutputSystemInstruction } from '../lib/message/message-file-utils'
 import { resolveChatControls } from '../lib/parameters/playground-parameters'
 import { loadConfig, saveParameterEnabled } from '../lib/storage/storage'
 import {
@@ -296,7 +297,10 @@ it.each([true, false])(
       group: 'default',
       stream,
       messages: [
-        { role: 'system', content: 'System instruction' },
+        {
+          role: 'system',
+          content: `System instruction\n\n${buildFileOutputSystemInstruction('auto')}`,
+        },
         { role: 'user', content: '  Next question' },
       ],
     })

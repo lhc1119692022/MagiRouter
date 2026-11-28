@@ -20,6 +20,7 @@ import { api } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth-store'
 
 import { Playground } from '..'
+import { buildFileOutputSystemInstruction } from '../lib/message/message-file-utils'
 import { saveConfig, saveMessages } from '../lib/storage/storage'
 import type { ChatControls } from '../types'
 
@@ -51,6 +52,8 @@ async function renderPlayground(
     controls?: Record<string, ChatControls>
     editPreset?: boolean
     priced?: boolean
+    extraPricing?: Array<Record<string, unknown>>
+    unlistedModels?: string[]
   },
   initialMode: CreationPreset['mode'] | undefined = preset?.mode ??
     (initialModel ? 'image' : undefined)
@@ -132,6 +135,25 @@ async function renderPlayground(
         video: ['openai-video'],
         audio: ['audio-speech'],
       }
+      const extraPricing = keyAccess?.extraPricing ?? []
+      const unlisted = new Set(keyAccess?.unlistedModels ?? [])
+      const explicitNames = new Set([
+        'first-catalog-entry',
+        initialModel,
+        ...extraPricing.map((item) => String(item.model_name ?? '')),
+      ])
+      const allowedChatCatalog =
+        studio === 'chat'
+          ? [...new Set([...allowed, ...(keyAccess?.models ?? [])])]
+              .filter((name) => !explicitNames.has(name) && !unlisted.has(name))
+              .map((modelName) => ({
+                model_name: modelName,
+                input_modalities: ['text'],
+                supported_endpoint_types: endpoints.chat,
+                output_modalities: ['text'],
+                enable_groups: ['default', group],
+              }))
+          : []
       return {
         data: {
           success: true,
@@ -142,20 +164,27 @@ async function renderPlayground(
               output_modalities: ['image'],
               enable_groups: ['default'],
             },
-            {
-              model_name: initialModel,
-              input_modalities: ['image', 'text'],
-              supported_endpoint_types: endpoints[studio],
-              output_modalities: [studio === 'chat' ? 'text' : studio],
-              enable_groups: ['default', group],
-              ...(keyAccess?.priced
-                ? {
-                    quota_type: 0,
-                    model_ratio: 1,
-                    completion_ratio: 2,
-                  }
-                : {}),
-            },
+            ...(unlisted.has(initialModel) ||
+            extraPricing.some((item) => item.model_name === initialModel)
+              ? []
+              : [
+                  {
+                    model_name: initialModel,
+                    input_modalities: ['image', 'text'],
+                    supported_endpoint_types: endpoints[studio],
+                    output_modalities: [studio === 'chat' ? 'text' : studio],
+                    enable_groups: ['default', group],
+                    ...(keyAccess?.priced
+                      ? {
+                          quota_type: 0,
+                          model_ratio: 1,
+                          completion_ratio: 2,
+                        }
+                      : {}),
+                  },
+                ]),
+            ...allowedChatCatalog,
+            ...extraPricing,
           ],
         },
       }
@@ -428,7 +457,13 @@ it.each([
     const setting = await screen.findByRole('button', { name: studio.change })
     expect(composer).toHaveFocus()
     await user.click(setting)
-    if (studio.mode !== 'audio') {
+    if (studio.mode === 'image') {
+      await user.click(screen.getByRole('button', { name: 'Add image URL' }))
+      await user.type(
+        screen.getByPlaceholderText('Paste image URL and press Enter'),
+        'https://private.example.test/reference.png{Enter}'
+      )
+    } else if (studio.mode === 'video') {
       await user.click(screen.getByRole('button', { name: '添加参考素材' }))
       await user.type(
         screen.getByPlaceholderText('粘贴图片 / 视频链接后回车'),
@@ -583,26 +618,84 @@ it('never silently replaces a requested model not granted to the selected group'
   expect(screen.getByRole('button', { name: /^Generate/ })).toBeDisabled()
 })
 
-it('offers chat models confirmed by the key even when their public catalog entry is missing', async () => {
+it('excludes non-reasoning-generation models from chat model selectors and blocks direct use', async () => {
   const user = userEvent.setup()
+  const post = vi.spyOn(api, 'post')
   await renderPlayground(
-    'listed-chat',
+    'seedream-5.5',
     undefined,
-    ['listed-chat', 'unlisted-chat'],
+    [
+      'seedream-5.5',
+      'listed-chat',
+      'unlisted-chat',
+      'unconfigured-model',
+      'embed-model',
+    ],
     undefined,
-    undefined,
+    {
+      unlistedModels: ['unlisted-chat'],
+      extraPricing: [
+        {
+          model_name: 'seedream-5.5',
+          tags: '@mr:catalog:v1=image',
+          supported_endpoint_types: ['openai', 'image-generation'],
+          enable_groups: ['default'],
+        },
+        {
+          model_name: 'unconfigured-model',
+          supported_endpoint_types: [],
+          enable_groups: ['default'],
+        },
+        {
+          model_name: 'embed-model',
+          supported_endpoint_types: ['embedding'],
+          enable_groups: ['default'],
+        },
+      ],
+    },
     'chat'
   )
   const model = screen.getByRole('combobox', { name: 'Select model' })
   expect(model).toBeDisabled()
   await chooseWorkspaceOption(user, 'API Key', 'Test key')
+  expect(
+    await screen.findByText(
+      'Model seedream-5.5 does not support reasoning generation and cannot be used in Text Chat.'
+    )
+  ).toBeVisible()
+  expect(screen.queryByRole('textbox', { name: 'Ask anything' })).toBeNull()
+  const chatShell = screen
+    .getByRole('region', { name: 'Billing' })
+    .closest('.pg-chat-shell') as HTMLElement
+  await user.click(
+    within(chatShell).getByRole('button', { name: 'Switch to listed-chat' })
+  )
+  expect(
+    await screen.findByRole('textbox', { name: 'Ask anything' })
+  ).toBeVisible()
   await waitFor(() => expect(model).toBeEnabled())
+  expect(model).toHaveValue('listed-chat')
   await user.click(model)
   expect(
     screen.queryByRole('option', { name: 'first-catalog-entry' })
   ).toBeNull()
-  await user.click(await screen.findByRole('option', { name: 'unlisted-chat' }))
-  expect(model).toHaveValue('unlisted-chat')
+  expect(screen.queryByRole('option', { name: 'seedream-5.5' })).toBeNull()
+  expect(screen.queryByRole('option', { name: 'unlisted-chat' })).toBeNull()
+  expect(
+    screen.queryByRole('option', { name: 'unconfigured-model' })
+  ).toBeNull()
+  expect(screen.queryByRole('option', { name: 'embed-model' })).toBeNull()
+  expect(
+    await screen.findByRole('option', { name: 'listed-chat' })
+  ).toBeVisible()
+  await user.keyboard('{Escape}')
+  await user.click(screen.getByRole('combobox', { name: 'Switch model' }))
+  expect(screen.queryByRole('option', { name: 'seedream-5.5' })).toBeNull()
+  expect(screen.queryByRole('option', { name: 'embed-model' })).toBeNull()
+  expect(
+    await screen.findByRole('option', { name: 'listed-chat' })
+  ).toBeVisible()
+  expect(post).not.toHaveBeenCalled()
 })
 
 it('lets an administrator choose a model to author a preset without granting generation access', async () => {
@@ -686,9 +779,9 @@ it('embeds the confirmed billing group inside the API key selector across all fo
   const modes = within(screen.getByRole('group', { name: 'Mode' }))
   for (const mode of [
     'Text Chat',
-    'Video Generation',
     'Image Generation',
-    'Audio Synthesis',
+    'Video Generation',
+    'Audio Generation',
   ]) {
     await user.click(modes.getByRole('button', { name: mode }))
     const billing = screen.getByRole('region', { name: 'Billing' })
@@ -817,7 +910,13 @@ it.each([true, false])(
     )
     expect(preview).toEqual({
       model: 'site-text',
-      messages: [{ role: 'user', content: 'Draft only' }],
+      messages: [
+        {
+          role: 'system',
+          content: buildFileOutputSystemInstruction('auto'),
+        },
+        { role: 'user', content: 'Draft only' },
+      ],
       stream,
       reasoning_effort: 'high',
     })
@@ -953,7 +1052,13 @@ it.each([true, false])(
     expect(preview).toEqual({
       model: 'site-text',
       stream,
-      messages: [{ role: 'user', content: 'Draft updated' }],
+      messages: [
+        {
+          role: 'system',
+          content: buildFileOutputSystemInstruction('auto'),
+        },
+        { role: 'user', content: 'Draft updated' },
+      ],
       reasoning_effort: 'medium',
       seed: 0,
       max_tokens: 64,
@@ -1053,7 +1158,7 @@ it('shows the parameters toggle and panel only in text mode, without generating 
   for (const mode of [
     'Image Generation',
     'Video Generation',
-    'Audio Synthesis',
+    'Audio Generation',
   ]) {
     await user.click(screen.getByRole('button', { name: mode }))
     expect(
@@ -1075,7 +1180,7 @@ it('guides a keyless user to create their own key and hides the composer', async
   for (const [label, mode] of [
     ['Video Generation', 'video'],
     ['Image Generation', 'image'],
-    ['Audio Synthesis', 'audio'],
+    ['Audio Generation', 'audio'],
     ['Text Chat', 'chat'],
   ]) {
     await user.click(await screen.findByRole('button', { name: label }))
@@ -1163,6 +1268,20 @@ it('reopens the signed-in user’s conversation instead of covering it with the 
   expect(
     screen.getByRole('button', { name: 'Text Chat', pressed: true })
   ).toBeVisible()
+})
+
+it('orders top mode tabs as Text Chat, Image Generation, Video Generation, Audio Generation', async () => {
+  await renderPlayground()
+  const modes = within(await screen.findByRole('group', { name: 'Mode' }))
+  const labels = modes
+    .getAllByRole('button')
+    .map((button) => button.textContent?.trim())
+  expect(labels).toEqual([
+    'Text Chat',
+    'Image Generation',
+    'Video Generation',
+    'Audio Generation',
+  ])
 })
 
 it('syncs the composer and topbar model selectors, displays Details after Model, and places current group pricing left of Send', async () => {
@@ -1285,7 +1404,13 @@ it('toggles real web_search_options in preview and live requests only when decla
   )
   expect(preview).toEqual({
     model: 'search-chat',
-    messages: [{ role: 'user', content: 'Latest news' }],
+    messages: [
+      {
+        role: 'system',
+        content: buildFileOutputSystemInstruction('auto'),
+      },
+      { role: 'user', content: 'Latest news' },
+    ],
     stream: false,
     web_search_options: { search_context_size: 'medium' },
   })
@@ -1343,8 +1468,11 @@ it('hides the chat composer for an unsupported model and lets the user switch to
   expect(screen.getByRole('button', { name: 'Switch API key' })).toBeVisible()
   expect(screen.getByRole('link', { name: 'Create an API key' })).toBeVisible()
 
+  const chatShell = screen
+    .getByRole('region', { name: 'Billing' })
+    .closest('.pg-chat-shell') as HTMLElement
   await user.click(
-    screen.getByRole('button', { name: 'Switch to allowed-chat' })
+    within(chatShell).getByRole('button', { name: 'Switch to allowed-chat' })
   )
   expect(
     await screen.findByRole('textbox', { name: 'Ask anything' })
@@ -1355,7 +1483,7 @@ it('hides the chat composer for an unsupported model and lets the user switch to
   expect(post).not.toHaveBeenCalled()
 })
 
-it('enables file/image attachment and file-output mode for any text chat model without requiring hardcoded image_input metadata', async () => {
+it('enables file/image attachment and defaults to auto file-output without showing a file-output selector', async () => {
   const user = userEvent.setup()
   await renderPlayground(
     'qwen4-max',
@@ -1373,9 +1501,12 @@ it('enables file/image attachment and file-output mode for any text chat model w
   expect(
     screen.getByRole('button', { name: 'Attach images or files' })
   ).toBeEnabled()
-  const fileOutputSelect = screen.getByRole('combobox', { name: 'File output' })
-  await user.click(fileOutputSelect)
-  await user.click(screen.getByRole('option', { name: 'CSV (.csv)' }))
+  expect(
+    screen.queryByRole('combobox', { name: 'File output' })
+  ).not.toBeInTheDocument()
+  expect(
+    screen.queryByRole('button', { name: 'Clear chat history' })
+  ).not.toBeInTheDocument()
 
   await user.type(input, 'Generate sales report')
   await user.click(screen.getByRole('button', { name: 'Request preview' }))
@@ -1384,7 +1515,9 @@ it('enables file/image attachment and file-output mode for any text chat model w
   )
   expect(preview.messages[0].role).toBe('system')
   expect(preview.messages[0].content).toContain('filename="<name>.<ext>"')
-  expect(preview.messages[0].content).toContain('RFC 4180 CSV')
+  expect(preview.messages[0].content).toContain(
+    'Choose the most suitable file format'
+  )
   expect(preview.messages[1]).toEqual({
     role: 'user',
     content: 'Generate sales report',

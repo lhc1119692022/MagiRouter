@@ -51,3 +51,23 @@ test('hinted options show the hint in the dropdown and mark their chips without 
     'Redirects to upstream'
   )
 })
+
+test('dropdown hints scale with available row width instead of capping at a narrow fixed width', async () => {
+  const user = userEvent.setup()
+  const longHint = 'POST /v1beta/models/{model}:generateContent'
+  render(
+    <MultiSelect
+      options={[{ value: 'gemini', label: 'gemini', hint: longHint }]}
+      selected={[]}
+      onChange={() => undefined}
+    />
+  )
+
+  await user.click(screen.getByRole('combobox'))
+  const option = screen.getByRole('option', { name: /^gemini/ })
+  const hintElement = option.querySelector('[aria-hidden="true"]')
+
+  expect(hintElement).toHaveTextContent(longHint)
+  expect(hintElement).not.toHaveClass('max-w-40')
+  expect(hintElement).toHaveClass('min-w-0', 'truncate')
+})

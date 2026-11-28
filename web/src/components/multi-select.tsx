@@ -466,11 +466,11 @@ export function MultiSelect(props: MultiSelectProps) {
                           {icon}
                         </span>
                       )}
-                      <span className='truncate'>{label}</span>
+                      <span className='min-w-0 shrink truncate'>{label}</span>
                       {hint && (
                         <span
                           aria-hidden='true'
-                          className='text-muted-foreground ml-auto max-w-40 shrink-0 truncate text-xs'
+                          className='text-muted-foreground ml-auto max-w-[65%] min-w-0 shrink truncate text-right text-xs'
                         >
                           {hint}
                         </span>

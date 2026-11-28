@@ -213,15 +213,16 @@ export function PlaygroundBilling(props: {
   return (
     <section className='pg-billing pg-billing-media' aria-label={t('Billing')}>
       <div className='pg-api-bar'>
-        <div className='pg-api-col'>
-          <span className='pg-api-label'>{t('API Key')}</span>
-          {renderKeyPicker(false)}
+        <div className='pg-api-row'>
+          <span className='pg-api-row-label'>{t('API Key')}</span>
+          <div className='pg-api-row-control'>{renderKeyPicker(false)}</div>
         </div>
-        <div className='pg-api-col'>
-          <div className='pg-api-col-head'>
-            <label htmlFor={modelField} className='pg-api-label'>
-              {props.editingPreset ? t('Preset model') : t('Model')}
-            </label>
+        <div className='pg-api-row'>
+          <label htmlFor={modelField} className='pg-api-row-label'>
+            {props.editingPreset ? t('Preset model') : t('Model')}
+          </label>
+          <div className='pg-api-row-control'>
+            {renderModelPicker(false)}
             {props.model && (
               <Button
                 type='button'
@@ -235,7 +236,6 @@ export function PlaygroundBilling(props: {
               </Button>
             )}
           </div>
-          {renderModelPicker(false)}
         </div>
       </div>
       {props.keys.loading && (

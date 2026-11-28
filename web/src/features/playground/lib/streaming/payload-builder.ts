@@ -81,9 +81,9 @@ export function buildChatCompletionPayload(
   }
 
   const fileOutputInstruction = buildFileOutputSystemInstruction(
-    config.fileOutput ?? 'off'
+    config.fileOutput ?? 'auto'
   )
-  if (fileOutputInstruction) {
+  if (fileOutputInstruction && processedMessages.length > 0) {
     const systemIndex = processedMessages.findIndex(
       (message) => message.role === 'system'
     )

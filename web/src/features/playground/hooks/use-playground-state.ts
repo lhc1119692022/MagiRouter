@@ -183,7 +183,7 @@ export function usePlaygroundState(
       ...previous,
       ...DEFAULT_NUMERIC_PARAMETERS,
       web_search: false,
-      fileOutput: 'off',
+      fileOutput: 'auto',
     }))
   }, [updateMessages])
 

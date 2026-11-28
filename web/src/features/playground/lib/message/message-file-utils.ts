@@ -64,6 +64,22 @@ export function buildFileOutputSystemInstruction(
     return null
   }
 
+  if (format === 'auto') {
+    return [
+      'When the user asks to create, export, or deliver downloadable file(s), wrap each downloadable file in a fenced code block whose opening info string includes `filename="<name>.<ext>"`, for example:',
+      '```csv filename="report.csv"',
+      'col1,col2',
+      'val1,val2',
+      '```',
+      'Rules:',
+      '- Only emit downloadable file blocks when the user asks for file output or downloadable artifacts; answer ordinary questions normally.',
+      '- Output complete, ready-to-save file contents inside each file block with no omissions or placeholders.',
+      '- If multiple files are needed, emit one fenced block per file with a distinct `filename="..."`.',
+      '- Keep any brief explanation outside the file blocks.',
+      `- ${FORMAT_GUIDANCE.auto}`,
+    ].join('\n')
+  }
+
   return [
     'The user wants the response delivered as downloadable file(s).',
     'Wrap each downloadable file in a fenced code block whose opening info string includes `filename="<name>.<ext>"`, for example:',

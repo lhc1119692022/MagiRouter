@@ -92,6 +92,15 @@ export function isModelCatalogDeclaration(tag: string): boolean {
   return isCategoryDeclaration(tag) || isModelTaskDeclaration(tag)
 }
 
+export function hasConfiguredModelCategoryDeclaration(tags?: string): boolean {
+  return Boolean(
+    tags
+      ?.split(TAG_DELIMITER)
+      .map((tag) => tag.trim())
+      .some(isCategoryDeclaration)
+  )
+}
+
 export function getOrdinaryModelTags(tags?: string): string[] {
   const result: string[] = []
   const seen = new Set<string>()

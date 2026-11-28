@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { FileDownIcon, GlobeIcon, SparklesIcon } from 'lucide-react'
+import { GlobeIcon, SparklesIcon } from 'lucide-react'
 import { useCallback, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -50,12 +50,10 @@ import {
   CHAT_ATTACHMENT_ACCEPT,
   CHAT_ATTACHMENT_LIMIT,
   CHAT_ATTACHMENT_MAX_BYTES,
-  CHAT_FILE_OUTPUT_OPTIONS,
   parseChatAttachments,
 } from '../../lib'
 import type {
   ChatAttachment,
-  ChatFileOutputFormat,
   ChatReasoningEffort,
   GroupOption,
   MessageAttachment,
@@ -92,8 +90,6 @@ interface PlaygroundInputProps {
   groups: GroupOption[]
   groupValue: string
   onGroupChange?: (value: string) => void
-  hasMessages?: boolean
-  onClearMessages?: () => void
   showModelSelector?: boolean
   showWelcome?: boolean
   priceQuote?: ReactNode
@@ -107,10 +103,6 @@ interface PlaygroundInputProps {
     supported: boolean
     enabled: boolean
     onChange: (enabled: boolean) => void
-  }
-  fileOutput?: {
-    value: ChatFileOutputFormat
-    onChange: (value: ChatFileOutputFormat) => void
   }
 }
 
@@ -132,14 +124,11 @@ export function PlaygroundInput({
   isModelLoading = false,
   groups,
   groupValue,
-  hasMessages = false,
-  onClearMessages,
   showModelSelector = true,
   showWelcome = false,
   priceQuote,
   reasoning,
   webSearch,
-  fileOutput,
 }: PlaygroundInputProps) {
   const { t } = useTranslation()
   const [localText, setLocalText] = useState(initialPrompt ?? '')
@@ -181,12 +170,6 @@ export function PlaygroundInput({
     }
     setText('')
   }
-
-  const activeFileOutputOption = fileOutput
-    ? (CHAT_FILE_OUTPUT_OPTIONS.find(
-        (option) => option.value === fileOutput.value
-      ) ?? CHAT_FILE_OUTPUT_OPTIONS[0])
-    : undefined
 
   return (
     <div className='pg-chat-composer'>
@@ -231,7 +214,7 @@ export function PlaygroundInput({
           autoCorrect='off'
           autoCapitalize='off'
           spellCheck={false}
-          className='min-h-14 px-4 pt-3.5 pb-1 text-base leading-6 break-words sm:px-5'
+          className='min-h-20 px-4 pt-4 pb-2 text-base leading-6 break-words sm:px-5'
           disabled={disabled}
           onChange={(event) => setText(event.target.value)}
           placeholder={t('Ask anything')}
@@ -274,13 +257,14 @@ export function PlaygroundInput({
                     >
                       <SelectTrigger
                         aria-label={t('Thinking level')}
+                        title={t('Thinking level')}
                         className='pg-composer-select rounded-full border-0 bg-[var(--bg-elevated)] py-0 data-[size=default]:h-[30px] dark:bg-[#1c1917] dark:hover:bg-[#24201d]'
                       >
                         <SparklesIcon size={13} aria-hidden='true' />
                         <SelectValue>
                           {reasoning.value
-                            ? `${t('Thinking')} · ${REQUEST_PLUGIN_EFFORT_LABELS[reasoning.value]}`
-                            : `${t('Thinking')} · ${t('Default')}`}
+                            ? REQUEST_PLUGIN_EFFORT_LABELS[reasoning.value]
+                            : t('Default')}
                         </SelectValue>
                       </SelectTrigger>
                       <SelectContent
@@ -311,9 +295,7 @@ export function PlaygroundInput({
                           className='pg-composer-pill is-muted'
                         >
                           <SparklesIcon size={13} aria-hidden='true' />
-                          <span>
-                            {t('Thinking')} · {t('Default')}
-                          </span>
+                          <span>{t('Default')}</span>
                         </button>
                       </TooltipTrigger>
                       <TooltipContent>
@@ -330,10 +312,11 @@ export function PlaygroundInput({
                     <TooltipTrigger render={<span className='inline-flex' />}>
                       <button
                         type='button'
+                        aria-label={t('Online search')}
                         aria-pressed={webSearch.supported && webSearch.enabled}
                         disabled={disabled || !webSearch.supported}
                         className={cn(
-                          'pg-composer-pill',
+                          'pg-composer-pill is-icon-only',
                           webSearch.supported && webSearch.enabled && 'is-on',
                           !webSearch.supported && 'is-muted'
                         )}
@@ -343,8 +326,7 @@ export function PlaygroundInput({
                           }
                         }}
                       >
-                        <GlobeIcon size={13} aria-hidden='true' />
-                        <span>{t('Online search')}</span>
+                        <GlobeIcon size={15} aria-hidden='true' />
                       </button>
                     </TooltipTrigger>
                     <TooltipContent>
@@ -360,59 +342,11 @@ export function PlaygroundInput({
                     </TooltipContent>
                   </Tooltip>
                 )}
-                {fileOutput && activeFileOutputOption && (
-                  <Select
-                    value={fileOutput.value}
-                    disabled={disabled}
-                    onValueChange={(value) => {
-                      if (!value) return
-                      const next = CHAT_FILE_OUTPUT_OPTIONS.find(
-                        (option) => option.value === value
-                      )
-                      if (next) {
-                        fileOutput.onChange(next.value)
-                      }
-                    }}
-                  >
-                    <SelectTrigger
-                      aria-label={t('File output')}
-                      className={cn(
-                        'pg-composer-select rounded-full border-0 bg-[var(--bg-elevated)] py-0 data-[size=default]:h-[30px] dark:bg-[#1c1917] dark:hover:bg-[#24201d]',
-                        fileOutput.value !== 'off' && 'is-on'
-                      )}
-                    >
-                      <FileDownIcon size={13} aria-hidden='true' />
-                      <SelectValue>
-                        {fileOutput.value === 'off'
-                          ? t('File output')
-                          : `${t('File output')} · ${
-                              activeFileOutputOption.shortLabelKey
-                                ? t(activeFileOutputOption.shortLabelKey)
-                                : (activeFileOutputOption.shortLabel ?? '')
-                            }`}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent
-                      side='top'
-                      align='start'
-                      alignItemWithTrigger={false}
-                      className='pg-composer-select-content'
-                    >
-                      {CHAT_FILE_OUTPUT_OPTIONS.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.labelKey ? t(option.labelKey) : option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
                 <PlaygroundInputTools
                   acceptsAttachments={attachmentsEnabled}
                   onAttachmentsChange={onAttachmentsChange}
                   onImageCountChange={handleAttachmentCountChange}
                   disabled={disabled}
-                  hasMessages={hasMessages}
-                  onClearMessages={onClearMessages}
                 />
               </>
             }

@@ -187,6 +187,28 @@ describe('buildChatCompletionPayload with attachments and file output', () => {
       ],
     })
   })
+
+  test('defaults to conditional auto file-output guidance and omits it when explicitly off', () => {
+    const userMessage = createUserMessage('Hello')
+    const defaultPayload = buildChatCompletionPayload([userMessage], {
+      ...DEFAULT_CONFIG,
+      model: 'qwen4-max',
+    })
+    expect(defaultPayload.messages[0]).toEqual({
+      role: 'system',
+      content: buildFileOutputSystemInstruction('auto'),
+    })
+    expect(defaultPayload.messages[0].content).toContain(
+      'answer ordinary questions normally'
+    )
+    expect(
+      buildChatCompletionPayload([userMessage], {
+        ...DEFAULT_CONFIG,
+        model: 'qwen4-max',
+        fileOutput: 'off',
+      }).messages
+    ).toEqual([{ role: 'user', content: 'Hello' }])
+  })
 })
 
 describe('extractOutputFiles and getAssistantDownloadTarget', () => {

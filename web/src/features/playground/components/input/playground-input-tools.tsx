@@ -16,17 +16,15 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { PaperclipIcon, Trash2Icon } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { PaperclipIcon } from 'lucide-react'
+import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { toast } from 'sonner'
 
 import {
   PromptInputButton,
   PromptInputTools,
   usePromptInputAttachments,
 } from '@/components/ai-elements/prompt-input'
-import { ConfirmDialog } from '@/components/confirm-dialog'
 import {
   Tooltip,
   TooltipContent,
@@ -41,8 +39,6 @@ type PlaygroundInputToolsProps = {
   onAttachmentsChange?: (attachments: MessageAttachment[]) => void
   onImageCountChange?: (count: number) => void
   disabled?: boolean
-  hasMessages?: boolean
-  onClearMessages?: () => void
 }
 
 export function PlaygroundInputTools({
@@ -50,11 +46,8 @@ export function PlaygroundInputTools({
   onAttachmentsChange,
   onImageCountChange,
   disabled,
-  hasMessages = false,
-  onClearMessages,
 }: PlaygroundInputToolsProps) {
   const { t } = useTranslation()
-  const [clearConfirmOpen, setClearConfirmOpen] = useState(false)
   const attachments = usePromptInputAttachments()
   const lastSignatureRef = useRef('')
   const filesSignature = attachments.files
@@ -104,77 +97,33 @@ export function PlaygroundInputTools({
     [onAttachmentsChange, onImageCountChange]
   )
 
-  const handleClearMessages = () => {
-    onClearMessages?.()
-    setClearConfirmOpen(false)
-    toast.success(t('Conversation cleared'))
-  }
-
-  const showClear = hasMessages && Boolean(onClearMessages)
-  if (!acceptsAttachments && !showClear) {
+  if (!acceptsAttachments) {
     return null
   }
 
   return (
-    <>
-      <PromptInputTools>
-        {acceptsAttachments && (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <PromptInputButton
-                  aria-label={t('Attach images or files')}
-                  className='pg-composer-icon-btn text-muted-foreground hover:text-foreground hover:bg-muted/70 font-medium'
-                  disabled={disabled}
-                  onClick={attachments.openFileDialog}
-                  variant='ghost'
-                />
-              }
-            >
-              <PaperclipIcon size={15} />
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>
-                {t('Attach images or files')} · {t('Images, PDF, Text/Code')} ·{' '}
-                {CHAT_ATTACHMENT_LIMIT} × 10 MiB
-              </p>
-            </TooltipContent>
-          </Tooltip>
-        )}
-
-        {showClear && (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <PromptInputButton
-                  aria-label={t('Clear chat history')}
-                  className='pg-composer-icon-btn text-muted-foreground hover:text-destructive hover:bg-destructive/10 font-medium'
-                  disabled={disabled}
-                  onClick={() => setClearConfirmOpen(true)}
-                  variant='ghost'
-                >
-                  <Trash2Icon size={15} />
-                </PromptInputButton>
-              }
+    <PromptInputTools>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <PromptInputButton
+              aria-label={t('Attach images or files')}
+              className='pg-composer-icon-btn text-muted-foreground hover:text-foreground hover:bg-muted/70 font-medium'
+              disabled={disabled}
+              onClick={attachments.openFileDialog}
+              variant='ghost'
             />
-            <TooltipContent>
-              <p>{t('Clear chat history')}</p>
-            </TooltipContent>
-          </Tooltip>
-        )}
-      </PromptInputTools>
-
-      <ConfirmDialog
-        destructive
-        desc={t(
-          'All playground messages saved in this browser will be removed. This cannot be undone.'
-        )}
-        confirmText={t('Clear')}
-        handleConfirm={handleClearMessages}
-        open={clearConfirmOpen}
-        onOpenChange={setClearConfirmOpen}
-        title={t('Clear chat history?')}
-      />
-    </>
+          }
+        >
+          <PaperclipIcon size={15} />
+        </TooltipTrigger>
+        <TooltipContent>
+          <p>
+            {t('Attach images or files')} · {t('Images, PDF, Text/Code')} ·{' '}
+            {CHAT_ATTACHMENT_LIMIT} × 10 MiB
+          </p>
+        </TooltipContent>
+      </Tooltip>
+    </PromptInputTools>
   )
 }

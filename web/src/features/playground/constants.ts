@@ -69,7 +69,7 @@ export const DEFAULT_CONFIG: PlaygroundConfig = {
   protocol: 'auto',
   reasoning_effort: '',
   web_search: false,
-  fileOutput: 'off',
+  fileOutput: 'auto',
   historyTurns: 0,
   group: DEFAULT_GROUP,
   stream: true,
