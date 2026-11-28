@@ -21,6 +21,7 @@ import { useState, useMemo } from 'react'
 
 import { useStatus } from '@/hooks/use-status'
 import { getNotice } from '@/lib/api'
+import { extractNoticeImages } from '@/lib/published-notices'
 import { requireServerSuccess } from '@/lib/server-error-message'
 import { useNotificationStore } from '@/stores/notification-store'
 
@@ -107,11 +108,21 @@ export function useNotifications(scope: 'header' | 'timeline' = 'header') {
   const noticeContent = noticeResponse?.success
     ? (noticeResponse.data || '').trim()
     : ''
+  const noticeImages = useMemo(
+    () =>
+      noticeResponse?.success ? extractNoticeImages(noticeResponse.images) : [],
+    [noticeResponse]
+  )
+  const noticeSignature = useMemo(() => {
+    if (!noticeContent && noticeImages.length === 0) return ''
+    if (noticeImages.length === 0) return noticeContent
+    return `${noticeContent}\n${noticeImages.join('\n')}`
+  }, [noticeContent, noticeImages])
 
   // Calculate unread counts
   const unreadCounts = useMemo(() => {
     const noticeUnread =
-      noticeContent && noticeContent !== lastReadNotice ? 1 : 0
+      noticeSignature && noticeSignature !== lastReadNotice ? 1 : 0
 
     const announcementsUnread = announcements.filter(
       (item: Record<string, unknown>) => {
@@ -125,7 +136,7 @@ export function useNotifications(scope: 'header' | 'timeline' = 'header') {
       announcements: announcementsUnread,
       total: noticeUnread + announcementsUnread,
     }
-  }, [noticeContent, lastReadNotice, announcements, isAnnouncementRead])
+  }, [noticeSignature, lastReadNotice, announcements, isAnnouncementRead])
 
   const markAnnouncementsAsRead = () => {
     if (announcements.length > 0) {
@@ -141,8 +152,8 @@ export function useNotifications(scope: 'header' | 'timeline' = 'header') {
     const nextTab = tab || activeTab
 
     // Mark currently visible content as read when opening the notification center
-    if (noticeContent) {
-      markNoticeRead(noticeContent)
+    if (noticeSignature) {
+      markNoticeRead(noticeSignature)
     }
     if (nextTab === 'announcements') {
       markAnnouncementsAsRead()
@@ -173,6 +184,7 @@ export function useNotifications(scope: 'header' | 'timeline' = 'header') {
   return {
     // Data
     notice: noticeContent,
+    noticeImages,
     announcements,
     loading: noticeLoading || statusLoading,
     noticeFailed,

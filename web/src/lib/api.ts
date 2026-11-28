@@ -91,6 +91,7 @@ export async function getNotice(): Promise<{
   success: boolean
   message?: string
   data?: string
+  images?: string[]
 }> {
   // Drop the client's global `Cache-Control: no-store` for this public,
   // non-user-specific payload. `no-store` forbids the browser from keeping a

@@ -19,14 +19,13 @@ import (
 )
 
 const (
-	AutoModelNoticeSource        = "auto_model_sync"
-	maxConsoleAnnouncements      = 100
-	maxAnnouncementTitleUTF16    = 120
-	maxAnnouncementContentUTF16  = 500
-	maxAnnouncementExtraUTF16    = 100
-	maxNoticeTitleModels         = 3
-	maxNoticeContentModels       = 12
-	maxNoticeContentGroups       = 6
+	AutoModelNoticeSource       = "auto_model_sync"
+	maxConsoleAnnouncements     = 100
+	maxAnnouncementTitleUTF16   = 120
+	maxAnnouncementContentUTF16 = 500
+	maxNoticeTitleModels        = 3
+	maxNoticeContentModels      = 12
+	maxNoticeContentGroups      = 6
 )
 
 var autoModelNoticeMu sync.Mutex
@@ -324,7 +323,6 @@ func buildNoticeEntry(
 		"content":     content,
 		"publishDate": publishDate,
 		"type":        noticeType,
-		"extra":       clampUTF16(i18n.Translate(lang, i18n.MsgModelNoticeAutoExtra), maxAnnouncementExtraUTF16),
 		"source":      AutoModelNoticeSource,
 	}
 }

@@ -1,6 +1,7 @@
 import { Link } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 
+import { AnnouncementImages } from '@/components/announcement-images'
 import { ErrorState } from '@/components/error-state'
 import { RichContent } from '@/components/rich-content'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -16,19 +17,28 @@ import { TimelineRankings } from './timeline-rankings'
 export function MagiRouterTimeline() {
   const { t } = useTranslation()
   const notifications = useNotifications('timeline')
+  const noticeImages = notifications.noticeImages ?? []
   const { status } = useStatus()
   const authenticated = useAuthStore((state) => Boolean(state.auth.user))
   const rankings =
     status &&
     getModuleAccessFromStatus(status as Record<string, unknown>, 'rankings')
   let noticeBody = <p>{t('No announcements at this time')}</p>
-  if (notifications.notice) {
+  if (notifications.notice || noticeImages.length > 0) {
     noticeBody = (
-      <RichContent
-        mode='markdown'
-        content={notifications.notice}
-        className='prose-neutral dark:prose-invert max-w-none text-sm'
-      />
+      <div className='space-y-3'>
+        {notifications.notice && (
+          <RichContent
+            mode='markdown'
+            breaks
+            content={notifications.notice}
+            className='prose-neutral dark:prose-invert max-w-none text-sm'
+          />
+        )}
+        {noticeImages.length > 0 && (
+          <AnnouncementImages images={noticeImages} />
+        )}
+      </div>
     )
   } else if (notifications.noticeFailed) {
     noticeBody = (

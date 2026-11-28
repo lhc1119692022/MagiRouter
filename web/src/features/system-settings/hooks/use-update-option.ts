@@ -42,6 +42,7 @@ const STATUS_RELATED_KEYS = new Set([
   'HeaderNavModules',
   'SidebarModulesAdmin',
   'Notice',
+  'NoticeImages',
   'LogConsumeEnabled',
   'log_setting.user_export_enabled',
   'log_setting.max_range_days',
@@ -86,6 +87,9 @@ export function useUpdateOption() {
         }
         if (variables.key === 'console_setting.docs_config') {
           void queryClient.invalidateQueries({ queryKey: ['docs-config'] })
+        }
+        if (variables.key === 'Notice' || variables.key === 'NoticeImages') {
+          void queryClient.invalidateQueries({ queryKey: ['notice'] })
         }
 
         // If updating frontend-display-related config, also refresh status

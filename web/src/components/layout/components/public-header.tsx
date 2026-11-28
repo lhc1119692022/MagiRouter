@@ -27,7 +27,12 @@ import {
 } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import {
+  AnnouncementImagePreviewDialog,
+  AnnouncementImages,
+} from '@/components/announcement-images'
 import { LanguageSwitcher } from '@/components/language-switcher'
+import { RichContent } from '@/components/rich-content'
 import { SignOutDialog } from '@/components/sign-out-dialog'
 import { useTheme } from '@/context/theme-provider'
 import { useNotifications } from '@/hooks/use-notifications'
@@ -36,6 +41,7 @@ import { useSystemConfig } from '@/hooks/use-system-config'
 import { useTopNavLinks } from '@/hooks/use-top-nav-links'
 import { useUserDisplay } from '@/hooks/use-user-display'
 import { formatQuotaWithCurrency } from '@/lib/currency'
+import { publishedNotices } from '@/lib/published-notices'
 import { ROLE } from '@/lib/roles'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
@@ -75,17 +81,6 @@ function stripText(raw: string): string {
     .trim()
 }
 
-function announcementTitle(item: {
-  title?: unknown
-  content?: unknown
-}): string {
-  if (typeof item.title === 'string' && item.title) return item.title
-  if (typeof item.content === 'string') {
-    return stripText(item.content).slice(0, 60)
-  }
-  return ''
-}
-
 export function PublicHeader(props: PublicHeaderProps) {
   const {
     navContent,
@@ -110,6 +105,7 @@ export function PublicHeader(props: PublicHeaderProps) {
   const { systemName, loading } = useSystemConfig()
   const dynamicLinks = useTopNavLinks()
   const notifications = useNotifications()
+  const noticeImages = notifications.noticeImages ?? []
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   })
@@ -136,6 +132,10 @@ export function PublicHeader(props: PublicHeaderProps) {
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
   const [signOutOpen, setSignOutOpen] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [previewImages, setPreviewImages] = useState<{
+    images: string[]
+    index: number
+  } | null>(null)
 
   const notifyMenuRef = useRef<HTMLDivElement>(null)
   const mobileTriggerRef = useRef<HTMLButtonElement>(null)
@@ -208,8 +208,21 @@ export function PublicHeader(props: PublicHeaderProps) {
       const firstLine = stripText(notifications.notice.split(/\r?\n/)[0] || '')
       if (firstLine) return firstLine.slice(0, 96)
     }
+    if (noticeImages.length > 0) {
+      return t('System Notice')
+    }
     return t('No announcements at this time')
-  }, [notifications.announcements, notifications.notice, t])
+  }, [
+    notifications.announcements,
+    notifications.notice,
+    noticeImages.length,
+    t,
+  ])
+
+  const popoverNotices = useMemo(
+    () => publishedNotices(notifications.announcements).slice(0, 6),
+    [notifications.announcements]
+  )
 
   const formattedBalance = formatQuotaWithCurrency(user?.quota)
 
@@ -494,43 +507,87 @@ export function PublicHeader(props: PublicHeaderProps) {
                       <div className='nav-notify-body'>
                         {notifications.activeTab === 'notice' && (
                           <div className='nav-announce-text'>
-                            {notifications.notice ||
-                              t('No announcements at this time')}
+                            {notifications.notice || noticeImages.length > 0 ? (
+                              <>
+                                {notifications.notice && (
+                                  <RichContent
+                                    breaks
+                                    content={notifications.notice}
+                                  />
+                                )}
+                                {noticeImages.length > 0 && (
+                                  <AnnouncementImages
+                                    images={noticeImages}
+                                    variant='expanded'
+                                    className={
+                                      notifications.notice ? 'mt-3' : undefined
+                                    }
+                                    onPreviewImage={(images, imgIndex) => {
+                                      notifications.closePopover()
+                                      setPreviewImages({
+                                        images,
+                                        index: imgIndex,
+                                      })
+                                    }}
+                                  />
+                                )}
+                              </>
+                            ) : (
+                              t('No announcements at this time')
+                            )}
                           </div>
                         )}
                         {notifications.activeTab !== 'notice' &&
-                          notifications.announcements.length > 0 && (
-                            <div className='space-y-2'>
-                              {notifications.announcements
-                                .slice(0, 6)
-                                .map((item, index) => {
-                                  const title =
-                                    announcementTitle(item) ||
-                                    t('System updates')
-                                  const dateStr =
-                                    typeof item.publishDate === 'string'
-                                      ? item.publishDate
-                                      : ''
-                                  return (
-                                    <div
-                                      key={String(item.id ?? index)}
-                                      className='nav-notice-item'
-                                    >
-                                      {dateStr && (
-                                        <div className='nav-notice-meta tabular-nums'>
-                                          {dateStr}
-                                        </div>
-                                      )}
-                                      <div className='nav-notice-title'>
-                                        {title}
+                          popoverNotices.length > 0 && (
+                            <div className='nav-notices-list'>
+                              {popoverNotices.map((entry) => {
+                                let dateText = entry.date
+                                if (entry.dateLabel) {
+                                  dateText = entry.timeLabel
+                                    ? `${entry.dateLabel} ${entry.timeLabel}`
+                                    : entry.dateLabel
+                                }
+                                return (
+                                  <div
+                                    key={entry.id}
+                                    className='nav-notice-item'
+                                  >
+                                    {dateText && (
+                                      <div className='nav-notice-meta tabular-nums'>
+                                        {dateText}
                                       </div>
+                                    )}
+                                    <div className='nav-notice-title'>
+                                      {entry.title || t('System updates')}
                                     </div>
-                                  )
-                                })}
+                                    {entry.description && (
+                                      <RichContent
+                                        breaks
+                                        content={entry.description}
+                                        className='nav-notice-content'
+                                      />
+                                    )}
+                                    {entry.images.length > 0 && (
+                                      <AnnouncementImages
+                                        images={entry.images}
+                                        variant='expanded'
+                                        className='mt-2.5'
+                                        onPreviewImage={(images, imgIndex) => {
+                                          notifications.closePopover()
+                                          setPreviewImages({
+                                            images,
+                                            index: imgIndex,
+                                          })
+                                        }}
+                                      />
+                                    )}
+                                  </div>
+                                )
+                              })}
                             </div>
                           )}
                         {notifications.activeTab !== 'notice' &&
-                          notifications.announcements.length === 0 && (
+                          popoverNotices.length === 0 && (
                             <div className='nav-announce-text'>
                               {t(
                                 'No notifications are available to you right now'
@@ -668,6 +725,18 @@ export function PublicHeader(props: PublicHeaderProps) {
       <QuickModelSearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
 
       <SignOutDialog open={signOutOpen} onOpenChange={setSignOutOpen} />
+
+      <AnnouncementImagePreviewDialog
+        open={Boolean(previewImages)}
+        onOpenChange={(open) => {
+          if (!open) setPreviewImages(null)
+        }}
+        images={previewImages?.images ?? []}
+        activeIndex={previewImages?.index ?? 0}
+        onSelectIndex={(index) =>
+          setPreviewImages((prev) => (prev ? { ...prev, index } : prev))
+        }
+      />
     </>
   )
 }

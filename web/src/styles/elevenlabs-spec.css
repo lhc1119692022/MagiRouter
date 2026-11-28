@@ -4167,6 +4167,15 @@ html[data-theme='dark'] .zm-table-type-pill {
 .timeline-entry[data-kind='price'] {
   --event-color: #b45309;
 }
+.timeline-entry[data-tone='warning'] {
+  --event-color: #c2410c;
+}
+.timeline-entry[data-tone='error'] {
+  --event-color: #be123c;
+}
+.timeline-entry[data-tone='ongoing'] {
+  --event-color: #0369a1;
+}
 html[data-theme='dark'] .timeline-entry[data-kind='model'] {
   --event-color: #34d399;
 }
@@ -4176,7 +4185,23 @@ html[data-theme='dark'] .timeline-entry[data-kind='group'] {
 html[data-theme='dark'] .timeline-entry[data-kind='price'] {
   --event-color: #fbbf24;
 }
-.timeline-entry:not([data-kind='announcement']) .timeline-kind-tag {
+html[data-theme='dark'] .timeline-entry[data-tone='warning'] {
+  --event-color: #fb923c;
+}
+html[data-theme='dark'] .timeline-entry[data-tone='error'] {
+  --event-color: #fb7185;
+}
+html[data-theme='dark'] .timeline-entry[data-tone='ongoing'] {
+  --event-color: #38bdf8;
+}
+.timeline-entry:is(
+    :not([data-kind='announcement']),
+    [data-tone='success'],
+    [data-tone='warning'],
+    [data-tone='error'],
+    [data-tone='ongoing']
+  )
+  .timeline-kind-tag {
   color: var(--event-color);
   background: color-mix(in srgb, var(--event-color) 11%, transparent);
   box-shadow: none;
@@ -4225,7 +4250,20 @@ html[data-theme='dark'] .timeline-entry[data-kind='price'] {
   font-size: 13.5px;
   line-height: 1.68;
   color: var(--ink-muted);
-  white-space: pre-line;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+.timeline-entry-desc p {
+  margin-block: 0.45em;
+  color: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+.timeline-entry-desc > :first-child {
+  margin-top: 0;
+}
+.timeline-entry-desc > :last-child {
+  margin-bottom: 0;
 }
 .timeline-empty {
   padding: 44px 16px;
@@ -5668,7 +5706,7 @@ html[data-theme='dark'] .nav-notify-tab.is-active {
   color: var(--ink-body);
 }
 .nav-notify-body {
-  max-height: 420px;
+  max-height: min(560px, calc(100vh - 180px));
   overflow-y: auto;
 }
 .nav-announce-text {
@@ -5679,8 +5717,8 @@ html[data-theme='dark'] .nav-notify-tab.is-active {
   white-space: pre-wrap;
   word-break: break-word;
 }
-#nav-notices-list {
-  padding: 12px;
+.nav-notices-list {
+  padding: 12px 14px;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -5721,6 +5759,25 @@ html[data-theme='dark'] .nav-notice-item:hover {
   font-weight: 500;
   color: var(--ink-strong);
   line-height: 1.48;
+}
+.nav-notice-content {
+  margin-top: 6px;
+  font-size: 12.5px;
+  line-height: 1.62;
+  color: var(--ink-body);
+  overflow-wrap: anywhere;
+}
+.nav-notice-content p {
+  margin-block: 0.35em;
+  color: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+.nav-notice-content > :first-child {
+  margin-top: 0;
+}
+.nav-notice-content > :last-child {
+  margin-bottom: 0;
 }
 .nav-notify-foot {
   padding: 11px 16px;

@@ -11,6 +11,7 @@ import { About } from '../index'
 
 const notifications = vi.hoisted(() => ({
   notice: '',
+  noticeImages: [] as string[],
   announcements: [] as Record<string, unknown>[],
   loading: false,
   noticeFailed: false,
@@ -70,6 +71,7 @@ beforeEach(() => {
     data: '',
   })
   notifications.notice = ''
+  notifications.noticeImages = []
   notifications.announcements = []
   notifications.loading = false
   notifications.noticeFailed = false
@@ -260,4 +262,35 @@ test('a guest does not fetch protected rankings in the otherwise public timeline
   )
   expect(getRankings).not.toHaveBeenCalled()
   expect(screen.getByRole('heading', { name: 'Site updates' })).toBeVisible()
+})
+test('timeline entries render attached images and preserve single line breaks in descriptions', async () => {
+  notifications.announcements = [
+    {
+      id: 42,
+      title: 'Visual update',
+      content: 'First line\nSecond line',
+      images: ['https://cdn.example.com/timeline-photo.png'],
+      publishDate: '2026-11-28',
+    },
+  ]
+  openTimeline()
+  const entry = await screen.findByRole('article', { name: 'Visual update' })
+  const description = entry.querySelector('.timeline-entry-desc')
+  expect(description?.querySelector('br')).not.toBeNull()
+  expect(within(entry).getByRole('img')).toHaveAttribute(
+    'src',
+    'https://cdn.example.com/timeline-photo.png'
+  )
+})
+
+test('system notice renders attached images on the timeline page', async () => {
+  notifications.notice = 'Welcome to MagiRouter'
+  notifications.noticeImages = ['https://cdn.example.com/system-qr.png']
+  openTimeline()
+  const section = await screen.findByRole('region', { name: 'System Notice' })
+  expect(within(section).getByText('Welcome to MagiRouter')).toBeVisible()
+  expect(within(section).getByRole('img')).toHaveAttribute(
+    'src',
+    'https://cdn.example.com/system-qr.png'
+  )
 })

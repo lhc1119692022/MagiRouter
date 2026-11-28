@@ -199,8 +199,9 @@ func GetStatus(c *gin.Context) {
 func GetNotice(c *gin.Context) {
 	common.OptionMapRWMutex.RLock()
 	notice := common.OptionMap["Notice"]
+	rawImages := common.OptionMap["NoticeImages"]
 	common.OptionMapRWMutex.RUnlock()
-	serveRevalidatedJSON(c, notice)
+	serveRevalidatedNoticeJSON(c, notice, console_setting.ParseNoticeImages(rawImages))
 }
 
 func GetAbout(c *gin.Context) {

@@ -18,8 +18,10 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useTranslation } from 'react-i18next'
 
+import { AnnouncementImages } from '@/components/announcement-images'
 import { Dialog } from '@/components/dialog'
 import { RichContent } from '@/components/rich-content'
+import { extractNoticeImages, noticeExtra } from '@/lib/published-notices'
 import { formatDateTimeObject } from '@/lib/time'
 
 interface AnnouncementDetailModalProps {
@@ -28,9 +30,11 @@ interface AnnouncementDetailModalProps {
   announcement: {
     title?: string
     content?: string
+    images?: string[]
     tag?: string
     publishDate?: string
     extra?: string
+    source?: string
   } | null
 }
 
@@ -40,6 +44,8 @@ export function AnnouncementDetailModal({
   announcement,
 }: AnnouncementDetailModalProps) {
   const { t } = useTranslation()
+  const images = extractNoticeImages(announcement?.images)
+  const extra = noticeExtra(announcement)
   return (
     <Dialog
       open={open}
@@ -50,7 +56,7 @@ export function AnnouncementDetailModal({
           ? `${t('Published:')} ${formatDateTimeObject(new Date(announcement.publishDate))}`
           : undefined
       }
-      contentClassName='sm:max-w-lg'
+      contentClassName={images.length > 0 ? 'sm:max-w-xl' : 'sm:max-w-lg'}
       contentHeight='auto'
       bodyClassName='space-y-4'
     >
@@ -60,12 +66,18 @@ export function AnnouncementDetailModal({
           <RichContent breaks content={announcement.content} />
         </div>
       )}
-      {announcement?.extra && (
+      {images.length > 0 && (
+        <div>
+          <h4 className='mb-2 font-medium'>{t('Images')}</h4>
+          <AnnouncementImages images={images} />
+        </div>
+      )}
+      {extra && (
         <div>
           <h4 className='mb-2 font-medium'>{t('Additional Information')}</h4>
           <RichContent
             breaks
-            content={announcement.extra}
+            content={extra}
             className='text-muted-foreground'
           />
         </div>

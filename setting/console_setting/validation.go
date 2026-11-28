@@ -1,6 +1,7 @@
 package console_setting
 
 import (
+	"encoding/base64"
 	"net/url"
 	"sort"
 	"strings"
@@ -9,6 +10,14 @@ import (
 
 	"github.com/MoeForge/moego/regexp"
 	"github.com/QuantumNous/new-api/common"
+)
+
+const (
+	MaxAnnouncementImages             = 4
+	MaxAnnouncementImageURLLength     = 2048
+	MaxAnnouncementImageDataURLLength = 750 * 1024
+	MaxAnnouncementsPayloadBytes      = 8 * 1024 * 1024
+	MaxNoticeImagesPayloadBytes       = 4 * 1024 * 1024
 )
 
 var (
@@ -20,7 +29,14 @@ var (
 		"light-green": true, "teal": true, "light-blue": true, "indigo": true,
 		"violet": true, "grey": true, "slate": true,
 	}
-	slugRegex = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+	slugRegex                        = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+	allowedAnnouncementImagePrefixes = []string{
+		"data:image/png;base64,",
+		"data:image/jpeg;base64,",
+		"data:image/jpg;base64,",
+		"data:image/webp;base64,",
+		"data:image/gif;base64,",
+	}
 )
 
 func parseJSONArray(jsonStr string, formatErrorKey string) ([]map[string]any, error) {
@@ -190,7 +206,153 @@ func GetApiInfo() []map[string]any {
 	return public
 }
 
+type imageSourceIssue int
+
+const (
+	imageSourceOK imageSourceIssue = iota
+	imageSourceInvalid
+	imageSourceTooLarge
+)
+
+func inspectNoticeImageSource(raw string) imageSourceIssue {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return imageSourceInvalid
+	}
+
+	lower := strings.ToLower(trimmed)
+	if strings.HasPrefix(lower, "data:") {
+		for _, prefix := range allowedAnnouncementImagePrefixes {
+			if strings.HasPrefix(lower, prefix) {
+				if len(trimmed) > MaxAnnouncementImageDataURLLength {
+					return imageSourceTooLarge
+				}
+				payload := trimmed[len(prefix):]
+				if payload == "" {
+					return imageSourceInvalid
+				}
+				if _, err := base64.StdEncoding.DecodeString(payload); err != nil {
+					return imageSourceInvalid
+				}
+				return imageSourceOK
+			}
+		}
+		return imageSourceInvalid
+	}
+
+	if len(trimmed) > MaxAnnouncementImageURLLength || strings.ContainsAny(trimmed, " \t\r\n") {
+		return imageSourceInvalid
+	}
+
+	if strings.HasPrefix(trimmed, "/") {
+		if strings.HasPrefix(trimmed, "//") {
+			return imageSourceInvalid
+		}
+		return imageSourceOK
+	}
+
+	parsed, err := url.Parse(trimmed)
+	if err != nil {
+		return imageSourceInvalid
+	}
+	scheme := strings.ToLower(parsed.Scheme)
+	if (scheme != "https" && scheme != "http") || parsed.Host == "" || parsed.User != nil {
+		return imageSourceInvalid
+	}
+	return imageSourceOK
+}
+
+func validateAnnouncementImageSource(raw string, index int) error {
+	switch inspectNoticeImageSource(raw) {
+	case imageSourceTooLarge:
+		return common.NewMessage("Announcement #{{index}} image is too large", map[string]any{"index": index})
+	case imageSourceInvalid:
+		return common.NewMessage("Announcement #{{index}} has an invalid image source", map[string]any{"index": index})
+	default:
+		return nil
+	}
+}
+
+func ValidateNoticeImages(raw string) error {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return nil
+	}
+	if len(trimmed) > MaxNoticeImagesPayloadBytes {
+		return common.NewMessage("System notice images data is too large")
+	}
+	var items []any
+	if err := common.UnmarshalJsonStr(trimmed, &items); err != nil {
+		return common.NewMessage("Invalid system notice images format")
+	}
+	if len(items) > MaxAnnouncementImages {
+		return common.NewMessage("System notice cannot exceed {{max}} images", map[string]any{"max": MaxAnnouncementImages})
+	}
+	for _, entry := range items {
+		src, isStr := entry.(string)
+		if !isStr {
+			return common.NewMessage("System notice has an invalid image source")
+		}
+		switch inspectNoticeImageSource(src) {
+		case imageSourceTooLarge:
+			return common.NewMessage("System notice image is too large")
+		case imageSourceInvalid:
+			return common.NewMessage("System notice has an invalid image source")
+		}
+	}
+	return nil
+}
+
+func ParseNoticeImages(raw string) []string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return nil
+	}
+	var items []string
+	if err := common.UnmarshalJsonStr(trimmed, &items); err != nil {
+		return nil
+	}
+	result := make([]string, 0, min(len(items), MaxAnnouncementImages))
+	for _, entry := range items {
+		candidate := strings.TrimSpace(entry)
+		if inspectNoticeImageSource(candidate) != imageSourceOK {
+			continue
+		}
+		result = append(result, candidate)
+		if len(result) >= MaxAnnouncementImages {
+			break
+		}
+	}
+	return result
+}
+
+func validateAnnouncementImages(raw any, index int) (int, error) {
+	if raw == nil {
+		return 0, nil
+	}
+	items, ok := raw.([]any)
+	if !ok {
+		return 0, common.NewMessage("Announcement #{{index}} has an invalid images format", map[string]any{"index": index})
+	}
+	if len(items) > MaxAnnouncementImages {
+		return 0, common.NewMessage("Announcement #{{index}} cannot exceed {{max}} images", map[string]any{"index": index, "max": MaxAnnouncementImages})
+	}
+	for _, entry := range items {
+		src, isStr := entry.(string)
+		if !isStr {
+			return 0, common.NewMessage("Announcement #{{index}} has an invalid image source", map[string]any{"index": index})
+		}
+		if err := validateAnnouncementImageSource(src, index); err != nil {
+			return 0, err
+		}
+	}
+	return len(items), nil
+}
+
 func validateAnnouncements(announcementsStr string) error {
+	if len(announcementsStr) > MaxAnnouncementsPayloadBytes {
+		return common.NewMessage("Announcements data is too large")
+	}
 	list, err := parseJSONArray(announcementsStr, "Invalid announcements format: {{error}}")
 	if err != nil {
 		return err
@@ -201,35 +363,41 @@ func validateAnnouncements(announcementsStr string) error {
 	validTypes := map[string]bool{
 		"default": true, "ongoing": true, "success": true, "warning": true, "error": true,
 	}
-	for i, ann := range list {
+	for idx, ann := range list {
+		entryIndex := idx + 1
+		imageCount, imgErr := validateAnnouncementImages(ann["images"], entryIndex)
+		if imgErr != nil {
+			return imgErr
+		}
+		titleStr, _ := ann["title"].(string)
 		content, ok := ann["content"].(string)
-		if !ok || content == "" {
-			return common.NewMessage("Announcement #{{index}} is missing the content field", map[string]any{"index": i + 1})
+		if (!ok || content == "") && (strings.TrimSpace(titleStr) == "" || imageCount == 0) {
+			return common.NewMessage("Announcement #{{index}} is missing the content field", map[string]any{"index": entryIndex})
 		}
 		publishDateAny, exists := ann["publishDate"]
 		if !exists {
-			return common.NewMessage("Announcement #{{index}} is missing the publish date field", map[string]any{"index": i + 1})
+			return common.NewMessage("Announcement #{{index}} is missing the publish date field", map[string]any{"index": entryIndex})
 		}
 		publishDateStr, ok := publishDateAny.(string)
 		if !ok || publishDateStr == "" {
-			return common.NewMessage("Announcement #{{index}} publish date cannot be empty", map[string]any{"index": i + 1})
+			return common.NewMessage("Announcement #{{index}} publish date cannot be empty", map[string]any{"index": entryIndex})
 		}
 		if _, err := time.Parse(time.RFC3339, publishDateStr); err != nil {
-			return common.NewMessage("Announcement #{{index}} has an invalid publish date format", map[string]any{"index": i + 1})
+			return common.NewMessage("Announcement #{{index}} has an invalid publish date format", map[string]any{"index": entryIndex})
 		}
-		if t, exists := ann["type"]; exists {
-			if typeStr, ok := t.(string); ok {
+		if rawType, exists := ann["type"]; exists {
+			if typeStr, ok := rawType.(string); ok {
 				if !validTypes[typeStr] {
-					return common.NewMessage("Announcement #{{index}} has an invalid type value", map[string]any{"index": i + 1})
+					return common.NewMessage("Announcement #{{index}} has an invalid type value", map[string]any{"index": entryIndex})
 				}
 			}
 		}
 		if exceedsMaxCharacters(content, 500) {
-			return common.NewMessage("Announcement #{{index}} content cannot exceed 500 characters", map[string]any{"index": i + 1})
+			return common.NewMessage("Announcement #{{index}} content cannot exceed 500 characters", map[string]any{"index": entryIndex})
 		}
 		if extra, exists := ann["extra"]; exists {
 			if extraStr, ok := extra.(string); ok && exceedsMaxCharacters(extraStr, 100) {
-				return common.NewMessage("Announcement #{{index}} note cannot exceed 100 characters", map[string]any{"index": i + 1})
+				return common.NewMessage("Announcement #{{index}} note cannot exceed 100 characters", map[string]any{"index": entryIndex})
 			}
 		}
 	}
@@ -276,6 +444,14 @@ func getPublishTime(item map[string]any) time.Time {
 
 func GetAnnouncements() []map[string]any {
 	list := getJSONList(GetConsoleSetting().Announcements)
+	for _, item := range list {
+		source, _ := item["source"].(string)
+		extra, _ := item["extra"].(string)
+		trimmedExtra := strings.TrimSpace(extra)
+		if source == "auto_model_sync" && (trimmedExtra == "后台管理自动同步" || trimmedExtra == "Auto-synced from admin") {
+			delete(item, "extra")
+		}
+	}
 	sort.SliceStable(list, func(i, j int) bool {
 		return getPublishTime(list[i]).After(getPublishTime(list[j]))
 	})

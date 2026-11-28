@@ -2,7 +2,9 @@ import { Search, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { AnnouncementImages } from '@/components/announcement-images'
 import { ErrorState } from '@/components/error-state'
+import { RichContent } from '@/components/rich-content'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyContent, EmptyTitle } from '@/components/ui/empty'
@@ -183,6 +185,7 @@ export function TimelineFeed(props: {
               className='timeline-entry'
               aria-label={entry.title}
               data-kind={entry.category}
+              data-tone={entry.tone}
             >
               <div className='timeline-entry-date tabular-nums'>
                 {entry.date && (
@@ -205,7 +208,14 @@ export function TimelineFeed(props: {
               <div className='timeline-entry-body'>
                 <h3 className='timeline-entry-title'>{entry.title}</h3>
                 {entry.description && (
-                  <p className='timeline-entry-desc'>{entry.description}</p>
+                  <RichContent
+                    breaks
+                    content={entry.description}
+                    className='timeline-entry-desc'
+                  />
+                )}
+                {entry.images.length > 0 && (
+                  <AnnouncementImages images={entry.images} className='mt-3' />
                 )}
               </div>
             </article>

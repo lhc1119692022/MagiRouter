@@ -74,6 +74,8 @@ func TestSyncModelAvailabilityNoticesOnlineOfflineAndVisibility(t *testing.T) {
 	assert.Contains(t, notices[0]["title"], "deepseek-v4")
 	assert.Contains(t, notices[0]["title"], "gpt-6-sol")
 	assert.Contains(t, notices[0]["content"], "default")
+	_, hasAutoExtra := notices[0]["extra"]
+	assert.False(t, hasAutoExtra)
 	assert.Equal(t, "Site maintenance", notices[1]["title"])
 
 	// 2. Adding a redundant backup channel for an existing model must NOT publish a duplicate notice.

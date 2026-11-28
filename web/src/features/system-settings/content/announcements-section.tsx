@@ -17,17 +17,26 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Plus, Trash2, Save } from 'lucide-react'
+import {
+  Eye,
+  Image as ImageIcon,
+  Pencil,
+  Plus,
+  Save,
+  Trash2,
+} from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import { useForm } from 'react-hook-form'
+import { useForm, useWatch } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import * as z from 'zod'
 
+import { AnnouncementImages } from '@/components/announcement-images'
 import { StaticDataTable } from '@/components/data-table/static/static-data-table'
 import { StaticRowActions } from '@/components/data-table/static/static-row-actions'
 import { DateTimePicker } from '@/components/datetime-picker'
 import { Dialog } from '@/components/dialog'
+import { RichContent } from '@/components/rich-content'
 import { StatusBadge } from '@/components/status-badge'
 import {
   AlertDialog,
@@ -65,15 +74,20 @@ import dayjs from '@/lib/dayjs'
 import { formatTimestampRelative } from '@/lib/format'
 import { handleServerError } from '@/lib/handle-server-error'
 import {
+  MAX_NOTICE_IMAGES,
   NOTICE_CATEGORIES,
   NOTICE_CATEGORY_LABELS,
+  extractNoticeImages,
+  isValidNoticeImageSource,
   noticeCategory,
+  noticeExtra,
   type NoticeCategory,
 } from '@/lib/published-notices'
 
 import { SettingsSwitchField } from '../components/settings-form-layout'
 import { SettingsSection } from '../components/settings-section'
 import { useUpdateOption } from '../hooks/use-update-option'
+import { AnnouncementImagesField } from './announcement-images-field'
 
 type Announcement = {
   id: number
@@ -81,6 +95,7 @@ type Announcement = {
   category?: NoticeCategory
   kindLabel?: string
   content: string
+  images?: string[]
   publishDate: string
   type: 'default' | 'ongoing' | 'success' | 'warning' | 'error'
   extra?: string
@@ -93,21 +108,38 @@ type AnnouncementsSectionProps = {
   data: string
 }
 
-const announcementSchema = z.object({
-  title: z.string().trim().max(120),
-  category: z.enum(['auto', ...NOTICE_CATEGORIES]),
-  kindLabel: z.string().trim().max(32),
-  content: z
-    .string()
-    .min(1, 'Content is required')
-    .max(500, 'Content must be less than 500 characters'),
-  publishDate: z.string().min(1, 'Publish date is required'),
-  type: z.enum(['default', 'ongoing', 'success', 'warning', 'error']),
-  extra: z
-    .string()
-    .max(100, 'Extra must be less than 100 characters')
-    .optional(),
-})
+const announcementSchema = z
+  .object({
+    title: z.string().trim().max(120),
+    category: z.enum(['auto', ...NOTICE_CATEGORIES]),
+    kindLabel: z.string().trim().max(32),
+    content: z.string().max(500, 'Content must be less than 500 characters'),
+    images: z
+      .array(
+        z
+          .string()
+          .refine(isValidNoticeImageSource, 'Invalid announcement image source')
+      )
+      .max(MAX_NOTICE_IMAGES),
+    publishDate: z.string().min(1, 'Publish date is required'),
+    type: z.enum(['default', 'ongoing', 'success', 'warning', 'error']),
+    extra: z
+      .string()
+      .max(100, 'Extra must be less than 100 characters')
+      .optional(),
+  })
+  .superRefine((values, ctx) => {
+    const hasContent = values.content.trim().length > 0
+    const hasTitledImages =
+      values.title.trim().length > 0 && values.images.length > 0
+    if (!hasContent && !hasTitledImages) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['content'],
+        message: 'Content is required',
+      })
+    }
+  })
 
 type AnnouncementFormValues = z.infer<typeof announcementSchema>
 
@@ -166,6 +198,7 @@ export function AnnouncementsSection({
   const [editingAnnouncement, setEditingAnnouncement] =
     useState<Announcement | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<'single' | 'batch'>('single')
+  const [previewContent, setPreviewContent] = useState(false)
 
   const form = useForm<AnnouncementFormValues>({
     resolver: zodResolver(announcementSchema),
@@ -174,10 +207,15 @@ export function AnnouncementsSection({
       category: 'auto',
       kindLabel: '',
       content: '',
+      images: [],
       publishDate: new Date().toISOString(),
       type: 'default',
       extra: '',
     },
+  })
+  const watchedImages = useWatch({
+    control: form.control,
+    name: 'images',
   })
 
   useEffect(() => {
@@ -232,11 +270,13 @@ export function AnnouncementsSection({
 
   const handleAdd = () => {
     setEditingAnnouncement(null)
+    setPreviewContent(false)
     form.reset({
       title: '',
       category: 'auto',
       kindLabel: '',
       content: '',
+      images: [],
       publishDate: new Date().toISOString(),
       type: 'default',
       extra: '',
@@ -246,14 +286,16 @@ export function AnnouncementsSection({
 
   const handleEdit = (announcement: Announcement) => {
     setEditingAnnouncement(announcement)
+    setPreviewContent(false)
     form.reset({
       title: announcement.title || '',
       category: announcement.category ?? 'auto',
       kindLabel: announcement.kindLabel || '',
       content: announcement.content,
+      images: extractNoticeImages(announcement.images),
       publishDate: announcement.publishDate,
       type: announcement.type,
-      extra: announcement.extra || '',
+      extra: noticeExtra(announcement),
     })
     setShowDialog(true)
   }
@@ -302,6 +344,7 @@ export function AnnouncementsSection({
       title: values.title || undefined,
       category: values.category === 'auto' ? undefined : values.category,
       kindLabel: values.kindLabel || undefined,
+      images: values.images.length > 0 ? values.images : undefined,
     }
     if (editingAnnouncement) {
       setAnnouncements((prev) =>
@@ -437,20 +480,36 @@ export function AnnouncementsSection({
               id: 'content',
               header: t('Content'),
               cellClassName: 'max-w-xs truncate',
-              cell: (announcement) => (
-                <div className='flex items-center gap-2 truncate'>
-                  <span className='truncate'>
-                    {announcement.title || announcement.content}
-                  </span>
-                  {announcement.source === 'auto_model_sync' && (
-                    <StatusBadge
-                      label={t('Auto-synced')}
-                      variant='info'
-                      copyable={false}
-                    />
-                  )}
-                </div>
-              ),
+              cell: (announcement) => {
+                const imageCount = extractNoticeImages(
+                  announcement.images
+                ).length
+                return (
+                  <div className='flex items-center gap-2 truncate'>
+                    <span className='truncate'>
+                      {announcement.title || announcement.content}
+                    </span>
+                    {imageCount > 0 && (
+                      <span
+                        className='text-muted-foreground inline-flex shrink-0 items-center gap-1 rounded border px-1.5 py-0.5 text-xs tabular-nums'
+                        title={t('{{count}} attached images', {
+                          count: imageCount,
+                        })}
+                      >
+                        <ImageIcon className='h-3 w-3' aria-hidden='true' />
+                        {imageCount}
+                      </span>
+                    )}
+                    {announcement.source === 'auto_model_sync' && (
+                      <StatusBadge
+                        label={t('Auto-synced')}
+                        variant='info'
+                        copyable={false}
+                      />
+                    )}
+                  </div>
+                )
+              },
             },
             {
               id: 'category',
@@ -499,7 +558,7 @@ export function AnnouncementsSection({
               id: 'extra',
               header: t('Extra'),
               cellClassName: 'text-muted-foreground max-w-xs truncate',
-              cell: (announcement) => announcement.extra || '-',
+              cell: (announcement) => noticeExtra(announcement) || '-',
             },
             {
               id: 'actions',
@@ -629,18 +688,82 @@ export function AnnouncementsSection({
               name='content'
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>{t('Content')}</FormLabel>
-                  <FormControl>
-                    <Textarea
-                      placeholder={t(
-                        'Enter announcement content (supports Markdown/HTML)'
+                  <div className='flex items-center justify-between gap-2'>
+                    <FormLabel>{t('Content')}</FormLabel>
+                    <Button
+                      type='button'
+                      variant='ghost'
+                      size='xs'
+                      onClick={() => setPreviewContent((prev) => !prev)}
+                    >
+                      {previewContent ? (
+                        <>
+                          <Pencil
+                            className='mr-1 h-3.5 w-3.5'
+                            aria-hidden='true'
+                          />
+                          {t('Edit')}
+                        </>
+                      ) : (
+                        <>
+                          <Eye
+                            className='mr-1 h-3.5 w-3.5'
+                            aria-hidden='true'
+                          />
+                          {t('Preview')}
+                        </>
                       )}
-                      rows={4}
-                      {...field}
+                    </Button>
+                  </div>
+                  {previewContent ? (
+                    <div className='bg-muted/20 min-h-24 space-y-3 rounded-lg border p-3 text-sm'>
+                      {field.value.trim() ? (
+                        <RichContent breaks content={field.value} />
+                      ) : (
+                        <p className='text-muted-foreground text-xs'>
+                          {t('No text content entered')}
+                        </p>
+                      )}
+                      <AnnouncementImages images={watchedImages} />
+                    </div>
+                  ) : (
+                    <FormControl>
+                      <Textarea
+                        placeholder={t(
+                          'Enter announcement content (supports Markdown/HTML)'
+                        )}
+                        className='min-h-28 leading-relaxed'
+                        rows={4}
+                        {...field}
+                      />
+                    </FormControl>
+                  )}
+                  <FormDescription>
+                    {t(
+                      'Maximum 500 characters. Supports Markdown, HTML, and line breaks.'
+                    )}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name='images'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('Images (Optional)')}</FormLabel>
+                  <FormControl>
+                    <AnnouncementImagesField
+                      value={field.value}
+                      onChange={field.onChange}
                     />
                   </FormControl>
                   <FormDescription>
-                    {t('Maximum 500 characters. Supports Markdown and HTML.')}
+                    {t(
+                      'Up to {{max}} images. Supports PNG, JPG, WebP, GIF uploads or image URLs.',
+                      { max: MAX_NOTICE_IMAGES }
+                    )}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>

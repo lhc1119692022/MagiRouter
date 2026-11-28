@@ -11,10 +11,19 @@ import (
 // the JSON envelope served by serveRevalidatedJSON changes shape.
 const etagVersionPublicContent = "public-content:v1"
 
+const etagVersionPublicNotice = "public-notice:v1"
+
 type publicContentResponse struct {
 	Success bool   `json:"success"`
 	Message string `json:"message"`
 	Data    string `json:"data"`
+}
+
+type publicNoticeResponse struct {
+	Success bool     `json:"success"`
+	Message string   `json:"message"`
+	Data    string   `json:"data"`
+	Images  []string `json:"images,omitempty"`
 }
 
 // serveRevalidatedJSON writes public content as JSON with a weak
@@ -40,6 +49,35 @@ func serveRevalidatedJSON(c *gin.Context, content string) {
 	}
 
 	etag := common.ETagFor(etagVersionPublicContent, content)
+
+	c.Header("ETag", etag)
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Vary", "Accept-Encoding")
+
+	if common.ETagMatches(c.GetHeader("If-None-Match"), etag) {
+		c.Status(http.StatusNotModified)
+		return
+	}
+
+	c.Data(http.StatusOK, "application/json; charset=utf-8", body)
+}
+
+func serveRevalidatedNoticeJSON(c *gin.Context, content string, images []string) {
+	body, err := common.Marshal(publicNoticeResponse{
+		Success: true,
+		Message: "",
+		Data:    content,
+		Images:  images,
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	etag := common.ETagFor(etagVersionPublicNotice, string(body))
 
 	c.Header("ETag", etag)
 	c.Header("Cache-Control", "no-cache")

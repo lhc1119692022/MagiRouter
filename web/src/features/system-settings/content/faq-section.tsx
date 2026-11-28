@@ -17,7 +17,15 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { zodResolver } from '@hookform/resolvers/zod'
-import { ArrowDown, ArrowUp, Plus, Trash2, Save } from 'lucide-react'
+import {
+  ArrowDown,
+  ArrowUp,
+  Eye,
+  Pencil,
+  Plus,
+  Save,
+  Trash2,
+} from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -49,6 +57,7 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
+import { Markdown } from '@/components/ui/markdown'
 import { Textarea } from '@/components/ui/textarea'
 import { handleServerError } from '@/lib/handle-server-error'
 
@@ -93,6 +102,7 @@ export function FAQSection({ enabled, data }: FAQSectionProps) {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [editingFaq, setEditingFaq] = useState<FAQ | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<'single' | 'batch'>('single')
+  const [previewAnswer, setPreviewAnswer] = useState(false)
 
   const form = useForm<FAQFormValues>({
     resolver: zodResolver(faqSchema),
@@ -137,6 +147,7 @@ export function FAQSection({ enabled, data }: FAQSectionProps) {
 
   const handleAdd = () => {
     setEditingFaq(null)
+    setPreviewAnswer(false)
     form.reset({
       question: '',
       answer: '',
@@ -146,6 +157,7 @@ export function FAQSection({ enabled, data }: FAQSectionProps) {
 
   const handleEdit = (faq: FAQ) => {
     setEditingFaq(faq)
+    setPreviewAnswer(false)
     form.reset({
       question: faq.question,
       answer: faq.answer,
@@ -417,18 +429,64 @@ export function FAQSection({ enabled, data }: FAQSectionProps) {
               name='answer'
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>{t('Answer')}</FormLabel>
-                  <FormControl>
-                    <Textarea
-                      placeholder={t(
-                        'Visit Settings → General and adjust quota options...'
+                  <div className='flex items-center justify-between gap-2'>
+                    <FormLabel>{t('Answer')}</FormLabel>
+                    <Button
+                      type='button'
+                      variant='ghost'
+                      size='xs'
+                      onClick={() => setPreviewAnswer((prev) => !prev)}
+                    >
+                      {previewAnswer ? (
+                        <>
+                          <Pencil
+                            className='mr-1 h-3.5 w-3.5'
+                            aria-hidden='true'
+                          />
+                          {t('Edit')}
+                        </>
+                      ) : (
+                        <>
+                          <Eye
+                            className='mr-1 h-3.5 w-3.5'
+                            aria-hidden='true'
+                          />
+                          {t('Preview')}
+                        </>
                       )}
-                      rows={8}
-                      {...field}
-                    />
-                  </FormControl>
+                    </Button>
+                  </div>
+                  {previewAnswer ? (
+                    <div className='bg-muted/20 min-h-36 rounded-lg border p-3.5 text-[15px] leading-[1.75]'>
+                      {field.value.trim() ? (
+                        <Markdown
+                          breaks
+                          className='break-normal [overflow-wrap:break-word]'
+                        >
+                          {field.value}
+                        </Markdown>
+                      ) : (
+                        <p className='text-muted-foreground text-sm'>
+                          {t('No answer entered yet')}
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <FormControl>
+                      <Textarea
+                        placeholder={t(
+                          'Visit Settings → General and adjust quota options...'
+                        )}
+                        className='min-h-36 leading-relaxed'
+                        rows={8}
+                        {...field}
+                      />
+                    </FormControl>
+                  )}
                   <FormDescription>
-                    {t('Maximum 1000 characters. Supports Markdown and HTML.')}
+                    {t(
+                      'Maximum 1000 characters. Supports Markdown, HTML, and line breaks.'
+                    )}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>

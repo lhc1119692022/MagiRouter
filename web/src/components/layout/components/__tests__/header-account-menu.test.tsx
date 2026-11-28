@@ -33,6 +33,7 @@ vi.mock('@/hooks/use-notifications', () => ({
   useNotifications: () => ({
     announcements: [],
     notice: '',
+    noticeImages: [],
     closePopover: () => {},
   }),
 }))

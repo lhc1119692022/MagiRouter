@@ -266,6 +266,7 @@ export interface AnnouncementItem {
   category?: string
   kindLabel?: string
   content: string
+  images?: string[]
   publishDate?: string
   type?: 'default' | 'ongoing' | 'success' | 'warning' | 'error'
   extra?: string

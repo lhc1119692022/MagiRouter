@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { Link } from '@tanstack/react-router'
+import { Image as ImageIcon } from 'lucide-react'
 import { useId, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -94,17 +95,28 @@ export function AnnouncementsPanel() {
             onClick={() => setSelectedAnnouncement(item.record)}
           >
             <span className='dash-notice-top'>
-              <span className='dash-editorial-kind'>
+              <span className='dash-editorial-kind' data-tone={item.tone}>
                 {item.kindLabel || t(NOTICE_CATEGORY_LABELS[item.category])}
               </span>
-              {item.date && (
-                <time
-                  dateTime={item.date}
-                  className='dash-notice-date tabular-nums'
-                >
-                  {item.dateLabel}
-                </time>
-              )}
+              <span className='dash-notice-meta'>
+                {item.images.length > 0 && (
+                  <span
+                    className='dash-notice-image-count tabular-nums'
+                    aria-hidden='true'
+                  >
+                    <ImageIcon className='h-3 w-3' />
+                    {item.images.length}
+                  </span>
+                )}
+                {item.date && (
+                  <time
+                    dateTime={item.date}
+                    className='dash-notice-date tabular-nums'
+                  >
+                    {item.dateLabel}
+                  </time>
+                )}
+              </span>
             </span>
             <span className='dash-notice-title'>
               {typeof item.record.title === 'string' && item.record.title.trim()
