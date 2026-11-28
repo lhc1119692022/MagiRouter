@@ -109,6 +109,20 @@ func addSensitiveWordInstance(tx *gorm.DB, name, words string, enabled bool) err
 			return fmt.Errorf("read option %s: %w", request_plugin_setting.InstancesOption, err)
 		}
 	}
+	for index := range instances {
+		if instances[index].Groups == nil {
+			instances[index].Groups = []string{}
+		}
+		if instances[index].ExcludeGroups == nil {
+			instances[index].ExcludeGroups = []string{}
+		}
+		if instances[index].Models == nil {
+			instances[index].Models = []string{}
+		}
+		if instances[index].ExcludeModels == nil {
+			instances[index].ExcludeModels = []string{}
+		}
+	}
 	ids := make(map[string]bool, len(instances))
 	for _, instance := range instances {
 		ids[instance.ID] = true
@@ -128,14 +142,16 @@ func addSensitiveWordInstance(tx *gorm.DB, name, words string, enabled bool) err
 		return err
 	}
 	instances = append(instances, request_plugin_setting.Instance{
-		ID:      id,
-		Name:    name,
-		Plugin:  "request-filter",
-		Enabled: enabled,
-		Global:  true,
-		Groups:  []string{},
-		Models:  []string{},
-		Config:  config,
+		ID:            id,
+		Name:          name,
+		Plugin:        "request-filter",
+		Enabled:       enabled,
+		Global:        true,
+		Groups:        []string{},
+		ExcludeGroups: []string{},
+		Models:        []string{},
+		ExcludeModels: []string{},
+		Config:        config,
 	})
 	encoded, err := common.Marshal(instances)
 	if err != nil {

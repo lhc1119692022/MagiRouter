@@ -22,7 +22,7 @@ func optionsRevision(t *testing.T) int64 {
 // ones, enabled when both old switches were on; the old options go, and a
 // second start changes nothing.
 func TestMigrateSensitiveWords(t *testing.T) {
-	keep := `{"id":"rp_keep","name":"Keep","plugin":"request-redact","enabled":true,"global":true,"groups":[],"models":[],"config":{"replacement":"[X]"}}`
+	keep := `{"id":"rp_keep","name":"Keep","plugin":"request-redact","enabled":true,"global":true,"groups":[],"exclude_groups":[],"models":[],"exclude_models":[],"config":{"replacement":"[X]"}}`
 	tests := map[string]struct {
 		options   map[string]string
 		language  string
@@ -73,7 +73,7 @@ func TestMigrateSensitiveWords(t *testing.T) {
 			withoutID, err := sjson.Delete(migrated.Raw, "id")
 			require.NoError(t, err)
 			assert.JSONEq(t, `{"name":"`+tc.name+`","plugin":"request-filter","enabled":`+map[bool]string{true: "true", false: "false"}[tc.enabled]+`,
-				"global":true,"groups":[],"models":[],
+				"global":true,"groups":[],"exclude_groups":[],"models":[],"exclude_models":[],
 				"config":{"rules":[],"keywords":"Bad\nworse","keywordsCaseSensitive":false,"message":"","replies":false}}`, withoutID)
 			revision := optionsRevision(t)
 			assert.NotZero(t, revision, "the other nodes reload the options")
