@@ -77,9 +77,76 @@ const STEPS = [
   'Sync results',
 ]
 const PAGE_SIZE = 20
+const ALL_VENDORS = '__all__'
+const NO_VENDOR = '__none__'
 
 function isMetadataSyncable(item: MetadataSyncCandidate) {
   return item.kind === 'create' || item.kind === 'update'
+}
+
+function normalizeSearchText(value: string) {
+  return value
+    .toLowerCase()
+    .replaceAll(/[-_./:]+/g, ' ')
+    .replaceAll(/\s+/g, ' ')
+    .trim()
+}
+
+function compactSearchText(value: string) {
+  return value.toLowerCase().replaceAll(/[-_./:\s]+/g, '')
+}
+
+function scoreCandidateMatch(item: MetadataSyncCandidate, rawSearch: string) {
+  const keyword = rawSearch.trim().toLowerCase()
+  if (!keyword) return 0
+
+  const tokens = keyword.split(/\s+/).filter(Boolean)
+  const modelLower = item.model_name.toLowerCase()
+  const modelNorm = normalizeSearchText(item.model_name)
+  const modelCompact = compactSearchText(item.model_name)
+  const vendorLower = (item.upstream?.vendor ?? '').trim().toLowerCase()
+  const vendorNorm = normalizeSearchText(vendorLower)
+  const vendorCompact = compactSearchText(vendorLower)
+
+  let allTokensInModel = true
+  for (const token of tokens) {
+    const tokenNorm = normalizeSearchText(token)
+    const tokenCompact = compactSearchText(token)
+    const inModel =
+      modelLower.includes(token) ||
+      (tokenNorm !== '' && modelNorm.includes(tokenNorm)) ||
+      (tokenCompact.length >= 2 && modelCompact.includes(tokenCompact))
+    const inVendor =
+      vendorLower !== '' &&
+      (vendorLower.includes(token) ||
+        (tokenNorm !== '' && vendorNorm.includes(tokenNorm)) ||
+        (tokenCompact.length >= 2 && vendorCompact.includes(tokenCompact)))
+    if (!inModel && !inVendor) return -1
+    if (!inModel) allTokensInModel = false
+  }
+
+  const keywordNorm = normalizeSearchText(keyword)
+  const keywordCompact = compactSearchText(keyword)
+  const lengthPenalty = item.model_name.length * 0.001
+
+  if (
+    modelLower === keyword ||
+    (keywordNorm !== '' && modelNorm === keywordNorm) ||
+    (keywordCompact.length >= 2 && modelCompact === keywordCompact)
+  ) {
+    return 1000 - lengthPenalty
+  }
+  if (
+    modelLower.startsWith(keyword) ||
+    (keywordNorm !== '' && modelNorm.startsWith(keywordNorm))
+  ) {
+    return 800 - lengthPenalty
+  }
+  if (allTokensInModel) {
+    const directBonus = modelLower.includes(keyword) ? 100 : 0
+    return 600 + directBonus - lengthPenalty
+  }
+  return 200 - lengthPenalty
 }
 
 export function SyncWizardDialog(props: {
@@ -92,6 +159,7 @@ export function SyncWizardDialog(props: {
   const [source, setSource] = useState<SyncSource>('merged')
   const [preview, setPreview] = useState<MetadataSyncPreview | null>(null)
   const [scope, setScope] = useState('site')
+  const [vendorFilter, setVendorFilter] = useState(ALL_VENDORS)
   const [search, setSearch] = useState('')
   const [onlySyncable, setOnlySyncable] = useState(false)
   const [step, setStep] = useState(0)
@@ -117,6 +185,7 @@ export function SyncWizardDialog(props: {
     onMutate: () => {
       setPreview(null)
       setSelection({})
+      setVendorFilter(ALL_VENDORS)
       setStep(0)
       setPage(0)
     },
@@ -187,6 +256,7 @@ export function SyncWizardDialog(props: {
       setSearch('')
       setPage(0)
       setScope('site')
+      setVendorFilter(ALL_VENDORS)
       setOnlySyncable(false)
       load.reset()
       apply.reset()
@@ -195,14 +265,70 @@ export function SyncWizardDialog(props: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.open])
 
-  const filteredCandidates = useMemo(() => {
-    const keyword = search.trim().toLowerCase()
-    return (preview?.candidates ?? []).filter(
-      (item) =>
-        (scope === 'catalog' || item.scope === 'site') &&
-        item.model_name.toLowerCase().includes(keyword)
+  const scopedCandidates = useMemo(
+    () =>
+      (preview?.candidates ?? []).filter(
+        (item) => scope === 'catalog' || item.scope === 'site'
+      ),
+    [preview, scope]
+  )
+  const vendorOptions = useMemo(() => {
+    const names = new Set<string>()
+    let hasEmpty = false
+    for (const item of scopedCandidates) {
+      const vendor = item.upstream?.vendor?.trim() ?? ''
+      if (vendor) {
+        names.add(vendor)
+      } else {
+        hasEmpty = true
+      }
+    }
+    const sorted = [...names].sort((left, right) =>
+      left.localeCompare(right, undefined, { sensitivity: 'base' })
     )
-  }, [preview, scope, search])
+    const options = [
+      { value: ALL_VENDORS, label: t('All vendors') },
+      ...sorted.map((vendor) => ({ value: vendor, label: vendor })),
+    ]
+    if (hasEmpty && sorted.length > 0) {
+      options.push({ value: NO_VENDOR, label: t('No vendor') })
+    }
+    return options
+  }, [scopedCandidates, t])
+  const activeVendorFilter = vendorOptions.some(
+    (option) => option.value === vendorFilter
+  )
+    ? vendorFilter
+    : ALL_VENDORS
+  const filteredCandidates = useMemo(() => {
+    const hasSearch = search.trim() !== ''
+    const matched: Array<{ item: MetadataSyncCandidate; score: number }> = []
+    for (const item of scopedCandidates) {
+      const vendor = item.upstream?.vendor?.trim() ?? ''
+      if (activeVendorFilter === NO_VENDOR) {
+        if (vendor !== '') continue
+      } else if (
+        activeVendorFilter !== ALL_VENDORS &&
+        vendor.toLowerCase() !== activeVendorFilter.toLowerCase()
+      ) {
+        continue
+      }
+      const score = scoreCandidateMatch(item, search)
+      if (score < 0) continue
+      matched.push({ item, score })
+    }
+    if (hasSearch) {
+      matched.sort((left, right) => {
+        if (right.score !== left.score) return right.score - left.score
+        return left.item.model_name.localeCompare(
+          right.item.model_name,
+          undefined,
+          { sensitivity: 'base' }
+        )
+      })
+    }
+    return matched.map((entry) => entry.item)
+  }, [scopedCandidates, activeVendorFilter, search])
   const syncableCandidates = useMemo(
     () => filteredCandidates.filter(isMetadataSyncable),
     [filteredCandidates]
@@ -452,6 +578,7 @@ export function SyncWizardDialog(props: {
                   if (value) setSource(value as SyncSource)
                   setPreview(null)
                   setSelection({})
+                  setVendorFilter(ALL_VENDORS)
                   setPage(0)
                   load.reset()
                 }}
@@ -481,6 +608,7 @@ export function SyncWizardDialog(props: {
                   if (value) setLocale(value as SyncLocale)
                   setPreview(null)
                   setSelection({})
+                  setVendorFilter(ALL_VENDORS)
                   setPage(0)
                   load.reset()
                 }}
@@ -568,6 +696,7 @@ export function SyncWizardDialog(props: {
                   value={scope}
                   onValueChange={(value) => {
                     setScope(value ?? 'site')
+                    setVendorFilter(ALL_VENDORS)
                     setPage(0)
                   }}
                   items={[
@@ -577,7 +706,7 @@ export function SyncWizardDialog(props: {
                 >
                   <SelectTrigger
                     aria-label={t('Sync scope')}
-                    className='w-full sm:w-64'
+                    className='w-full sm:w-52'
                   >
                     <SelectValue />
                   </SelectTrigger>
@@ -592,9 +721,33 @@ export function SyncWizardDialog(props: {
                     </SelectGroup>
                   </SelectContent>
                 </Select>
+                <Select
+                  value={activeVendorFilter}
+                  onValueChange={(value) => {
+                    setVendorFilter(value ?? ALL_VENDORS)
+                    setPage(0)
+                  }}
+                  items={vendorOptions}
+                >
+                  <SelectTrigger
+                    aria-label={t('Filter by vendor')}
+                    className='w-full sm:w-44'
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {vendorOptions.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
                 <Input
                   className='w-full sm:w-64'
-                  placeholder={t('Search models...')}
+                  placeholder={t('Search models or vendors...')}
                   aria-label={t('Search models')}
                   value={search}
                   onChange={(event) => {

@@ -9966,6 +9966,9 @@
     "Request body JSON": "Request body JSON",
     "Request body must be a valid JSON object.": "Request body must be a valid JSON object.",
     "Invalid JSON syntax.": "Invalid JSON syntax.",
-    "This model does not have {{endpoint}} configured.": "This model does not have {{endpoint}} configured."
+    "This model does not have {{endpoint}} configured.": "This model does not have {{endpoint}} configured.",
+    "All vendors": "All vendors",
+    "Filter by vendor": "Filter by vendor",
+    "Search models or vendors...": "Search models or vendors..."
   }
 }

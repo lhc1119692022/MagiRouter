@@ -282,6 +282,7 @@ func fetchOfficialMetadataCatalog(ctx context.Context, resolved string) (metadat
 		return source, nil, nil, errors.New("upstream metadata source reported failure")
 	}
 	models := make(map[string]model.MetadataValues)
+	seenLower := make(map[string]string)
 	vendors := make(map[string]model.Vendor)
 	for _, vendor := range vendorsEnv.Data {
 		vendor.Name = strings.TrimSpace(vendor.Name)
@@ -291,7 +292,8 @@ func fetchOfficialMetadataCatalog(ctx context.Context, resolved string) (metadat
 		vendors[vendor.Name] = model.Vendor{Name: vendor.Name, Description: vendor.Description, Icon: vendor.Icon, Status: vendor.Status}
 	}
 	for _, item := range modelsEnv.Data {
-		if strings.TrimSpace(item.ModelName) == "" {
+		modelName := strings.TrimSpace(item.ModelName)
+		if modelName == "" {
 			continue
 		}
 		endpoints := ""
@@ -303,14 +305,110 @@ func fetchOfficialMetadataCatalog(ctx context.Context, resolved string) (metadat
 		tags, _ := model.SplitCatalogTaskTags(item.Tags)
 		values := model.MetadataValues{Description: item.Description, Icon: item.Icon, Tags: tags, Vendor: strings.TrimSpace(item.VendorName), Endpoints: endpoints, NameRule: item.NameRule, Status: item.Status}
 		if err := model.ValidateMetadataValues(values); err != nil {
-			return source, nil, nil, fmt.Errorf("model %s: %w", item.ModelName, err)
+			return source, nil, nil, fmt.Errorf("model %s: %w", modelName, err)
 		}
-		if _, duplicate := models[item.ModelName]; duplicate {
-			return source, nil, nil, fmt.Errorf("duplicate upstream model: %s", item.ModelName)
+		if _, duplicate := models[modelName]; duplicate {
+			return source, nil, nil, fmt.Errorf("duplicate upstream model: %s", modelName)
 		}
-		models[item.ModelName] = values
+		lower := canonicalModelKey(modelName)
+		if prevName, exists := seenLower[lower]; exists {
+			merged := models[prevName]
+			if strings.TrimSpace(merged.Description) == "" {
+				merged.Description = values.Description
+			}
+			if strings.TrimSpace(merged.Icon) == "" {
+				merged.Icon = values.Icon
+			}
+			if strings.TrimSpace(merged.Tags) == "" {
+				merged.Tags = values.Tags
+			}
+			if strings.TrimSpace(merged.Vendor) == "" {
+				merged.Vendor = values.Vendor
+			}
+			if strings.TrimSpace(merged.Endpoints) == "" {
+				merged.Endpoints = values.Endpoints
+			}
+			chosenName := preferCanonicalModelName(prevName, modelName, 1, 1)
+			if chosenName != prevName {
+				delete(models, prevName)
+				seenLower[lower] = chosenName
+			}
+			models[chosenName] = merged
+			continue
+		}
+		models[modelName] = values
+		seenLower[lower] = modelName
 	}
 	return source, models, vendors, nil
+}
+
+type upstreamCatalogIndex struct {
+	exact     map[string]model.MetadataValues
+	byLower   map[string]model.MetadataValues
+	byDotDash map[string]model.MetadataValues
+}
+
+func buildUpstreamCatalogIndex(upstream map[string]model.MetadataValues) upstreamCatalogIndex {
+	idx := upstreamCatalogIndex{
+		exact:     upstream,
+		byLower:   make(map[string]model.MetadataValues, len(upstream)),
+		byDotDash: make(map[string]model.MetadataValues, len(upstream)),
+	}
+	names := make([]string, 0, len(upstream))
+	for name := range upstream {
+		names = append(names, name)
+	}
+	sort.Slice(names, func(i, j int) bool {
+		li, lj := strings.ToLower(names[i]), strings.ToLower(names[j])
+		if li != lj {
+			return li < lj
+		}
+		return names[i] < names[j]
+	})
+	for _, name := range names {
+		values := upstream[name]
+		lower := canonicalModelKey(name)
+		if lower == "" {
+			continue
+		}
+		if _, exists := idx.byLower[lower]; !exists || name == lower {
+			idx.byLower[lower] = values
+		}
+		dashed := strings.ReplaceAll(lower, ".", "-")
+		if _, exists := idx.byDotDash[dashed]; !exists {
+			idx.byDotDash[dashed] = values
+		}
+	}
+	return idx
+}
+
+func (idx upstreamCatalogIndex) lookup(name string, allowSiteAlias bool) (model.MetadataValues, bool) {
+	if values, ok := idx.exact[name]; ok {
+		return values, true
+	}
+	lower := canonicalModelKey(name)
+	if lower == "" {
+		return model.MetadataValues{}, false
+	}
+	if values, ok := idx.byLower[lower]; ok {
+		return values, true
+	}
+	if !allowSiteAlias {
+		return model.MetadataValues{}, false
+	}
+	if slash := strings.LastIndex(lower, "/"); slash >= 0 {
+		short := lower[slash+1:]
+		if values, ok := idx.byLower[short]; ok {
+			return values, true
+		}
+		if values, ok := idx.byDotDash[strings.ReplaceAll(short, ".", "-")]; ok {
+			return values, true
+		}
+	}
+	if values, ok := idx.byDotDash[strings.ReplaceAll(lower, ".", "-")]; ok {
+		return values, true
+	}
+	return model.MetadataValues{}, false
 }
 
 func fetchMetadataCatalogForSource(
@@ -370,22 +468,72 @@ func SyncUpstreamPreview(c *gin.Context) {
 	}
 	siteNames := make(map[string]bool)
 	allNames := make(map[string]bool)
+	claimedLower := make(map[string]bool)
 	for name := range locals {
 		siteNames[name] = true
 		allNames[name] = true
+		if lower := canonicalModelKey(name); lower != "" {
+			claimedLower[lower] = true
+		}
 	}
-	for _, name := range missing {
+	sortedMissing := append([]string(nil), missing...)
+	sort.Slice(sortedMissing, func(i, j int) bool {
+		li, lj := canonicalModelKey(sortedMissing[i]), canonicalModelKey(sortedMissing[j])
+		if li != lj {
+			return li < lj
+		}
+		iLower := sortedMissing[i] == li
+		jLower := sortedMissing[j] == lj
+		if iLower != jLower {
+			return iLower
+		}
+		return sortedMissing[i] < sortedMissing[j]
+	})
+	for _, name := range sortedMissing {
+		lower := canonicalModelKey(name)
+		if lower == "" || claimedLower[lower] {
+			continue
+		}
+		claimedLower[lower] = true
 		siteNames[name] = true
 		allNames[name] = true
 	}
+	upstreamNames := make([]string, 0, len(upstream))
 	for name := range upstream {
+		upstreamNames = append(upstreamNames, name)
+	}
+	sort.Slice(upstreamNames, func(i, j int) bool {
+		li, lj := canonicalModelKey(upstreamNames[i]), canonicalModelKey(upstreamNames[j])
+		if li != lj {
+			return li < lj
+		}
+		iLower := upstreamNames[i] == li
+		jLower := upstreamNames[j] == lj
+		if iLower != jLower {
+			return iLower
+		}
+		return upstreamNames[i] < upstreamNames[j]
+	})
+	for _, name := range upstreamNames {
+		lower := canonicalModelKey(name)
+		if lower == "" || claimedLower[lower] {
+			continue
+		}
+		claimedLower[lower] = true
 		allNames[name] = true
 	}
 	names := make([]string, 0, len(allNames))
 	for name := range allNames {
 		names = append(names, name)
 	}
-	sort.Strings(names)
+	sort.Slice(names, func(i, j int) bool {
+		li, lj := strings.ToLower(names[i]), strings.ToLower(names[j])
+		if li != lj {
+			return li < lj
+		}
+		return names[i] < names[j]
+	})
+	upstreamIdx := buildUpstreamCatalogIndex(upstream)
 	vendorByID := make(map[int]*model.Vendor)
 	for _, vendor := range vendors {
 		vendorByID[vendor.Id] = vendor
@@ -396,8 +544,8 @@ func SyncUpstreamPreview(c *gin.Context) {
 		if siteNames[name] {
 			candidate.Scope = "site"
 		}
-		local := locals[name]
-		up, found := upstream[name]
+		local := model.FindMetadataModel(locals, name)
+		up, found := upstreamIdx.lookup(name, siteNames[name])
 		if !found {
 			candidate.Kind = "missing_upstream"
 			candidates = append(candidates, candidate)
@@ -474,9 +622,10 @@ func SyncUpstreamModels(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"success": false, "message": "Upstream metadata changed; preview again"})
 		return
 	}
+	upstreamIdx := buildUpstreamCatalogIndex(upstream)
 	updates := make([]model.MetadataSyncUpdate, 0, len(request.Selections))
 	for _, selection := range request.Selections {
-		values, exists := upstream[selection.ModelName]
+		values, exists := upstreamIdx.lookup(selection.ModelName, true)
 		if !exists {
 			c.JSON(http.StatusConflict, gin.H{"success": false, "message": "Selected upstream model is no longer available"})
 			return

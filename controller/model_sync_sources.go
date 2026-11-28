@@ -68,6 +68,9 @@ var canonicalVendors = []canonicalVendorSpec{
 	{Key: "bfl", ZHName: "Black Forest Labs", ENName: "Black Forest Labs", VendorIcon: "Flux", ModelIcon: "Flux", Aliases: []string{"bfl", "black-forest-labs", "black forest labs"}},
 	{Key: "elevenlabs", ZHName: "ElevenLabs", ENName: "ElevenLabs", VendorIcon: "ElevenLabs", ModelIcon: "ElevenLabs", Aliases: []string{"elevenlabs"}},
 	{Key: "baidu", ZHName: "Baidu", ENName: "Baidu", VendorIcon: "Wenxin.Color", ModelIcon: "Wenxin.Color", Aliases: []string{"baidu", "wenxin", "qianfan"}},
+	{Key: "xiaomi", ZHName: "小米", ENName: "Xiaomi", VendorIcon: "XiaomiMiMo", ModelIcon: "XiaomiMiMo", Aliases: []string{"xiaomi", "mimo", "xiaomi mimo", "小米"}},
+	{Key: "nvidia", ZHName: "NVIDIA", ENName: "NVIDIA", VendorIcon: "Nvidia.Color", ModelIcon: "Nvidia.Color", Aliases: []string{"nvidia"}},
+	{Key: "amazon", ZHName: "Amazon", ENName: "Amazon", VendorIcon: "Aws.Color", ModelIcon: "Aws.Color", Aliases: []string{"amazon", "aws", "bedrock"}},
 }
 
 var (
@@ -110,6 +113,7 @@ var lobeHubFirstPartyProviders = map[string]string{
 	"bfl":        "bfl",
 	"elevenlabs": "elevenlabs",
 	"wenxin":     "baidu",
+	"xiaomi":     "xiaomi",
 }
 
 var modelsDevFirstPartyProviders = map[string]string{
@@ -120,10 +124,12 @@ var modelsDevFirstPartyProviders = map[string]string{
 	"zhipuai":           "zhipu",
 	"zai":               "zhipu",
 	"moonshotai":        "moonshot",
+	"moonshotai-cn":     "moonshot",
 	"xai":               "xai",
 	"alibaba":           "alibaba",
 	"alibaba-cn":        "alibaba",
 	"volcengine":        "bytedance",
+	"byteplus":          "bytedance",
 	"minimax":           "minimax",
 	"minimax-cn":        "minimax",
 	"mistral":           "mistral",
@@ -131,7 +137,13 @@ var modelsDevFirstPartyProviders = map[string]string{
 	"perplexity":        "perplexity",
 	"meta":              "meta",
 	"stepfun":           "stepfun",
+	"stepfun-ai":        "stepfun",
 	"black-forest-labs": "bfl",
+	"xiaomi":            "xiaomi",
+	"baidu":             "baidu",
+	"tencent":           "tencent",
+	"baichuan":          "baichuan",
+	"01-ai":             "yi",
 }
 
 var openRouterFirstPartyPrefixes = map[string]string{
@@ -149,6 +161,7 @@ var openRouterFirstPartyPrefixes = map[string]string{
 	"tencent":           "tencent",
 	"mistralai":         "mistral",
 	"cohere":            "cohere",
+	"meta":              "meta",
 	"meta-llama":        "meta",
 	"perplexity":        "perplexity",
 	"stepfun":           "stepfun",
@@ -156,6 +169,9 @@ var openRouterFirstPartyPrefixes = map[string]string{
 	"01-ai":             "yi",
 	"black-forest-labs": "bfl",
 	"baidu":             "baidu",
+	"xiaomi":            "xiaomi",
+	"nvidia":            "nvidia",
+	"amazon":            "amazon",
 }
 
 var resellerVendorNames = map[string]bool{
@@ -255,7 +271,8 @@ func inferFirstPartyKeyByModelName(modelName string) string {
 		return "cohere"
 	case strings.HasPrefix(lower, "llama-"),
 		strings.HasPrefix(lower, "llama3"),
-		strings.HasPrefix(lower, "llama4"):
+		strings.HasPrefix(lower, "llama4"),
+		strings.HasPrefix(lower, "muse-"):
 		return "meta"
 	case strings.HasPrefix(lower, "sonar"):
 		return "perplexity"
@@ -270,9 +287,130 @@ func inferFirstPartyKeyByModelName(modelName string) string {
 		return "bfl"
 	case strings.HasPrefix(lower, "ernie-"):
 		return "baidu"
+	case strings.HasPrefix(lower, "mimo-"):
+		return "xiaomi"
+	case strings.HasPrefix(lower, "nemotron"):
+		return "nvidia"
+	case strings.HasPrefix(lower, "nova-"),
+		strings.HasPrefix(lower, "titan-"):
+		return "amazon"
 	default:
 		return ""
 	}
+}
+
+func canonicalModelKey(name string) string {
+	return strings.ToLower(strings.TrimSpace(name))
+}
+
+func isNoiseCatalogModelID(id string) bool {
+	trimmed := strings.TrimSpace(id)
+	if trimmed == "" || len(trimmed) > 128 || strings.ContainsAny(trimmed, " \t\r\n") {
+		return true
+	}
+	if strings.HasPrefix(trimmed, "~") || strings.Contains(trimmed, ":") {
+		return true
+	}
+	lower := strings.ToLower(trimmed)
+	if lower == "auto" || lower == "free" || strings.HasPrefix(lower, "openrouter/") {
+		return true
+	}
+	if strings.HasPrefix(lower, "fw-") || strings.HasPrefix(lower, "umans-") || strings.HasPrefix(lower, "abliteration-") {
+		return true
+	}
+	return strings.Contains(lower, "-abliterated") ||
+		strings.Contains(lower, "-uncensored") ||
+		strings.HasSuffix(lower, "-maas") ||
+		strings.HasSuffix(lower, "-exacto") ||
+		strings.HasSuffix(lower, "-nitro")
+}
+
+func preferCanonicalModelName(existing, candidate string, existingScore, candidateScore int) string {
+	existing = strings.TrimSpace(existing)
+	candidate = strings.TrimSpace(candidate)
+	if existing == "" {
+		return candidate
+	}
+	if candidate == "" || existing == candidate {
+		return existing
+	}
+	existingLower := existing == strings.ToLower(existing)
+	candidateLower := candidate == strings.ToLower(candidate)
+	if candidateLower && !existingLower {
+		return candidate
+	}
+	if existingLower && !candidateLower {
+		return existing
+	}
+	if candidateScore > existingScore {
+		return candidate
+	}
+	if existingScore > candidateScore {
+		return existing
+	}
+	if candidate < existing {
+		return candidate
+	}
+	return existing
+}
+
+func mergeExternalModelRecord(existing, incoming externalModelRecord) externalModelRecord {
+	primary, secondary := existing, incoming
+	if incoming.FirstPartyScore > existing.FirstPartyScore ||
+		(incoming.FirstPartyScore == existing.FirstPartyScore && existing.ProviderKey == "" && incoming.ProviderKey != "") {
+		primary, secondary = incoming, existing
+	}
+	merged := primary
+	merged.ID = preferCanonicalModelName(existing.ID, incoming.ID, existing.FirstPartyScore, incoming.FirstPartyScore)
+	if merged.ProviderKey == "" {
+		merged.ProviderKey = secondary.ProviderKey
+	}
+	if merged.RawVendor == "" || isResellerVendor(merged.RawVendor) {
+		if secondary.RawVendor != "" && !isResellerVendor(secondary.RawVendor) {
+			merged.RawVendor = secondary.RawVendor
+		}
+	}
+	if strings.TrimSpace(merged.Description) == "" {
+		merged.Description = secondary.Description
+	}
+	if merged.Type == "" || (merged.Type == "chat" && secondary.Type != "" && secondary.Type != "chat") {
+		merged.Type = secondary.Type
+	}
+	if secondary.ContextWindow > merged.ContextWindow {
+		merged.ContextWindow = secondary.ContextWindow
+	}
+	merged.Reasoning = merged.Reasoning || secondary.Reasoning
+	merged.Vision = merged.Vision || secondary.Vision
+	merged.Tools = merged.Tools || secondary.Tools
+	merged.Files = merged.Files || secondary.Files
+	merged.Search = merged.Search || secondary.Search
+	merged.AudioInput = merged.AudioInput || secondary.AudioInput
+	merged.VideoInput = merged.VideoInput || secondary.VideoInput
+	merged.OpenWeights = merged.OpenWeights || secondary.OpenWeights
+	if secondary.FirstPartyScore > merged.FirstPartyScore {
+		merged.FirstPartyScore = secondary.FirstPartyScore
+	}
+	return merged
+}
+
+func putExternalRecordByLower(byLower map[string]externalModelRecord, rec externalModelRecord) {
+	key := canonicalModelKey(rec.ID)
+	if key == "" {
+		return
+	}
+	if existing, exists := byLower[key]; exists {
+		byLower[key] = mergeExternalModelRecord(existing, rec)
+		return
+	}
+	byLower[key] = rec
+}
+
+func materializeExternalRecords(byLower map[string]externalModelRecord) map[string]externalModelRecord {
+	records := make(map[string]externalModelRecord, len(byLower))
+	for _, rec := range byLower {
+		records[rec.ID] = rec
+	}
+	return records
 }
 
 func resolveCanonicalVendor(providerKey, locale string, localVendors map[string]*model.Vendor) (string, model.Vendor, string, bool) {
@@ -489,7 +627,7 @@ func parseLobeHubTarball(tgzBytes []byte) (map[string]externalModelRecord, error
 	defer gzReader.Close()
 
 	tarReader := tar.NewReader(gzReader)
-	records := make(map[string]externalModelRecord)
+	byLower := make(map[string]externalModelRecord)
 	for {
 		hdr, err := tarReader.Next()
 		if errors.Is(err, io.EOF) {
@@ -510,18 +648,16 @@ func parseLobeHubTarball(tgzBytes []byte) (map[string]externalModelRecord, error
 			return nil, err
 		}
 		for _, item := range extractLobeHubModelsFromJS(string(content), providerKey) {
-			if item.ID == "" || len(item.ID) > 128 {
+			if isNoiseCatalogModelID(item.ID) {
 				continue
 			}
-			if _, exists := records[item.ID]; !exists {
-				records[item.ID] = item
-			}
+			putExternalRecordByLower(byLower, item)
 		}
 	}
-	if len(records) == 0 {
+	if len(byLower) == 0 {
 		return nil, errors.New("no models parsed from model-bank tarball")
 	}
-	return records, nil
+	return materializeExternalRecords(byLower), nil
 }
 
 type jsTokKind int
@@ -858,16 +994,19 @@ func fetchOpenRouterCatalog(ctx context.Context) (string, map[string]externalMod
 	if err := common.Unmarshal(raw, &payload); err != nil {
 		return url, nil, fmt.Errorf("decode openrouter models: %w", err)
 	}
-	records := make(map[string]externalModelRecord, len(payload.Data)*2)
+	byLower := make(map[string]externalModelRecord, len(payload.Data))
 	for _, item := range payload.Data {
 		id := strings.TrimSpace(item.ID)
-		if id == "" || strings.Contains(id, ":") {
+		if id == "" || strings.Contains(id, ":") || strings.HasPrefix(id, "~") {
 			continue
 		}
 		prefix, shortID, hasSlash := strings.Cut(id, "/")
 		if !hasSlash || shortID == "" {
 			shortID = id
 			prefix = ""
+		}
+		if strings.EqualFold(prefix, "openrouter") || strings.HasPrefix(prefix, "~") || isNoiseCatalogModelID(shortID) {
+			continue
 		}
 		providerKey := openRouterFirstPartyPrefixes[strings.ToLower(prefix)]
 		if inferred := inferFirstPartyKeyByModelName(shortID); inferred != "" {
@@ -908,20 +1047,21 @@ func fetchOpenRouterCatalog(ctx context.Context) (string, map[string]externalMod
 			}
 		}
 		if len(shortID) <= 128 {
-			records[shortID] = rec
+			putExternalRecordByLower(byLower, rec)
 		}
-		if strings.Contains(shortID, ".") {
+		if strings.HasPrefix(strings.ToLower(shortID), "claude-") && strings.Contains(shortID, ".") {
 			dashed := strings.ReplaceAll(shortID, ".", "-")
-			if _, exists := records[dashed]; !exists && len(dashed) <= 128 {
+			if len(dashed) <= 128 {
 				aliasRec := rec
 				aliasRec.ID = dashed
-				records[dashed] = aliasRec
+				putExternalRecordByLower(byLower, aliasRec)
 			}
 		}
 	}
-	if len(records) == 0 {
+	if len(byLower) == 0 {
 		return url, nil, errors.New("empty openrouter models response")
 	}
+	records := materializeExternalRecords(byLower)
 	writeExternalCache(cacheKey, externalCacheEntry{
 		fetchedAt: time.Now(),
 		url:       url,
@@ -970,30 +1110,46 @@ func fetchModelsDevCatalog(ctx context.Context) (string, map[string]externalMode
 	}
 	sort.Strings(providerKeys)
 
-	records := make(map[string]externalModelRecord)
+	byLower := make(map[string]externalModelRecord)
 	for _, pKey := range providerKeys {
 		pData := providers[pKey]
 		canonicalKey, isFirstParty := modelsDevFirstPartyProviders[strings.ToLower(pKey)]
-		score := 1
-		if isFirstParty {
-			score = 2
+		if !isFirstParty {
+			continue
 		}
-		for mKey, m := range pData.Models {
-			shortID := strings.TrimSpace(m.ID)
-			if shortID == "" {
-				shortID = strings.TrimSpace(mKey)
+		modelKeys := make([]string, 0, len(pData.Models))
+		for mKey := range pData.Models {
+			modelKeys = append(modelKeys, mKey)
+		}
+		sort.Strings(modelKeys)
+		for _, mKey := range modelKeys {
+			m := pData.Models[mKey]
+			rawID := strings.TrimSpace(m.ID)
+			if rawID == "" {
+				rawID = strings.TrimSpace(mKey)
 			}
+			if isNoiseCatalogModelID(rawID) {
+				continue
+			}
+			shortID := rawID
+			hasSlash := false
 			if idx := strings.LastIndex(shortID, "/"); idx >= 0 {
+				hasSlash = true
 				shortID = shortID[idx+1:]
 			}
-			if shortID == "" || len(shortID) > 128 {
+			if isNoiseCatalogModelID(shortID) {
 				continue
 			}
 			resolvedProvider := canonicalKey
-			if inferred := inferFirstPartyKeyByModelName(shortID); inferred != "" {
+			modelScore := 2
+			inferred := inferFirstPartyKeyByModelName(shortID)
+			if hasSlash && inferred == "" {
+				continue
+			}
+			if inferred != "" {
 				resolvedProvider = inferred
 				if canonicalKey == inferred {
-					score = 3
+					modelScore = 3
 				}
 			}
 			rec := externalModelRecord{
@@ -1007,7 +1163,7 @@ func fetchModelsDevCatalog(ctx context.Context) (string, map[string]externalMode
 				Tools:           m.ToolCall,
 				Files:           m.Attachment,
 				OpenWeights:     m.OpenWeights,
-				FirstPartyScore: score,
+				FirstPartyScore: modelScore,
 			}
 			for _, mod := range m.Modalities.Input {
 				switch strings.ToLower(mod) {
@@ -1028,16 +1184,13 @@ func fetchModelsDevCatalog(ctx context.Context) (string, map[string]externalMode
 			} else if containsFold(m.Modalities.Output, "audio") && !containsFold(m.Modalities.Output, "text") {
 				rec.Type = "tts"
 			}
-			existing, exists := records[shortID]
-			if !exists || rec.FirstPartyScore > existing.FirstPartyScore ||
-				(rec.FirstPartyScore == existing.FirstPartyScore && existing.Description == "" && rec.Description != "") {
-				records[shortID] = rec
-			}
+			putExternalRecordByLower(byLower, rec)
 		}
 	}
-	if len(records) == 0 {
+	if len(byLower) == 0 {
 		return url, nil, errors.New("empty models.dev catalog")
 	}
+	records := materializeExternalRecords(byLower)
 	writeExternalCache(cacheKey, externalCacheEntry{
 		fetchedAt: time.Now(),
 		url:       url,
@@ -1301,28 +1454,141 @@ func mergeMultiSourceCatalogs(
 	openRouter map[string]externalModelRecord,
 	modelsDev map[string]externalModelRecord,
 ) (map[string]model.MetadataValues, map[string]model.Vendor) {
-	allNames := make(map[string]struct{}, len(officialModels)+len(lobeHub)+len(openRouter)+len(modelsDev))
-	for name := range officialModels {
-		allNames[name] = struct{}{}
-	}
-	for name := range lobeHub {
-		allNames[name] = struct{}{}
-	}
-	for name := range openRouter {
-		allNames[name] = struct{}{}
-	}
-	for name := range modelsDev {
-		allNames[name] = struct{}{}
+	type namedOfficial struct {
+		name   string
+		values model.MetadataValues
 	}
 
-	mergedModels := make(map[string]model.MetadataValues, len(allNames))
+	mergeOfficialPair := func(existing, incoming namedOfficial) namedOfficial {
+		merged := existing
+		merged.name = preferCanonicalModelName(existing.name, incoming.name, 1, 1)
+		if strings.TrimSpace(merged.values.Description) == "" {
+			merged.values.Description = incoming.values.Description
+		}
+		if strings.TrimSpace(merged.values.Icon) == "" {
+			merged.values.Icon = incoming.values.Icon
+		}
+		if strings.TrimSpace(merged.values.Tags) == "" {
+			merged.values.Tags = incoming.values.Tags
+		}
+		if strings.TrimSpace(merged.values.Vendor) == "" || isResellerVendor(merged.values.Vendor) {
+			if strings.TrimSpace(incoming.values.Vendor) != "" && !isResellerVendor(incoming.values.Vendor) {
+				merged.values.Vendor = incoming.values.Vendor
+			}
+		}
+		if strings.TrimSpace(merged.values.Endpoints) == "" {
+			merged.values.Endpoints = incoming.values.Endpoints
+		}
+		return merged
+	}
+
+	lhByLower := make(map[string]externalModelRecord, len(lobeHub))
+	for name, rec := range lobeHub {
+		if rec.ID == "" {
+			rec.ID = name
+		}
+		putExternalRecordByLower(lhByLower, rec)
+	}
+	orByLower := make(map[string]externalModelRecord, len(openRouter))
+	for name, rec := range openRouter {
+		if rec.ID == "" {
+			rec.ID = name
+		}
+		putExternalRecordByLower(orByLower, rec)
+	}
+	mdByLower := make(map[string]externalModelRecord, len(modelsDev))
+	for name, rec := range modelsDev {
+		if rec.ID == "" {
+			rec.ID = name
+		}
+		putExternalRecordByLower(mdByLower, rec)
+	}
+
+	offByLower := make(map[string]namedOfficial, len(officialModels))
+	offSlashed := make([]namedOfficial, 0)
+	officialNames := make([]string, 0, len(officialModels))
+	for name := range officialModels {
+		officialNames = append(officialNames, name)
+	}
+	sort.Strings(officialNames)
+	for _, name := range officialNames {
+		if isNoiseCatalogModelID(name) {
+			continue
+		}
+		entry := namedOfficial{name: strings.TrimSpace(name), values: officialModels[name]}
+		if strings.Contains(entry.name, "/") {
+			offSlashed = append(offSlashed, entry)
+			continue
+		}
+		lower := canonicalModelKey(entry.name)
+		if existing, exists := offByLower[lower]; exists {
+			offByLower[lower] = mergeOfficialPair(existing, entry)
+		} else {
+			offByLower[lower] = entry
+		}
+	}
+	for _, entry := range offSlashed {
+		short := entry.name[strings.LastIndex(entry.name, "/")+1:]
+		shortLower := canonicalModelKey(short)
+		_, hasOffShort := offByLower[shortLower]
+		_, hasLHShort := lhByLower[shortLower]
+		_, hasORShort := orByLower[shortLower]
+		_, hasMDShort := mdByLower[shortLower]
+		if shortLower != "" && (hasOffShort || hasLHShort || hasORShort || hasMDShort) {
+			folded := namedOfficial{name: short, values: entry.values}
+			if existing, exists := offByLower[shortLower]; exists {
+				offByLower[shortLower] = mergeOfficialPair(existing, folded)
+			} else {
+				offByLower[shortLower] = folded
+			}
+			continue
+		}
+		lower := canonicalModelKey(entry.name)
+		if existing, exists := offByLower[lower]; exists {
+			offByLower[lower] = mergeOfficialPair(existing, entry)
+		} else {
+			offByLower[lower] = entry
+		}
+	}
+
+	allLower := make(map[string]struct{}, len(offByLower)+len(lhByLower)+len(orByLower)+len(mdByLower))
+	for key := range offByLower {
+		allLower[key] = struct{}{}
+	}
+	for key := range lhByLower {
+		allLower[key] = struct{}{}
+	}
+	for key := range orByLower {
+		allLower[key] = struct{}{}
+	}
+	for key := range mdByLower {
+		allLower[key] = struct{}{}
+	}
+
+	mergedModels := make(map[string]model.MetadataValues, len(allLower))
 	mergedVendors := make(map[string]model.Vendor)
 
-	for name := range allNames {
-		off, hasOff := officialModels[name]
-		lh, hasLH := lobeHub[name]
-		orRec, hasOR := openRouter[name]
-		md, hasMD := modelsDev[name]
+	for lowerKey := range allLower {
+		offEntry, hasOff := offByLower[lowerKey]
+		off := offEntry.values
+		lh, hasLH := lhByLower[lowerKey]
+		orRec, hasOR := orByLower[lowerKey]
+		md, hasMD := mdByLower[lowerKey]
+
+		name := ""
+		for _, candidate := range []string{lh.ID, orRec.ID, offEntry.name, md.ID} {
+			trimmed := strings.TrimSpace(candidate)
+			if trimmed != "" && trimmed == strings.ToLower(trimmed) {
+				name = trimmed
+				break
+			}
+		}
+		if name == "" {
+			name = firstNonEmpty(lh.ID, orRec.ID, offEntry.name, md.ID)
+		}
+		if name == "" {
+			continue
+		}
 
 		providerKey := inferFirstPartyKeyByModelName(name)
 		if providerKey == "" && hasLH {

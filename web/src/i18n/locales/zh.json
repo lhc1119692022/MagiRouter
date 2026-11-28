@@ -9966,6 +9966,9 @@
     "Request body JSON": "请求体 JSON",
     "Request body must be a valid JSON object.": "请求体必须是有效的 JSON 对象。",
     "Invalid JSON syntax.": "JSON 语法无效。",
-    "This model does not have {{endpoint}} configured.": "当前模型未配置 {{endpoint}} 端点。"
+    "This model does not have {{endpoint}} configured.": "当前模型未配置 {{endpoint}} 端点。",
+    "All vendors": "全部供应商",
+    "Filter by vendor": "按供应商筛选",
+    "Search models or vendors...": "搜索模型名或供应商..."
   }
 }

@@ -97,6 +97,28 @@ func GetMetadataSyncState(db *gorm.DB) (map[string]*Model, map[string]*Vendor, e
 	return modelMap, vendorMap, nil
 }
 
+func FindMetadataModel(models map[string]*Model, name string) *Model {
+	if existing, ok := models[name]; ok && existing != nil {
+		return existing
+	}
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return nil
+	}
+	var matched *Model
+	for _, item := range models {
+		if item == nil {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(item.ModelName), trimmed) {
+			if matched == nil || item.Id < matched.Id {
+				matched = item
+			}
+		}
+	}
+	return matched
+}
+
 func ValidateMetadataValues(values MetadataValues) error {
 	if utf8.RuneCountInString(values.Tags) > 255 {
 		return errors.New("Tags and task capabilities exceed 255 characters. Shorten the tags before saving.")
@@ -165,10 +187,11 @@ func ApplyMetadataSync(updates []MetadataSyncUpdate, upstreamVendors map[string]
 	}
 	seen := make(map[string]bool)
 	for _, update := range updates {
-		if seen[update.ModelName] || strings.TrimSpace(update.ModelName) == "" {
+		key := strings.ToLower(strings.TrimSpace(update.ModelName))
+		if key == "" || seen[key] {
 			return nil, errors.New("invalid or duplicate model selection")
 		}
-		seen[update.ModelName] = true
+		seen[key] = true
 		if update.RecordVersion == "" {
 			return nil, ErrMetadataSyncConflict
 		}
@@ -200,7 +223,7 @@ func ApplyMetadataSync(updates []MetadataSyncUpdate, upstreamVendors map[string]
 		}
 		// Verify the entire selection before any write, including shared vendors.
 		for _, update := range updates {
-			local := locals[update.ModelName]
+			local := FindMetadataModel(locals, update.ModelName)
 			if local != nil && local.SyncOfficial == 0 {
 				return fmt.Errorf("metadata sync is disabled for %s", update.ModelName)
 			}
@@ -229,7 +252,7 @@ func ApplyMetadataSync(updates []MetadataSyncUpdate, upstreamVendors map[string]
 					fields[field] = update.Values.Icon
 				case "tags":
 					tags, _ := SplitCatalogTaskTags(update.Values.Tags)
-					if local := locals[update.ModelName]; local != nil {
+					if local := FindMetadataModel(locals, update.ModelName); local != nil {
 						_, declaration := SplitCatalogTaskTags(local.Tags)
 						if declaration != "" {
 							if tags != "" {
@@ -283,7 +306,8 @@ func ApplyMetadataSync(updates []MetadataSyncUpdate, upstreamVendors map[string]
 				}
 				result.CreatedModels = append(result.CreatedModels, update.ModelName)
 			} else {
-				if err := tx.Model(&Model{}).Where("id = ?", locals[update.ModelName].Id).Updates(fields).Error; err != nil {
+				local := FindMetadataModel(locals, update.ModelName)
+				if err := tx.Model(&Model{}).Where("id = ?", local.Id).Updates(fields).Error; err != nil {
 					return err
 				}
 				result.UpdatedModels = append(result.UpdatedModels, update.MetadataSyncSelection)

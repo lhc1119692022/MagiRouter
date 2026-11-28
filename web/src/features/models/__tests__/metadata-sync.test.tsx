@@ -831,4 +831,89 @@ describe('metadata sync preview', () => {
     })
     client.clear()
   })
+
+  it('supports multi-token separator-tolerant search, relevance ranking, and vendor filtering', async () => {
+    const makeUpstream = (vendor: string) => ({
+      description: '',
+      icon: '',
+      tags: '',
+      vendor,
+      endpoints: '',
+      name_rule: 0,
+      status: 1,
+    })
+    const richPreview: MetadataSyncPreview = {
+      ...preview,
+      candidates: [
+        {
+          model_name: 'deepseek-v4.1-flash-1017',
+          scope: 'catalog',
+          kind: 'create',
+          record_version: 'ds-1017',
+          upstream: makeUpstream('DeepSeek'),
+          fields: [{ field: 'description', local: '', upstream: 'Snapshot' }],
+        },
+        {
+          model_name: 'deepseek-v4.1-flash',
+          scope: 'catalog',
+          kind: 'create',
+          record_version: 'ds-base',
+          upstream: makeUpstream('DeepSeek'),
+          fields: [{ field: 'description', local: '', upstream: 'Base' }],
+        },
+        {
+          model_name: 'glm-5.3',
+          scope: 'catalog',
+          kind: 'create',
+          record_version: 'glm-53',
+          upstream: makeUpstream('智谱'),
+          fields: [{ field: 'description', local: '', upstream: 'GLM' }],
+        },
+      ],
+    }
+    vi.spyOn(api, 'get').mockResolvedValue({
+      data: { success: true, data: richPreview },
+    })
+    const client = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    })
+    render(
+      <QueryClientProvider client={client}>
+        <SyncWizardDialog open onOpenChange={() => {}} />
+      </QueryClientProvider>
+    )
+    const user = userEvent.setup()
+    await user.click(
+      screen.getByRole('button', { name: 'Load metadata preview' })
+    )
+    await user.click(
+      await screen.findByRole('combobox', { name: 'Sync scope' })
+    )
+    await user.click(
+      screen.getByRole('option', { name: 'Upstream model list' })
+    )
+
+    const searchInput = screen.getByRole('textbox', { name: 'Search models' })
+    await user.type(searchInput, 'deepseek v4.1 flash')
+    const rows = within(screen.getByRole('table')).getAllByRole('row')
+    expect(rows).toHaveLength(3)
+    expect(rows[1]).toHaveTextContent('deepseek-v4.1-flash')
+    expect(rows[1]).not.toHaveTextContent('1017')
+    expect(rows[2]).toHaveTextContent('deepseek-v4.1-flash-1017')
+
+    await user.clear(searchInput)
+    await user.type(searchInput, '智谱')
+    expect(screen.getByText('glm-5.3')).toBeVisible()
+    expect(screen.queryByText('deepseek-v4.1-flash')).not.toBeInTheDocument()
+
+    await user.clear(searchInput)
+    await user.click(screen.getByRole('combobox', { name: 'Filter by vendor' }))
+    await user.click(screen.getByRole('option', { name: 'DeepSeek' }))
+    expect(screen.getByText('deepseek-v4.1-flash')).toBeVisible()
+    expect(screen.queryByText('glm-5.3')).not.toBeInTheDocument()
+    client.clear()
+  })
 })
