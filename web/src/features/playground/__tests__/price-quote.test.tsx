@@ -208,4 +208,31 @@ describe('Playground price comparison', () => {
       'Determined by the routed group'
     )
   })
+
+  it('renders a minimal unboxed icon + concise price readout for media studio footers', () => {
+    const { container, rerender } = render(
+      <PlaygroundPriceQuote
+        minimal
+        model={{ ...model, quota_type: 1, model_price: 2 }}
+        group='standard'
+        groups={groups}
+      />
+    )
+    const readout = screen.getByLabelText('Reference price')
+    expect(readout).toHaveClass('pg-price-minimal')
+    expect(readout).toHaveTextContent(/^[¥￥]7$/)
+    expect(container.querySelector('svg')).not.toBeNull()
+
+    rerender(
+      <PlaygroundPriceQuote
+        minimal
+        model={model}
+        group='standard'
+        groups={groups}
+      />
+    )
+    expect(screen.getByLabelText('Reference price')).toHaveTextContent(
+      /^[¥￥]14 \/ [¥￥]42$/
+    )
+  })
 })

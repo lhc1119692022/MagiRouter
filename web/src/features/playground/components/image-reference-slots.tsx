@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, Image as ImageIcon, Link2, X } from 'lucide-react'
+import { GripVertical, Image as ImageIcon, Link2, X } from 'lucide-react'
 import {
   useRef,
   useState,
@@ -12,8 +12,6 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 
-import type { ImageRouteResolution } from '../lib/image-routing'
-
 export interface ImageReferenceItem {
   id: string
   url: string
@@ -23,11 +21,10 @@ export interface ImageReferenceItem {
 interface ImageReferenceSlotsProps {
   references: readonly ImageReferenceItem[]
   maxReferences: number
-  route: ImageRouteResolution
   layerDecomposition?: boolean
   disabled?: boolean
   onAddUrl: (url: string, name?: string) => void
-  onMove: (index: number, direction: -1 | 1) => void
+  onReorder: (fromIndex: number, toIndex: number) => void
   onRemove: (index: number) => void
 }
 
@@ -73,31 +70,18 @@ function readImageFileAsDataUrl(file: File): Promise<string> {
   })
 }
 
-function getRouteIntentLabelKey(
-  intent: ImageRouteResolution['intent']
-): string {
-  switch (intent) {
-    case 'layer-decomposition':
-      return 'Layer decomposition'
-    case 'reference-generation':
-      return 'Reference generation'
-    case 'image-edit':
-      return 'Image edit'
-    default:
-      return 'Text to Image'
-  }
-}
-
 export function ImageReferenceSlots(props: ImageReferenceSlotsProps) {
   const { t } = useTranslation()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [urlInputOpen, setUrlInputOpen] = useState(false)
   const [urlDraft, setUrlDraft] = useState('')
   const [isDragging, setIsDragging] = useState(false)
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
+  const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null)
   const [uploadError, setUploadError] = useState<string | null>(null)
 
   const canAddMore = props.references.length < props.maxReferences
-  const intentLabel = t(getRouteIntentLabelKey(props.route.intent))
+  const canReorder = props.references.length > 1 && !props.disabled
 
   const handleFiles = async (files: FileList | null) => {
     if (!files || files.length === 0 || props.disabled) return
@@ -147,19 +131,82 @@ export function ImageReferenceSlots(props: ImageReferenceSlotsProps) {
   const handleDrop = (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault()
     setIsDragging(false)
-    if (!canAddMore || props.disabled) return
+    if (draggedIndex !== null || !canAddMore || props.disabled) return
     void handleFiles(event.dataTransfer.files)
   }
 
-  let routeHint = t('No reference images')
-  if (props.route.intent === 'layer-decomposition') {
-    routeHint = t('Layer decomposition endpoint')
-  } else if (props.route.matchedKeywords.length > 0) {
-    routeHint = t('Matched: {{keywords}}', {
-      keywords: props.route.matchedKeywords.slice(0, 3).join(' / '),
-    })
-  } else if (props.route.isFallback) {
-    routeHint = t('Edit endpoint fallback')
+  const handleItemDragStart = (
+    event: DragEvent<HTMLDivElement>,
+    index: number
+  ) => {
+    if (!canReorder) return
+    setDraggedIndex(index)
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = 'move'
+      event.dataTransfer.setData('text/plain', String(index))
+    }
+  }
+
+  const handleItemDragOver = (
+    event: DragEvent<HTMLDivElement>,
+    index: number
+  ) => {
+    if (!canReorder) return
+    event.preventDefault()
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = 'move'
+    }
+    if (dropTargetIndex !== index) {
+      setDropTargetIndex(index)
+    }
+  }
+
+  const handleItemDrop = (
+    event: DragEvent<HTMLDivElement>,
+    targetIndex: number
+  ) => {
+    if (!canReorder) return
+    event.preventDefault()
+    const rawTransfer = event.dataTransfer?.getData('text/plain')
+    const parsedTransfer =
+      rawTransfer && /^\d+$/.test(rawTransfer.trim())
+        ? Number(rawTransfer.trim())
+        : null
+    const fromIndex = draggedIndex ?? parsedTransfer
+    setDraggedIndex(null)
+    setDropTargetIndex(null)
+    if (
+      fromIndex === null ||
+      !Number.isInteger(fromIndex) ||
+      fromIndex < 0 ||
+      fromIndex >= props.references.length ||
+      fromIndex === targetIndex
+    ) {
+      return
+    }
+    props.onReorder(fromIndex, targetIndex)
+  }
+
+  const handleItemDragEnd = () => {
+    setDraggedIndex(null)
+    setDropTargetIndex(null)
+  }
+
+  const handleReorderKeyDown = (
+    event: KeyboardEvent<HTMLButtonElement>,
+    index: number
+  ) => {
+    if (!canReorder) return
+    if (event.key === 'ArrowUp' && index > 0) {
+      event.preventDefault()
+      props.onReorder(index, index - 1)
+    } else if (
+      event.key === 'ArrowDown' &&
+      index < props.references.length - 1
+    ) {
+      event.preventDefault()
+      props.onReorder(index, index + 1)
+    }
   }
 
   return (
@@ -170,7 +217,7 @@ export function ImageReferenceSlots(props: ImageReferenceSlotsProps) {
           <span
             className='pg-upload-info'
             title={t(
-              'Upload local images or paste image URLs. The endpoint is routed automatically from reference images and prompt keywords.'
+              'Upload local images or paste image URLs. Drag the handle to reorder multiple references.'
             )}
           >
             ?
@@ -187,14 +234,44 @@ export function ImageReferenceSlots(props: ImageReferenceSlotsProps) {
           return (
             <div
               key={entry.id}
-              className='pg-ref-slot is-filled'
+              className={cn(
+                'pg-ref-slot is-filled',
+                draggedIndex === index && 'is-dragging-item',
+                dropTargetIndex === index &&
+                  draggedIndex !== index &&
+                  'is-drop-target'
+              )}
               data-testid='pg-ref-slot-filled'
+              draggable={canReorder}
+              onDragStart={(event) => handleItemDragStart(event, index)}
+              onDragOver={(event) => handleItemDragOver(event, index)}
+              onDragLeave={() => {
+                if (dropTargetIndex === index) setDropTargetIndex(null)
+              }}
+              onDrop={(event) => handleItemDrop(event, index)}
+              onDragEnd={handleItemDragEnd}
             >
+              {props.references.length > 1 && (
+                <button
+                  type='button'
+                  className='pg-ref-slot-handle'
+                  data-testid='pg-ref-drag-handle'
+                  disabled={props.disabled}
+                  aria-label={t('Reorder reference image {{index}}', {
+                    index: index + 1,
+                  })}
+                  title={t('Drag to reorder (or press Arrow Up / Down)')}
+                  onKeyDown={(event) => handleReorderKeyDown(event, index)}
+                >
+                  <GripVertical size={14} aria-hidden='true' />
+                </button>
+              )}
               <div className='pg-ref-slot-thumb'>
                 <img
                   src={entry.url}
                   alt={displayName}
                   className='pg-ref-slot-img'
+                  draggable={false}
                 />
                 <span className='pg-ref-slot-idx'>#{index + 1}</span>
               </div>
@@ -205,30 +282,6 @@ export function ImageReferenceSlots(props: ImageReferenceSlotsProps) {
                 {displayName}
               </span>
               <div className='pg-ref-slot-actions'>
-                {props.references.length > 1 && (
-                  <>
-                    <button
-                      type='button'
-                      className='pg-asset-move'
-                      disabled={props.disabled || index === 0}
-                      aria-label={t('Move up')}
-                      onClick={() => props.onMove(index, -1)}
-                    >
-                      <ArrowUp size={12} aria-hidden='true' />
-                    </button>
-                    <button
-                      type='button'
-                      className='pg-asset-move'
-                      disabled={
-                        props.disabled || index === props.references.length - 1
-                      }
-                      aria-label={t('Move down')}
-                      onClick={() => props.onMove(index, 1)}
-                    >
-                      <ArrowDown size={12} aria-hidden='true' />
-                    </button>
-                  </>
-                )}
                 <button
                   type='button'
                   className='pg-asset-chip-x'
@@ -248,6 +301,7 @@ export function ImageReferenceSlots(props: ImageReferenceSlotsProps) {
             className={cn('pg-ref-slot is-empty', isDragging && 'is-dragging')}
             data-testid='pg-ref-slot-empty'
             onDragOver={(event) => {
+              if (draggedIndex !== null) return
               event.preventDefault()
               if (!props.disabled) setIsDragging(true)
             }}
@@ -341,25 +395,6 @@ export function ImageReferenceSlots(props: ImageReferenceSlotsProps) {
           {t('Layer decomposition requires exactly 1 reference image.')}
         </p>
       )}
-
-      <div
-        className='pg-route-indicator'
-        data-testid='pg-image-route-indicator'
-        aria-live='polite'
-      >
-        <span
-          className={cn(
-            'pg-route-pill',
-            props.route.endpoint === '/v1/images/edits'
-              ? 'is-edit'
-              : 'is-generate'
-          )}
-        >
-          {intentLabel}
-        </span>
-        <code className='pg-route-endpoint'>{props.route.endpoint}</code>
-        <span className='pg-route-reason'>{routeHint}</span>
-      </div>
     </div>
   )
 }

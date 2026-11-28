@@ -23,11 +23,14 @@ import { Playground } from '..'
 
 const clients: QueryClient[] = []
 
-async function renderImagePlayground(modelName: string) {
+async function renderImagePlayground(
+  modelName: string,
+  options?: { role?: number; autoSelectKey?: boolean }
+) {
   useAuthStore.getState().auth.setUser({
     id: 37,
     username: 'studio-user',
-    role: 1,
+    role: options?.role ?? 1,
     group: 'default',
   })
   const client = new QueryClient({
@@ -67,6 +70,8 @@ async function renderImagePlayground(modelName: string) {
           data: [
             {
               model_name: modelName,
+              quota_type: 1,
+              model_price: 0.01,
               input_modalities: ['text', 'image'],
               output_modalities: ['image'],
               supported_endpoint_types: ['image-generation', 'image-edits'],
@@ -116,13 +121,15 @@ async function renderImagePlayground(modelName: string) {
   const user = userEvent.setup()
   const keyPicker = await screen.findByRole('combobox', { name: 'API Key' })
   await waitFor(() => expect(keyPicker).toBeEnabled())
-  await user.click(keyPicker)
-  await user.click(await screen.findByRole('option', { name: 'Studio key' }))
-  await waitFor(() =>
-    expect(screen.getByRole('combobox', { name: 'Select model' })).toHaveValue(
-      modelName
+  if (options?.autoSelectKey !== false) {
+    await user.click(keyPicker)
+    await user.click(await screen.findByRole('option', { name: 'Studio key' }))
+    await waitFor(() =>
+      expect(
+        screen.getByRole('combobox', { name: 'Select model' })
+      ).toHaveValue(modelName)
     )
-  )
+  }
   return user
 }
 
@@ -136,8 +143,8 @@ afterEach(() => {
 })
 
 describe('Image Playground Studio', () => {
-  it('renders panel title with top Form/JSON slider, stacked API Key & Model rows, and Seedream 5.5 Ark controls', async () => {
-    const user = await renderImagePlayground('seedream-5.5')
+  it('renders clean sidebar without Parameters header/doc link/watermark/safety_id, places Save as preset right of Copy cURL, and shows minimal icon+price next to Generate', async () => {
+    const user = await renderImagePlayground('seedream-5.5', { role: 100 })
 
     expect(
       screen.getByRole('heading', { name: 'Image generation' })
@@ -153,31 +160,91 @@ describe('Image Playground Studio', () => {
     const billing = screen.getByRole('region', { name: 'Billing' })
     expect(billing.querySelectorAll('.pg-api-row')).toHaveLength(2)
 
+    expect(screen.queryByText('Parameters')).toBeNull()
     expect(
-      screen.getByRole('link', { name: /Volcengine Ark API Reference/ })
-    ).toHaveAttribute(
-      'href',
-      'https://docs.volcengine.com/docs/zh/ark/image-generation-api.md'
-    )
+      screen.queryByRole('link', { name: /Volcengine Ark API Reference/ })
+    ).toBeNull()
+    expect(screen.queryByTestId('pg-image-route-indicator')).toBeNull()
+    expect(screen.queryByRole('switch', { name: 'Watermark' })).toBeNull()
+    expect(
+      screen.queryByRole('textbox', { name: 'End-user identifier' })
+    ).toBeNull()
+
+    const copyCurlBtn = screen.getByRole('button', { name: '复制 cURL' })
+    const savePresetBtn = screen.getByRole('button', { name: 'Save as preset' })
+    expect(copyCurlBtn.parentElement).toBe(savePresetBtn.parentElement)
+    expect(
+      Boolean(
+        copyCurlBtn.compareDocumentPosition(savePresetBtn) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+      )
+    ).toBe(true)
+
+    const generateBtn = screen.getByRole('button', { name: /^Generate/ })
+    const priceReadout = screen.getByLabelText('Reference price')
+    expect(priceReadout).toHaveClass('pg-price-minimal')
+    expect(priceReadout).toHaveTextContent(/^[¥￥]0\.07$/)
+    expect(priceReadout.parentElement).toBe(generateBtn.parentElement)
+    expect(
+      Boolean(
+        priceReadout.compareDocumentPosition(generateBtn) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+      )
+    ).toBe(true)
+
     expect(screen.getByRole('button', { name: '2K' })).toHaveClass('is-active')
+    expect(screen.getByTestId('pg-resolved-pixel-size')).toHaveTextContent(
+      '2048 × 2048 px'
+    )
     expect(
       screen.getByRole('switch', { name: 'Layer decomposition' })
     ).not.toBeChecked()
-    expect(screen.getByRole('switch', { name: 'Watermark' })).toBeChecked()
+
+    await user.click(screen.getByRole('combobox', { name: 'Aspect ratio' }))
+    await user.click(await screen.findByRole('option', { name: '16:9' }))
+    expect(screen.getByTestId('pg-resolved-pixel-size')).toHaveTextContent(
+      '2816 × 1584 px'
+    )
+
+    await user.click(screen.getByRole('button', { name: '1K' }))
+    expect(screen.getByTestId('pg-resolved-pixel-size')).toHaveTextContent(
+      '1424 × 800 px'
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Custom pixels' }))
+    expect(
+      screen.getByRole('textbox', { name: 'Custom pixel size' })
+    ).toHaveValue('1424x800')
 
     await user.click(screen.getByRole('button', { name: 'JPEG' }))
     await user.click(screen.getByRole('button', { name: 'Transparent (RGBA)' }))
     expect(screen.getByRole('button', { name: 'PNG' })).toHaveClass('is-active')
   })
 
-  it('appends a new empty reference slot after each added image and routes endpoints via prompt lexicon with edit fallback', async () => {
-    const user = await renderImagePlayground('seedream-5.5')
-    const routeIndicator = screen.getByTestId('pg-image-route-indicator')
+  it('shows Select API key on the primary button when no key is chosen and expands the key dropdown on click', async () => {
+    const user = await renderImagePlayground('seedream-5.5', {
+      autoSelectKey: false,
+    })
 
-    expect(routeIndicator).toHaveTextContent('Text to Image')
-    expect(routeIndicator).toHaveTextContent('/v1/images/generations')
+    const selectKeyBtn = screen.getByRole('button', { name: 'Select API key' })
+    expect(selectKeyBtn).toBeEnabled()
+    expect(screen.queryByRole('button', { name: /^Generate/ })).toBeNull()
+
+    await user.click(selectKeyBtn)
+    const keyOption = await screen.findByRole('option', { name: 'Studio key' })
+    expect(keyOption).toBeVisible()
+    await user.click(keyOption)
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /^Generate/ })).toBeVisible()
+    )
+  })
+
+  it('adds drag handles for multiple reference images, reorders via handle/drop, and routes endpoints silently via prompt lexicon', async () => {
+    const user = await renderImagePlayground('seedream-5.5')
+    expect(screen.queryByTestId('pg-image-route-indicator')).toBeNull()
     expect(screen.getAllByTestId('pg-ref-slot-empty')).toHaveLength(1)
-    expect(screen.queryAllByTestId('pg-ref-slot-filled')).toHaveLength(0)
+    expect(screen.queryAllByTestId('pg-ref-drag-handle')).toHaveLength(0)
 
     await user.click(screen.getByRole('button', { name: 'Add image URL' }))
     await user.type(
@@ -186,31 +253,35 @@ describe('Image Playground Studio', () => {
     )
 
     expect(screen.getAllByTestId('pg-ref-slot-filled')).toHaveLength(1)
+    expect(screen.queryAllByTestId('pg-ref-drag-handle')).toHaveLength(0)
     expect(screen.getAllByTestId('pg-ref-slot-empty')).toHaveLength(1)
-
-    const promptBox = screen.getByRole('textbox', { name: /Prompt/ })
-    await user.type(promptBox, 'A calm mountain lake at sunrise')
-    expect(routeIndicator).toHaveTextContent('Image edit')
-    expect(routeIndicator).toHaveTextContent('/v1/images/edits')
-    expect(routeIndicator).toHaveTextContent('Edit endpoint fallback')
-
-    await user.clear(promptBox)
-    await user.type(promptBox, '参考这张图的画风和构图生成新场景')
-    expect(routeIndicator).toHaveTextContent('Reference generation')
-    expect(routeIndicator).toHaveTextContent('/v1/images/generations')
 
     await user.click(screen.getByRole('button', { name: 'Add image URL' }))
     await user.type(
       screen.getByPlaceholderText('Paste image URL and press Enter'),
       'https://example.com/ref-2.png{Enter}'
     )
-    expect(screen.getAllByTestId('pg-ref-slot-filled')).toHaveLength(2)
+    const filledSlots = screen.getAllByTestId('pg-ref-slot-filled')
+    expect(filledSlots).toHaveLength(2)
+    expect(screen.getAllByTestId('pg-ref-drag-handle')).toHaveLength(2)
+    expect(filledSlots[0]).toHaveTextContent('ref-1.png')
+    expect(filledSlots[1]).toHaveTextContent('ref-2.png')
     expect(screen.getAllByTestId('pg-ref-slot-empty')).toHaveLength(1)
+
+    fireEvent.keyDown(screen.getAllByTestId('pg-ref-drag-handle')[1], {
+      key: 'ArrowUp',
+    })
+    const reorderedSlots = screen.getAllByTestId('pg-ref-slot-filled')
+    expect(reorderedSlots[0]).toHaveTextContent('ref-2.png')
+    expect(reorderedSlots[1]).toHaveTextContent('ref-1.png')
+
+    const promptBox = screen.getByRole('textbox', { name: /Prompt/ })
+    await user.type(promptBox, '参考这张图的画风和构图生成新场景')
+    expect(screen.getByText('POST /v1/images/generations')).toBeVisible()
 
     await user.clear(promptBox)
     await user.type(promptBox, '把背景换成樱花街道')
-    expect(routeIndicator).toHaveTextContent('Image edit')
-    expect(routeIndicator).toHaveTextContent('/v1/images/edits')
+    expect(screen.getByText('POST /v1/images/edits')).toBeVisible()
   })
 
   it('switches the entire sidebar into an editable JSON request body, submits edited JSON, and syncs back to Form', async () => {
@@ -251,7 +322,7 @@ describe('Image Playground Studio', () => {
         model: 'seedream-5.5',
         prompt: '把背景换成海边日落',
         image: 'https://example.com/source.png',
-        size: '1.5K',
+        size: '2048x1152',
         output_format: 'png',
         background: 'transparent',
         response_format: 'url',
@@ -280,10 +351,12 @@ describe('Image Playground Studio', () => {
     expect(screen.getByRole('button', { name: '1.5K' })).toHaveClass(
       'is-active'
     )
-    expect(screen.getByRole('switch', { name: 'Watermark' })).not.toBeChecked()
+    expect(screen.getByTestId('pg-resolved-pixel-size')).toHaveTextContent(
+      '2048 × 1152 px'
+    )
   })
 
-  it('supports Seedream 5.5 layer decomposition with optional prompt and local image upload', async () => {
+  it('supports Seedream 5.5 layer decomposition end-to-end with interactive composite/solo inspector and OCR details', async () => {
     const user = await renderImagePlayground('seedream-5.5')
     vi.spyOn(api, 'post').mockResolvedValue({
       data: { success: true, data: { key: 'ark-layer-key' } },
@@ -296,11 +369,35 @@ describe('Image Playground Studio', () => {
               url: 'https://cdn.example.test/base.png',
               z_index: 0,
               name: 'Base',
+              size: '2048x1152',
             },
             {
               url: 'https://cdn.example.test/title.png',
               z_index: 1,
               name: 'Title',
+              description: 'White bold headline text at top center',
+              size: '820x160',
+              bounding_box: {
+                absolute: [614, 120, 1434, 280],
+                normalized: [300, 104, 700, 243],
+              },
+              text_recognition: {
+                text: 'SUMMER SALE',
+                lines: [
+                  {
+                    runs: [
+                      {
+                        text: 'SUMMER SALE',
+                        style: {
+                          similar_font_family: 'PingFang SC',
+                          foreground_color: '#FFFFFF',
+                          bold: true,
+                        },
+                      },
+                    ],
+                  },
+                ],
+              },
             },
           ],
         })
@@ -332,9 +429,7 @@ describe('Image Playground Studio', () => {
       expect(screen.getAllByTestId('pg-ref-slot-filled')).toHaveLength(1)
     )
     expect(screen.queryAllByTestId('pg-ref-slot-empty')).toHaveLength(0)
-    expect(screen.getByTestId('pg-image-route-indicator')).toHaveTextContent(
-      '/v1/images/generations'
-    )
+    expect(screen.getByText('POST /v1/images/generations')).toBeVisible()
 
     await user.click(screen.getByRole('switch', { name: 'Rich text OCR' }))
     await user.click(screen.getByRole('button', { name: /^Generate/ }))
@@ -354,10 +449,32 @@ describe('Image Playground Studio', () => {
       text_recognition: true,
     })
     expect(sentPayload.size).toBe('auto')
+    expect(sentPayload.watermark).toBe(false)
     expect(sentPayload).not.toHaveProperty('background')
     expect(sentPayload).not.toHaveProperty('prompt')
     expect(String(sentPayload.image)).toMatch(/^data:image\/png;base64,/)
 
-    expect(await screen.findByRole('button', { name: /Title/ })).toBeVisible()
+    const inspector = await screen.findByTestId('pg-layer-inspector')
+    expect(
+      within(inspector).getByRole('tab', { name: 'Composite' })
+    ).toHaveAttribute('aria-selected', 'true')
+    const titleRowBtn = within(inspector)
+      .getAllByRole('button', { name: /Title/ })
+      .find((btn) => btn.classList.contains('pg-layer-select-btn'))
+    expect(titleRowBtn).toBeDefined()
+    if (!titleRowBtn) {
+      throw new Error('Expected Title layer row button to be rendered')
+    }
+    await user.click(titleRowBtn)
+
+    const ocrBox = within(inspector).getByTestId('pg-layer-ocr-box')
+    expect(ocrBox).toHaveTextContent('SUMMER SALE')
+    expect(ocrBox).toHaveTextContent('PingFang SC')
+    expect(ocrBox).toHaveTextContent('#FFFFFF')
+
+    await user.click(within(inspector).getByRole('tab', { name: 'Solo layer' }))
+    expect(
+      within(inspector).getByRole('tab', { name: 'Solo layer' })
+    ).toHaveAttribute('aria-selected', 'true')
   })
 })

@@ -397,7 +397,7 @@ it.each([
       imageCount: 2,
       imageFormat: 'webp',
     },
-    change: '1024x1024',
+    change: '1:1',
     expected: { imageSize: '1024x1024' },
   },
   {
@@ -454,9 +454,19 @@ it.each([
     )
     const composer = await screen.findByDisplayValue('Editable')
     await user.type(composer, ' workspace prompt')
-    const setting = await screen.findByRole('button', { name: studio.change })
     expect(composer).toHaveFocus()
-    await user.click(setting)
+    if (studio.mode === 'image') {
+      const ratioPicker = await screen.findByRole('combobox', {
+        name: 'Aspect ratio',
+      })
+      await user.click(ratioPicker)
+      await user.click(
+        await screen.findByRole('option', { name: studio.change })
+      )
+    } else {
+      const setting = await screen.findByRole('button', { name: studio.change })
+      await user.click(setting)
+    }
     if (studio.mode === 'image') {
       await user.click(screen.getByRole('button', { name: 'Add image URL' }))
       await user.type(
@@ -519,14 +529,14 @@ it('opens the requested catalog model and uses the owner-approved key only on ex
     await screen.findByRole('combobox', { name: 'Select model' })
   ).toBeDisabled()
   expect(reveal).not.toHaveBeenCalled()
-  expect(screen.getByRole('button', { name: /Generate/ })).toBeDisabled()
+  expect(screen.getByRole('button', { name: 'Select API key' })).toBeEnabled()
   expect(screen.queryByRole('combobox', { name: 'Group' })).toBeNull()
   expect(screen.queryByText(/^~\$/)).toBeNull()
   await user.type(screen.getByRole('textbox'), 'My opt-in test prompt.')
-  expect(screen.getByRole('button', { name: /Generate/ })).toBeDisabled()
-  await user.click(screen.getByRole('combobox', { name: 'API Key' }))
+  await user.click(screen.getByRole('button', { name: 'Select API key' }))
   expect(await screen.findByRole('option', { name: 'VIP key' })).toBeVisible()
   await user.click(screen.getByRole('option', { name: 'Test key' }))
+  expect(reveal).not.toHaveBeenCalled()
   await user.click(screen.getByRole('button', { name: /Generate/ }))
   await waitFor(() =>
     expect(gateway).toHaveBeenCalledWith(

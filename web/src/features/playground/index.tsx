@@ -116,13 +116,18 @@ export function Playground(props: {
   const parametersId = useId()
   const parameterButton = useRef<HTMLButtonElement>(null)
   const keyTriggerRef = useRef<HTMLButtonElement>(null)
+  const [keyPickerOpen, setKeyPickerOpen] = useState(false)
   const closeParameters = () => {
     setParametersOpen(false)
     parameterButton.current?.focus()
   }
   const focusKeyPicker = () => {
+    keyTriggerRef.current?.scrollIntoView?.({
+      block: 'nearest',
+      behavior: 'smooth',
+    })
     keyTriggerRef.current?.focus()
-    keyTriggerRef.current?.click()
+    setKeyPickerOpen(true)
   }
   const [detailsModel, setDetailsModel] = useState('')
   const [codeOpen, setCodeOpen] = useState(false)
@@ -339,12 +344,19 @@ export function Playground(props: {
     Boolean(activeModel) &&
     (editingPreset || (!!props.preset && !selectedKey))
   const showChatComposer = chatReady || superadminAuthoringChat
+  const mediaNeedsKeySelection =
+    activeTab !== 'chat' &&
+    !selectedKey &&
+    billingKeys.eligible.length > 0 &&
+    !billingKeys.loading &&
+    !billingKeys.error
   const mediaKeyGuide =
     activeTab !== 'chat' &&
     !selectedKey &&
+    billingKeys.eligible.length === 0 &&
     !billingKeys.loading &&
     !billingKeys.error ? (
-      <PlaygroundKeyGuide hasKeys={billingKeys.eligible.length > 0} />
+      <PlaygroundKeyGuide hasKeys={false} />
     ) : null
   const mediaStatusNotice =
     activeTab !== 'chat' &&
@@ -368,7 +380,7 @@ export function Playground(props: {
   const mediaPriceQuote =
     activeTab !== 'chat' && scope && metadata ? (
       <PlaygroundPriceQuote
-        compact
+        minimal
         group={scope.group}
         groups={groups}
         model={metadata}
@@ -380,6 +392,8 @@ export function Playground(props: {
       layout={activeTab === 'chat' ? 'chat' : 'media'}
       actions={actions}
       keyTriggerRef={keyTriggerRef}
+      keyPickerOpen={keyPickerOpen}
+      onKeyPickerOpenChange={setKeyPickerOpen}
       selection={billingKeyId}
       onSelect={selectBillingKey}
       keys={billingKeys}
@@ -965,6 +979,8 @@ export function Playground(props: {
             }
             billing={renderBilling()}
             keyGuide={mediaKeyGuide}
+            needsKeySelection={mediaNeedsKeySelection}
+            onOpenKeyPicker={focusKeyPicker}
             priceQuote={mediaPriceQuote}
             statusNotice={mediaStatusNotice}
             preset={

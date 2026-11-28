@@ -2,9 +2,12 @@ import { describe, expect, it } from 'vitest'
 
 import {
   buildImageRequestPayload,
+  computePixelsFromFormula,
   createDefaultImageParams,
+  createFormulaSizeSpec,
   parseEditedJsonPayload,
   resolveImageModelProfile,
+  resolveSizeFromSpec,
   syncImageParamsFromJson,
   validateSeedreamPixelSize,
 } from '../image-model-params'
@@ -24,12 +27,58 @@ describe('resolveImageModelProfile', () => {
     expect(resolveImageModelProfile('doubao-seedream-4-0-250828').family).toBe(
       'seedream-4'
     )
-    expect(resolveImageModelProfile('gpt-image-1').family).toBe('openai')
+    expect(resolveImageModelProfile('gpt-image-1').family).toBe(
+      'openai-gpt-image'
+    )
+    expect(resolveImageModelProfile('dall-e-3').family).toBe('openai-dall-e-3')
+    expect(resolveImageModelProfile('catalog-image').family).toBe('openai')
+  })
+})
+
+describe('resolveSizeFromSpec', () => {
+  it('maps Seedream 5.5 resolution tier and aspect ratio via official pixel lookup table', () => {
+    const profile = resolveImageModelProfile('seedream-5.5')
+    expect(resolveSizeFromSpec(profile.sizeSpec, '1K', '16:9')).toBe('1424x800')
+    expect(resolveSizeFromSpec(profile.sizeSpec, '1.5K', '4:3')).toBe(
+      '1792x1344'
+    )
+    expect(resolveSizeFromSpec(profile.sizeSpec, '2K', '21:9')).toBe(
+      '3136x1344'
+    )
+  })
+
+  it('maps OpenAI gpt-image and dall-e-3 ratios cleanly and supports formula fallback for models without a table', () => {
+    const gptImage = resolveImageModelProfile('gpt-image-1')
+    expect(resolveSizeFromSpec(gptImage.sizeSpec, '1K', '3:2')).toBe(
+      '1536x1024'
+    )
+    expect(resolveSizeFromSpec(gptImage.sizeSpec, '1K', '1:1')).toBe(
+      '1024x1024'
+    )
+
+    const dalle3 = resolveImageModelProfile('dall-e-3')
+    expect(resolveSizeFromSpec(dalle3.sizeSpec, '1K', '16:9')).toBe('1792x1024')
+
+    const formulaSpec = createFormulaSizeSpec({
+      pixelRange: {
+        minPixels: 512 * 512,
+        maxPixels: 2048 * 2048,
+        minRatio: 1 / 4,
+        maxRatio: 4,
+      },
+    })
+    const computed = resolveSizeFromSpec(formulaSpec, '1K', '16:9')
+    expect(computed).toMatch(/^\d+x\d+$/)
+    const [w, h] = computed.split('x').map(Number)
+    expect(w % 64).toBe(0)
+    expect(h % 64).toBe(0)
+    expect(w / h).toBeGreaterThan(1.5)
+    expect(computePixelsFromFormula('2K', '1:1')).toBe('2048x2048')
   })
 })
 
 describe('buildImageRequestPayload', () => {
-  it('builds a Volcengine Ark Seedream 5.5 payload with single and multi-reference image semantics', () => {
+  it('builds a Volcengine Ark Seedream 5.5 payload with resolved WxH pixels, watermark off by default, and ref semantics', () => {
     const profile = resolveImageModelProfile('seedream-5.5')
     const params = createDefaultImageParams(profile)
 
@@ -43,11 +92,11 @@ describe('buildImageRequestPayload', () => {
     expect(t2i).toEqual({
       model: 'seedream-5.5',
       prompt: 'A glass teacup on linen',
-      size: '2K',
+      size: '2048x2048',
       output_format: 'png',
       background: 'auto',
       response_format: 'url',
-      watermark: true,
+      watermark: false,
     })
 
     const singleRef = buildImageRequestPayload({
@@ -55,9 +104,10 @@ describe('buildImageRequestPayload', () => {
       prompt: 'Change background to misty forest',
       references: ['https://example.com/1.png'],
       profile,
-      params,
+      params: { ...params, sizeTier: '1.5K', aspectRatio: '16:9' },
     })
     expect(singleRef.image).toBe('https://example.com/1.png')
+    expect(singleRef.size).toBe('2048x1152')
 
     const multiRef = buildImageRequestPayload({
       model: 'seedream-5.5',
@@ -99,7 +149,7 @@ describe('buildImageRequestPayload', () => {
       size: 'auto',
       output_format: 'png',
       response_format: 'url',
-      watermark: true,
+      watermark: false,
     })
     expect(payload).not.toHaveProperty('background')
     expect(payload).not.toHaveProperty('prompt')
@@ -140,7 +190,7 @@ describe('buildImageRequestPayload', () => {
       sequential_image_generation: 'auto',
       sequential_image_generation_options: { max_images: 12 },
       stream: true,
-      watermark: true,
+      watermark: false,
     })
   })
 })
@@ -172,19 +222,18 @@ describe('validateSeedreamPixelSize', () => {
 })
 
 describe('JSON payload parsing and form sync', () => {
-  it('rejects non-object JSON values and syncs valid Ark fields back to form state', () => {
+  it('rejects non-object JSON values and reverse-maps pixel dimensions back to tier + aspect ratio', () => {
     expect(parseEditedJsonPayload('[1, 2]').ok).toBe(false)
     expect(parseEditedJsonPayload('{bad').ok).toBe(false)
 
     const parsed = parseEditedJsonPayload(
       JSON.stringify({
         model: 'seedream-5.5',
-        size: '1.5K',
+        size: '2048x1152',
         output_format: 'jpeg',
         background: 'opaque',
         response_format: 'b64_json',
-        watermark: false,
-        safety_identifier: 'uid_hash_123',
+        watermark: true,
       })
     )
     expect(parsed.ok).toBe(true)
@@ -198,10 +247,10 @@ describe('JSON payload parsing and form sync', () => {
     )
     expect(synced.sizeMode).toBe('tier')
     expect(synced.sizeTier).toBe('1.5K')
+    expect(synced.aspectRatio).toBe('16:9')
     expect(synced.outputFormat).toBe('jpeg')
     expect(synced.background).toBe('opaque')
     expect(synced.responseFormat).toBe('b64_json')
-    expect(synced.watermark).toBe(false)
-    expect(synced.safetyIdentifier).toBe('uid_hash_123')
+    expect(synced.watermark).toBe(true)
   })
 })

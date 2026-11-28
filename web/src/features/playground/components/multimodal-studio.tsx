@@ -6,6 +6,7 @@ import {
   AudioLines,
   Download,
   Image as ImageIcon,
+  KeyRound,
   Loader2,
   Pause,
   Play,
@@ -39,6 +40,13 @@ import { copyToClipboard } from '@/lib/copy-to-clipboard'
 import { cn } from '@/lib/utils'
 
 import {
+  isLayerDecompositionOutput,
+  type GeneratedImageItem,
+  type LayerBoundingBox,
+  type LayerTextRecognition,
+  type LayerTextStyle,
+} from '../lib/image-layers'
+import {
   buildImageRequestPayload,
   createDefaultImageParams,
   extractReferencesFromPayload,
@@ -54,6 +62,7 @@ import {
   resolveImageRoute,
   type ImageRouteResolution,
 } from '../lib/image-routing'
+import { ImageLayerInspector } from './image-layer-inspector'
 import { ImageParameterControls } from './image-parameter-controls'
 import {
   ImageReferenceSlots,
@@ -72,6 +81,8 @@ interface MultimodalStudioProps {
   onDraftChange: (value: string) => void
   billing?: ReactNode
   keyGuide: ReactNode
+  needsKeySelection?: boolean
+  onOpenKeyPicker?: () => void
   priceQuote?: ReactNode
   statusNotice?: ReactNode
   preset?: CreationPreset
@@ -82,14 +93,6 @@ interface MultimodalStudioProps {
 interface MediaOption {
   id: string
   vendor: string
-  summary: string
-}
-
-interface GeneratedImageItem {
-  id: string
-  url: string
-  label?: string
-  size?: string
 }
 
 interface SessionRunRecord {
@@ -99,25 +102,6 @@ interface SessionRunRecord {
   status: 'done' | 'queued' | 'error'
   summary: string
   timeLabel: string
-}
-
-/**
- * Fallback copy only — never fallback *models*.
- *
- * The studio lists exactly what the live catalog exposes for the selected
- * modality; if a modality has no live model we show an explicit empty state
- * instead of inventing a model the backend cannot route.
- */
-const MODE_COPY: Record<MultimodalMode, { summary: string }> = {
-  video: {
-    summary: '视频生成模型 · 以控制台实际配置的分辨率与时长为准',
-  },
-  image: {
-    summary: '图像生成模型 · 以控制台实际配置的尺寸与质量档位为准',
-  },
-  audio: {
-    summary: '语音合成模型 · 以控制台实际配置的音色与格式为准',
-  },
 }
 
 const AUDIO_WAVE_HEIGHTS = [
@@ -180,6 +164,62 @@ function getImageIntentLabelKey(
   return 'Text to Image'
 }
 
+function parseBoxQuad(
+  raw: unknown
+): [number, number, number, number] | undefined {
+  if (!Array.isArray(raw) || raw.length !== 4) return undefined
+  const nums = raw.map((val) => Number(val))
+  if (nums.some((val) => !Number.isFinite(val))) return undefined
+  return [nums[0], nums[1], nums[2], nums[3]]
+}
+
+function parseBoundingBox(raw: unknown): LayerBoundingBox | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const record = raw as Record<string, unknown>
+  const absolute = parseBoxQuad(record.absolute)
+  const normalized = parseBoxQuad(record.normalized)
+  if (!absolute && !normalized) return undefined
+  return { absolute, normalized }
+}
+
+function parseTextRecognition(raw: unknown): LayerTextRecognition | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const record = raw as Record<string, unknown>
+  const text = typeof record.text === 'string' ? record.text.trim() : ''
+  if (!text) return undefined
+  const styles: LayerTextStyle[] = []
+  if (Array.isArray(record.lines)) {
+    for (const line of record.lines) {
+      if (!line || typeof line !== 'object') continue
+      const runs = (line as Record<string, unknown>).runs
+      if (!Array.isArray(runs)) continue
+      for (const run of runs) {
+        if (!run || typeof run !== 'object') continue
+        const rawStyle = (run as Record<string, unknown>).style
+        if (!rawStyle || typeof rawStyle !== 'object') continue
+        const styleRecord = rawStyle as Record<string, unknown>
+        styles.push({
+          similarFontFamily:
+            typeof styleRecord.similar_font_family === 'string'
+              ? styleRecord.similar_font_family
+              : undefined,
+          foregroundColor:
+            typeof styleRecord.foreground_color === 'string'
+              ? styleRecord.foreground_color
+              : undefined,
+          bold: styleRecord.bold === true,
+          italic: styleRecord.italic === true,
+          underline: styleRecord.underline === true,
+          strikethrough: styleRecord.strikethrough === true,
+          shadow: styleRecord.shadow === true,
+          translucent: styleRecord.translucent === true,
+        })
+      }
+    }
+  }
+  return { text, styles }
+}
+
 function extractGeneratedImagesFromPayload(
   payload: unknown,
   fallbackFormat: string
@@ -202,17 +242,37 @@ function extractGeneratedImagesFromPayload(
       url = `data:image/${itemFormat};base64,${entry.b64_json}`
     }
     if (!url) continue
-    let label: string | undefined
-    if (typeof entry.name === 'string' && entry.name.trim()) {
-      label = entry.name.trim()
-    } else if (typeof entry.z_index === 'number') {
-      label = entry.z_index === 0 ? 'Base' : `Layer #${entry.z_index}`
+    const zIndex =
+      typeof entry.z_index === 'number' && Number.isFinite(entry.z_index)
+        ? entry.z_index
+        : undefined
+    const name =
+      typeof entry.name === 'string' && entry.name.trim()
+        ? entry.name.trim()
+        : undefined
+    const description =
+      typeof entry.description === 'string' && entry.description.trim()
+        ? entry.description.trim()
+        : undefined
+    const background =
+      typeof entry.background === 'string' && entry.background.trim()
+        ? entry.background.trim()
+        : undefined
+    let label: string | undefined = name
+    if (!label && zIndex !== undefined) {
+      label = zIndex === 0 ? 'Base' : `Layer #${zIndex}`
     }
     results.push({
       id: `${label ?? 'img'}-${url.slice(0, 64)}-${results.length + 1}`,
       url,
       label,
       size: typeof entry.size === 'string' ? entry.size : undefined,
+      zIndex,
+      name,
+      description,
+      background,
+      boundingBox: parseBoundingBox(entry.bounding_box),
+      textRecognition: parseTextRecognition(entry.text_recognition),
     })
   }
   return results
@@ -405,6 +465,16 @@ export function MultimodalStudio(props: MultimodalStudioProps) {
     setInputView(nextView)
   }
 
+  const handleOpenKeyPicker = () => {
+    if (inputView === 'json') {
+      syncFromJsonRef.current?.()
+      setInputView('form')
+      window.setTimeout(() => props.onOpenKeyPicker?.(), 0)
+      return
+    }
+    props.onOpenKeyPicker?.()
+  }
+
   const promptOptional = props.mode === 'image' && layerDecompositionActive
 
   return (
@@ -476,6 +546,8 @@ export function MultimodalStudio(props: MultimodalStudioProps) {
               draft={props.draft}
               onDraftChange={props.onDraftChange}
               keyGuide={props.keyGuide}
+              needsKeySelection={props.needsKeySelection}
+              onOpenKeyPicker={handleOpenKeyPicker}
               priceQuote={props.priceQuote}
               statusNotice={props.statusNotice}
               preset={props.preset}
@@ -524,7 +596,6 @@ function MediaSession(
   const activeModel: MediaOption = {
     id: current?.model_name ?? '',
     vendor: current?.vendor_name ?? '',
-    summary: current?.description?.trim() || MODE_COPY[mode].summary,
   }
 
   const imageProfile = useMemo(
@@ -832,10 +903,9 @@ function MediaSession(
   const insufficientReferences =
     presetRequiresReference || layerNeedsSingleReference || videoNeedsReference
 
-  const invalidSeedreamPixels =
+  const invalidCustomPixels =
     mode === 'image' &&
     props.inputView === 'form' &&
-    imageProfile.isSeedream &&
     !layerDecompositionEnabled &&
     imageParams.sizeMode === 'pixels' &&
     !validateSeedreamPixelSize(imageParams.pixelSize, imageProfile).valid
@@ -899,7 +969,7 @@ function MediaSession(
     blockingReason = t('Add reference materials first ({{count}} required).', {
       count: 1,
     })
-  } else if (invalidSeedreamPixels) {
+  } else if (invalidCustomPixels) {
     blockingReason = t(
       'Total pixels are outside the supported range for this model.'
     )
@@ -945,15 +1015,26 @@ function MediaSession(
     setShowRefInput(false)
   }
 
-  const moveReference = (index: number, direction: -1 | 1) => {
-    const target = index + direction
-    if (target < 0 || target >= references.length) return
+  const reorderReference = (fromIndex: number, toIndex: number) => {
+    if (
+      fromIndex < 0 ||
+      toIndex < 0 ||
+      fromIndex >= references.length ||
+      toIndex >= references.length ||
+      fromIndex === toIndex
+    ) {
+      return
+    }
     setReferences((prev) => {
       const next = [...prev]
-      const [moved] = next.splice(index, 1)
-      next.splice(target, 0, moved)
+      const [moved] = next.splice(fromIndex, 1)
+      next.splice(toIndex, 0, moved)
       return next
     })
+  }
+
+  const moveReference = (index: number, direction: -1 | 1) => {
+    reorderReference(index, index + direction)
   }
 
   const removeReference = (index: number) => {
@@ -1008,7 +1089,7 @@ function MediaSession(
       pendingRun.current ||
       !selectedKey ||
       insufficientReferences ||
-      invalidSeedreamPixels ||
+      invalidCustomPixels ||
       jsonInvalid ||
       !activePayloadForSend ||
       !supportedSceneModel ||
@@ -1186,7 +1267,7 @@ function MediaSession(
       ]
         .filter(Boolean)
         .join(' · ')
-    : `${imageParams.pixelSize} · ${imageParams.imageCount} 张 · ${imageParams.outputFormat}`
+    : `${activeImageSize} · ${imageParams.imageCount} 张 · ${imageParams.outputFormat}`
 
   const estSpeechSeconds = Math.max(
     3,
@@ -1196,6 +1277,19 @@ function MediaSession(
   const activeWaveBars = Math.round(audioProgress * AUDIO_WAVE_HEIGHTS.length)
   const activePreviewImage =
     generatedImages[selectedImageIndex] ?? generatedImages[0]
+  const isLayerOutput =
+    mode === 'image' &&
+    generatedImages.length > 0 &&
+    isLayerDecompositionOutput(generatedImages)
+  let stageIdleDescription =
+    '调整左侧参数会同步更新规格、预估费用与请求体；提交后将使用所选密钥真实调用网关并写入日志。'
+  if (videoTaskInfo) {
+    stageIdleDescription = `当前状态：${videoTaskInfo.statusText}。异步渲染结果与真实扣费明细将自动写入调用日志。`
+  } else if (mode === 'image' && layerDecompositionEnabled) {
+    stageIdleDescription = t(
+      'Layer decomposition splits 1 reference image into a base canvas plus transparent RGBA layers with coordinates and optional OCR text.'
+    )
+  }
 
   const jsonEditorView = (
     <div className='pg-json-panel'>
@@ -1260,9 +1354,53 @@ function MediaSession(
     promptReady &&
     keyAllowed &&
     !insufficientReferences &&
-    !invalidSeedreamPixels &&
+    !invalidCustomPixels &&
     !jsonInvalid &&
     supportedSceneModel
+
+  const showSelectKeyAction = Boolean(props.needsKeySelection && !keyAllowed)
+
+  const renderPrimaryActionButton = (compactEmpty?: boolean) => {
+    if (showSelectKeyAction) {
+      return (
+        <button
+          type='button'
+          className={cn(
+            'el-btn el-btn-sm el-btn-primary',
+            compactEmpty && 'w-full justify-center'
+          )}
+          onClick={() => props.onOpenKeyPicker?.()}
+        >
+          <KeyRound size={14} aria-hidden='true' />
+          <span>{t('Select API key')}</span>
+        </button>
+      )
+    }
+    if (!hasModels) {
+      return (
+        <Button type='button' disabled>
+          {t('Generate')}
+        </Button>
+      )
+    }
+    return (
+      <button
+        type='button'
+        disabled={!canSubmitRequest}
+        className='el-btn el-btn-sm el-btn-primary'
+        onClick={() => void handleSubmit()}
+      >
+        {runStatus === 'running' ? (
+          <>
+            <Loader2 size={14} className='animate-spin' />
+            <span>{t('Generating...')}</span>
+          </>
+        ) : (
+          <span>{t('Generate')} →</span>
+        )}
+      </button>
+    )
+  }
 
   if (!hasModels) {
     return (
@@ -1273,9 +1411,7 @@ function MediaSession(
           <div className='pg-empty-multimodal'>
             {props.statusNotice}
             {props.keyGuide}
-            <Button type='button' disabled>
-              {t('Generate')}
-            </Button>
+            {renderPrimaryActionButton(true)}
           </div>
         )}
         {props.inputView === 'json' &&
@@ -1283,9 +1419,7 @@ function MediaSession(
           createPortal(
             <div className='pg-cost-footer'>
               {props.keyGuide}
-              <Button type='button' disabled>
-                {t('Generate')}
-              </Button>
+              {renderPrimaryActionButton(true)}
             </div>,
             props.footerSlot
           )}
@@ -1302,11 +1436,12 @@ function MediaSession(
   const capturePreset = () => {
     const model = activeModel.id
     if (mode === 'image') {
+      const currentImageSize = getActiveImageSize(imageProfile, imageParams)
       const normalizedPresetSize: '1024x1024' | '1024x1536' | '1536x1024' =
-        imageParams.pixelSize === '1024x1024' ||
-        imageParams.pixelSize === '1024x1536' ||
-        imageParams.pixelSize === '1536x1024'
-          ? imageParams.pixelSize
+        currentImageSize === '1024x1024' ||
+        currentImageSize === '1024x1536' ||
+        currentImageSize === '1536x1024'
+          ? currentImageSize
           : '1536x1024'
       const normalizedCount: 1 | 2 | 4 =
         imageParams.imageCount === 2 || imageParams.imageCount === 4
@@ -1362,27 +1497,13 @@ function MediaSession(
             <ImageReferenceSlots
               references={references}
               maxReferences={maxImageReferences}
-              route={formImageRoute}
               layerDecomposition={layerDecompositionEnabled}
               disabled={runStatus === 'running'}
               onAddUrl={appendReferenceItem}
-              onMove={moveReference}
+              onReorder={reorderReference}
               onRemove={removeReference}
             />
           )}
-
-          <div className='pg-model-section'>
-            <div className='pg-model-head-row'>
-              <span className='pg-field-label'>{t('Parameters')}</span>
-              {props.canSavePresets && (
-                <SavePresetAction
-                  available={supportedSceneModel}
-                  capture={capturePreset}
-                />
-              )}
-            </div>
-            <span className='pg-field-hint'>{activeModel.summary}</span>
-          </div>
 
           <div className='pg-params-stack'>
             {props.mode === 'video' && (
@@ -1692,18 +1813,7 @@ function MediaSession(
       {props.footerSlot &&
         createPortal(
           <div className='pg-cost-footer'>
-            {props.priceQuote && (
-              <div className='pg-cost-price-bar'>{props.priceQuote}</div>
-            )}
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: '8px',
-                flexWrap: 'nowrap',
-              }}
-            >
+            <div className='pg-cost-footer-row'>
               <button
                 type='button'
                 className='el-btn el-btn-xs el-btn-ghost'
@@ -1711,21 +1821,10 @@ function MediaSession(
               >
                 {t('Reset')}
               </button>
-              <button
-                type='button'
-                disabled={!canSubmitRequest}
-                className='el-btn el-btn-sm el-btn-primary'
-                onClick={() => void handleSubmit()}
-              >
-                {runStatus === 'running' ? (
-                  <>
-                    <Loader2 size={14} className='animate-spin' />
-                    <span>{t('Generating...')}</span>
-                  </>
-                ) : (
-                  <span>{t('Generate')} →</span>
-                )}
-              </button>
+              <div className='pg-cost-footer-right'>
+                {props.priceQuote}
+                {renderPrimaryActionButton()}
+              </div>
             </div>
             {props.keyGuide}
             {keyAllowed && blockingReason && (
@@ -1782,6 +1881,13 @@ function MediaSession(
               >
                 {copiedKey === 'stage-curl' ? '已复制' : '复制 cURL'}
               </button>
+              {props.canSavePresets && (
+                <SavePresetAction
+                  available={supportedSceneModel}
+                  capture={capturePreset}
+                  className='pg-stage-preset-btn'
+                />
+              )}
             </div>
           </div>
 
@@ -1820,233 +1926,165 @@ function MediaSession(
             </div>
           )}
 
-          {mode === 'audio' ? (
-            <div className='pg-audio-stage' id='pg-audio-stage'>
-              <div className='pg-audio-head'>
-                <div className='pg-audio-identity'>
-                  <span
-                    className={cn(
-                      'pg-audio-orb',
-                      isAudioPlaying && 'is-playing'
-                    )}
-                  >
-                    <AudioLines size={18} />
-                  </span>
-                  <div>
-                    <div className='pg-audio-title'>音色 · {voice}</div>
-                    <div className='pg-audio-sub'>
-                      {activeModel.id} · 拟真语音合成工作台
-                    </div>
-                  </div>
-                </div>
-                <div className='pg-audio-pills'>
-                  <span className='el-pill tabular-nums'>
-                    {audioFormat.toUpperCase()}
-                  </span>
-                  <span className='el-pill tabular-nums'>
-                    {speed.toFixed(2)}x
-                  </span>
-                  <span className='el-pill tabular-nums'>
-                    ~{formatClock(displayDurationSec)}
-                  </span>
-                </div>
-              </div>
-
-              <div className='pg-audio-player'>
-                <div className='pg-audio-wave-row'>
-                  <button
-                    type='button'
-                    className='pg-audio-play-btn'
-                    disabled={!audioUrl}
-                    aria-label={isAudioPlaying ? '暂停音频' : '播放音频'}
-                    title={audioUrl ? '播放或暂停音频' : '请先点击提交生成语音'}
-                    onClick={handleToggleAudioPlay}
-                  >
-                    {isAudioPlaying ? <Pause size={16} /> : <Play size={16} />}
-                  </button>
-                  <div className='pg-audio-wave'>
-                    {AUDIO_WAVE_HEIGHTS.map((heightPct, barIdx) => (
+          {(() => {
+            if (mode === 'audio') {
+              return (
+                <div className='pg-audio-stage' id='pg-audio-stage'>
+                  <div className='pg-audio-head'>
+                    <div className='pg-audio-identity'>
                       <span
-                        key={`wave-bar-${barIdx + 1}-${heightPct}`}
                         className={cn(
-                          'pg-audio-bar',
-                          barIdx < activeWaveBars && 'is-played'
+                          'pg-audio-orb',
+                          isAudioPlaying && 'is-playing'
                         )}
-                        style={{ height: `${heightPct}%` }}
-                      />
-                    ))}
-                  </div>
-                  <span className='pg-audio-time'>
-                    {formatClock(audioProgress * displayDurationSec)} /{' '}
-                    {formatClock(displayDurationSec)}
-                  </span>
-                </div>
-
-                {audioUrl && (
-                  <audio
-                    ref={audioElementRef}
-                    src={audioUrl}
-                    onLoadedMetadata={(event) => {
-                      const secs = event.currentTarget.duration
-                      if (Number.isFinite(secs) && secs > 0) {
-                        setAudioDurationSec(secs)
-                      }
-                    }}
-                    onTimeUpdate={(event) => {
-                      const current = event.currentTarget.currentTime
-                      const total = event.currentTarget.duration
-                      if (Number.isFinite(total) && total > 0) {
-                        setAudioProgress(current / total)
-                      }
-                    }}
-                    onEnded={() => {
-                      setIsAudioPlaying(false)
-                      setAudioProgress(1)
-                    }}
-                    className='w-full'
-                    controls
-                  />
-                )}
-
-                <div className='pg-audio-transport'>
-                  <span className='pg-field-hint'>
-                    {audioUrl
-                      ? '语音已通过当前密钥实时合成，可直接试听或下载。'
-                      : '点击左侧「提交生成 →」将实时调用 /v1/audio/speech 合成可播放音频。'}
-                  </span>
-                  {audioUrl && (
-                    <a
-                      href={audioUrl}
-                      download={`magirouter-${voice}.${audioFormat}`}
-                      className='el-btn el-btn-xs el-btn-white'
-                    >
-                      <Download size={12} />
-                      <span>下载 {audioFormat.toUpperCase()}</span>
-                    </a>
-                  )}
-                </div>
-              </div>
-
-              <div className='pg-audio-card'>
-                <div className='pg-audio-card-head'>
-                  <span>待合成朗读脚本 · {effectivePrompt.length} 字符</span>
-                  <button
-                    type='button'
-                    className='el-btn el-btn-xs el-btn-white'
-                    onClick={() =>
-                      void copyWithFeedback('audio-script', effectivePrompt)
-                    }
-                  >
-                    {copiedKey === 'audio-script' ? '已复制' : '复制文案'}
-                  </button>
-                </div>
-                <p className='pg-audio-script'>{effectivePrompt}</p>
-                {instructions.trim() && (
-                  <div className='pg-audio-cue'>
-                    语气指令：{instructions.trim()}
-                  </div>
-                )}
-              </div>
-            </div>
-          ) : (
-            <div className='create-stage-box' id='create-stage-box'>
-              {mode === 'image' && activePreviewImage && (
-                <>
-                  <img
-                    src={activePreviewImage.url}
-                    alt={activePreviewImage.label || effectivePrompt}
-                    className='create-stage-art bg-black/80 object-contain'
-                  />
-                  <div
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      gap: '10px',
-                      flexWrap: 'wrap',
-                    }}
-                  >
-                    <span className='sr-card-route-tag'>
-                      IMAGE · {activeModel.id}
-                      {activePreviewImage.label
-                        ? ` · ${activePreviewImage.label}`
-                        : ''}
-                      {activePreviewImage.size
-                        ? ` · ${activePreviewImage.size}`
-                        : ''}
-                    </span>
-                    <a
-                      href={activePreviewImage.url}
-                      target='_blank'
-                      rel='noreferrer'
-                      download={`magirouter-image.${imageParams.outputFormat}`}
-                      className='sr-card-route-tag no-underline'
-                    >
-                      下载原图 ↗
-                    </a>
-                  </div>
-                  {generatedImages.length > 1 ? (
-                    <div className='pg-stage-thumb-strip'>
-                      {generatedImages.map((item, idx) => (
-                        <button
-                          key={item.id}
-                          type='button'
-                          onClick={() => setSelectedImageIndex(idx)}
-                          className={cn(
-                            'pg-stage-thumb',
-                            idx === selectedImageIndex && 'is-active'
-                          )}
-                        >
-                          <img
-                            src={item.url}
-                            alt={item.label || `#${idx + 1}`}
-                          />
-                          <span>{item.label || `#${idx + 1}`}</span>
-                        </button>
-                      ))}
+                      >
+                        <AudioLines size={18} />
+                      </span>
+                      <div>
+                        <div className='pg-audio-title'>音色 · {voice}</div>
+                        <div className='pg-audio-sub'>
+                          {activeModel.id} · 拟真语音合成工作台
+                        </div>
+                      </div>
                     </div>
-                  ) : (
-                    <div />
-                  )}
-                </>
-              )}
-              {mode === 'video' && generatedVideoUrl && (
-                <>
-                  <video
-                    src={generatedVideoUrl}
-                    controls
-                    autoPlay
-                    loop
-                    className='create-stage-art bg-black object-contain'
-                  />
-                  <div
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      gap: '10px',
-                    }}
-                  >
-                    <span className='sr-card-route-tag'>
-                      VIDEO · {activeModel.id}
-                    </span>
-                    <a
-                      href={generatedVideoUrl}
-                      target='_blank'
-                      rel='noreferrer'
-                      className='sr-card-route-tag no-underline'
-                    >
-                      下载视频 ↗
-                    </a>
+                    <div className='pg-audio-pills'>
+                      <span className='el-pill tabular-nums'>
+                        {audioFormat.toUpperCase()}
+                      </span>
+                      <span className='el-pill tabular-nums'>
+                        {speed.toFixed(2)}x
+                      </span>
+                      <span className='el-pill tabular-nums'>
+                        ~{formatClock(displayDurationSec)}
+                      </span>
+                    </div>
                   </div>
-                  <div />
-                </>
-              )}
-              {!(mode === 'image' && generatedImages.length > 0) &&
-                !(mode === 'video' && generatedVideoUrl) && (
+
+                  <div className='pg-audio-player'>
+                    <div className='pg-audio-wave-row'>
+                      <button
+                        type='button'
+                        className='pg-audio-play-btn'
+                        disabled={!audioUrl}
+                        aria-label={isAudioPlaying ? '暂停音频' : '播放音频'}
+                        title={
+                          audioUrl ? '播放或暂停音频' : '请先点击提交生成语音'
+                        }
+                        onClick={handleToggleAudioPlay}
+                      >
+                        {isAudioPlaying ? (
+                          <Pause size={16} />
+                        ) : (
+                          <Play size={16} />
+                        )}
+                      </button>
+                      <div className='pg-audio-wave'>
+                        {AUDIO_WAVE_HEIGHTS.map((heightPct, barIdx) => (
+                          <span
+                            key={`wave-bar-${barIdx + 1}-${heightPct}`}
+                            className={cn(
+                              'pg-audio-bar',
+                              barIdx < activeWaveBars && 'is-played'
+                            )}
+                            style={{ height: `${heightPct}%` }}
+                          />
+                        ))}
+                      </div>
+                      <span className='pg-audio-time'>
+                        {formatClock(audioProgress * displayDurationSec)} /{' '}
+                        {formatClock(displayDurationSec)}
+                      </span>
+                    </div>
+
+                    {audioUrl && (
+                      <audio
+                        ref={audioElementRef}
+                        src={audioUrl}
+                        onLoadedMetadata={(event) => {
+                          const secs = event.currentTarget.duration
+                          if (Number.isFinite(secs) && secs > 0) {
+                            setAudioDurationSec(secs)
+                          }
+                        }}
+                        onTimeUpdate={(event) => {
+                          const current = event.currentTarget.currentTime
+                          const total = event.currentTarget.duration
+                          if (Number.isFinite(total) && total > 0) {
+                            setAudioProgress(current / total)
+                          }
+                        }}
+                        onEnded={() => {
+                          setIsAudioPlaying(false)
+                          setAudioProgress(1)
+                        }}
+                        className='w-full'
+                        controls
+                      />
+                    )}
+
+                    <div className='pg-audio-transport'>
+                      <span className='pg-field-hint'>
+                        {audioUrl
+                          ? '语音已通过当前密钥实时合成，可直接试听或下载。'
+                          : '点击左侧「提交生成 →」将实时调用 /v1/audio/speech 合成可播放音频。'}
+                      </span>
+                      {audioUrl && (
+                        <a
+                          href={audioUrl}
+                          download={`magirouter-${voice}.${audioFormat}`}
+                          className='el-btn el-btn-xs el-btn-white'
+                        >
+                          <Download size={12} />
+                          <span>下载 {audioFormat.toUpperCase()}</span>
+                        </a>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className='pg-audio-card'>
+                    <div className='pg-audio-card-head'>
+                      <span>
+                        待合成朗读脚本 · {effectivePrompt.length} 字符
+                      </span>
+                      <button
+                        type='button'
+                        className='el-btn el-btn-xs el-btn-white'
+                        onClick={() =>
+                          void copyWithFeedback('audio-script', effectivePrompt)
+                        }
+                      >
+                        {copiedKey === 'audio-script' ? '已复制' : '复制文案'}
+                      </button>
+                    </div>
+                    <p className='pg-audio-script'>{effectivePrompt}</p>
+                    {instructions.trim() && (
+                      <div className='pg-audio-cue'>
+                        语气指令：{instructions.trim()}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )
+            }
+            if (isLayerOutput) {
+              return (
+                <ImageLayerInspector
+                  items={generatedImages}
+                  selectedIndex={selectedImageIndex}
+                  outputFormat={imageParams.outputFormat}
+                  onSelectIndex={setSelectedImageIndex}
+                />
+              )
+            }
+            return (
+              <div className='create-stage-box' id='create-stage-box'>
+                {mode === 'image' && activePreviewImage && (
                   <>
-                    <StageArtwork mode={mode} />
-                    <div className='create-stage-scrim' />
+                    <img
+                      src={activePreviewImage.url}
+                      alt={activePreviewImage.label || effectivePrompt}
+                      className='create-stage-art bg-black/80 object-contain'
+                    />
                     <div
                       style={{
                         display: 'flex',
@@ -2057,55 +2095,144 @@ function MediaSession(
                       }}
                     >
                       <span className='sr-card-route-tag'>
-                        {stageModeBadge}
+                        IMAGE · {activeModel.id}
+                        {activePreviewImage.label
+                          ? ` · ${activePreviewImage.label}`
+                          : ''}
+                        {activePreviewImage.size
+                          ? ` · ${activePreviewImage.size}`
+                          : ''}
                       </span>
-                      <span className='sr-card-route-tag tabular-nums'>
-                        {mode === 'video'
-                          ? `${resolution} · ${duration}s · ${aspectRatio}`
-                          : imageStageSpec}
-                      </span>
+                      <a
+                        href={activePreviewImage.url}
+                        target='_blank'
+                        rel='noreferrer'
+                        download={`magirouter-image.${imageParams.outputFormat}`}
+                        className='sr-card-route-tag no-underline'
+                      >
+                        下载原图 ↗
+                      </a>
                     </div>
-
-                    <div>
-                      <h3
-                        style={{
-                          margin: 0,
-                          fontSize: '19px',
-                          fontWeight: 500,
-                          letterSpacing: '-0.02em',
-                        }}
-                      >
-                        {videoTaskInfo
-                          ? `异步任务已提交 · ${videoTaskInfo.taskId}`
-                          : `${activeModel.id} · ${props.mode === 'video' ? '视频生成预览' : '图像生成预览'}`}
-                      </h3>
-                      <p
-                        style={{
-                          margin: '8px 0 0',
-                          fontSize: '13px',
-                          color: 'rgba(255,255,255,0.82)',
-                          lineHeight: 1.55,
-                        }}
-                      >
-                        {videoTaskInfo
-                          ? `当前状态：${videoTaskInfo.statusText}。异步渲染结果与真实扣费明细将自动写入调用日志。`
-                          : '调整左侧参数会同步更新规格、预估费用与请求体；提交后将使用所选密钥真实调用网关并写入日志。'}
-                      </p>
-                      {videoTaskInfo && (
-                        <div style={{ marginTop: '10px' }}>
-                          <Link
-                            to='/usage-logs'
-                            className='sr-card-route-tag no-underline'
+                    {generatedImages.length > 1 ? (
+                      <div className='pg-stage-thumb-strip'>
+                        {generatedImages.map((item, idx) => (
+                          <button
+                            key={item.id}
+                            type='button'
+                            onClick={() => setSelectedImageIndex(idx)}
+                            className={cn(
+                              'pg-stage-thumb',
+                              idx === selectedImageIndex && 'is-active'
+                            )}
                           >
-                            前往任务日志查看进度 →
-                          </Link>
-                        </div>
-                      )}
-                    </div>
+                            <img
+                              src={item.url}
+                              alt={item.label || `#${idx + 1}`}
+                            />
+                            <span>{item.label || `#${idx + 1}`}</span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <div />
+                    )}
                   </>
                 )}
-            </div>
-          )}
+                {mode === 'video' && generatedVideoUrl && (
+                  <>
+                    <video
+                      src={generatedVideoUrl}
+                      controls
+                      autoPlay
+                      loop
+                      className='create-stage-art bg-black object-contain'
+                    />
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        gap: '10px',
+                      }}
+                    >
+                      <span className='sr-card-route-tag'>
+                        VIDEO · {activeModel.id}
+                      </span>
+                      <a
+                        href={generatedVideoUrl}
+                        target='_blank'
+                        rel='noreferrer'
+                        className='sr-card-route-tag no-underline'
+                      >
+                        下载视频 ↗
+                      </a>
+                    </div>
+                    <div />
+                  </>
+                )}
+                {!(mode === 'image' && generatedImages.length > 0) &&
+                  !(mode === 'video' && generatedVideoUrl) && (
+                    <>
+                      <StageArtwork mode={mode} />
+                      <div className='create-stage-scrim' />
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          gap: '10px',
+                          flexWrap: 'wrap',
+                        }}
+                      >
+                        <span className='sr-card-route-tag'>
+                          {stageModeBadge}
+                        </span>
+                        <span className='sr-card-route-tag tabular-nums'>
+                          {mode === 'video'
+                            ? `${resolution} · ${duration}s · ${aspectRatio}`
+                            : imageStageSpec}
+                        </span>
+                      </div>
+
+                      <div>
+                        <h3
+                          style={{
+                            margin: 0,
+                            fontSize: '19px',
+                            fontWeight: 500,
+                            letterSpacing: '-0.02em',
+                          }}
+                        >
+                          {videoTaskInfo
+                            ? `异步任务已提交 · ${videoTaskInfo.taskId}`
+                            : `${activeModel.id} · ${props.mode === 'video' ? '视频生成预览' : '图像生成预览'}`}
+                        </h3>
+                        <p
+                          style={{
+                            margin: '8px 0 0',
+                            fontSize: '13px',
+                            color: 'rgba(255,255,255,0.82)',
+                            lineHeight: 1.55,
+                          }}
+                        >
+                          {stageIdleDescription}
+                        </p>
+                        {videoTaskInfo && (
+                          <div style={{ marginTop: '10px' }}>
+                            <Link
+                              to='/usage-logs'
+                              className='sr-card-route-tag no-underline'
+                            >
+                              前往任务日志查看进度 →
+                            </Link>
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
+              </div>
+            )
+          })()}
 
           {sessionRuns.length > 0 && (
             <div

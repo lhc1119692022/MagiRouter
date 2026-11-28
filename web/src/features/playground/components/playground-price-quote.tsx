@@ -1,3 +1,4 @@
+import { Coins } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import {
@@ -78,22 +79,41 @@ export function PlaygroundPriceQuote(props: {
   group: string
   groups: GroupOption[]
   compact?: boolean
+  minimal?: boolean
 }) {
   const { t, i18n } = useTranslation()
   const { status } = useStatus()
-  const { model, group, compact = false } = props
-  const renderFallback = (label: string) =>
-    compact ? (
-      <span
-        className='pg-price-compact'
-        aria-label={t('Reference price')}
-        title={label}
-      >
-        {label}
-      </span>
-    ) : (
-      <span>{label}</span>
-    )
+  const { model, group, compact = false, minimal = false } = props
+  const renderFallback = (label: string) => {
+    if (minimal) {
+      return (
+        <span
+          className='pg-price-minimal is-muted'
+          aria-label={t('Reference price')}
+          title={label}
+        >
+          <Coins
+            size={14}
+            className='pg-price-minimal-icon'
+            aria-hidden='true'
+          />
+          <span className='pg-price-minimal-value'>{label}</span>
+        </span>
+      )
+    }
+    if (compact) {
+      return (
+        <span
+          className='pg-price-compact'
+          aria-label={t('Reference price')}
+          title={label}
+        >
+          {label}
+        </span>
+      )
+    }
+    return <span>{label}</span>
+  }
   const multiplier = props.groups.find(
     (option) => option.value === group
   )?.ratio
@@ -199,7 +219,7 @@ export function PlaygroundPriceQuote(props: {
   const hasList = Boolean(
     source && quotes.some((line) => validAmount(line.listUSD))
   )
-  if (compact) {
+  if (compact || minimal) {
     const sharedUnit = quotes.every((line) => line.unit === quotes[0].unit)
       ? quotes[0].unit
       : null
@@ -215,6 +235,35 @@ export function PlaygroundPriceQuote(props: {
           ? formatQuotedAmount(line.listUSD, 'USD', numbers)
           : undefined,
     }))
+    const platformTitle = `${t('Platform price')} · CNY: ${formattedLines
+      .map((line) => `${line.label} ${line.platformCNY} / ${line.unit}`)
+      .join(' · ')}`
+    const listParts = formattedLines
+      .filter((line) => line.listedUSD)
+      .map((line) => `${line.label} ${line.listedUSD} / ${line.unit}`)
+    const tooltip = hasList
+      ? `${platformTitle} | ${t('Publisher list price')}: ${listParts.join(' · ')}`
+      : `${platformTitle} | ${t('No published list price')}`
+    if (minimal) {
+      const minimalValue =
+        formattedLines.length === 1
+          ? formattedLines[0].platformCNY
+          : formattedLines.map((line) => line.platformCNY).join(' / ')
+      return (
+        <span
+          className='pg-price-minimal tabular-nums'
+          aria-label={t('Reference price')}
+          title={tooltip}
+        >
+          <Coins
+            size={14}
+            className='pg-price-minimal-icon'
+            aria-hidden='true'
+          />
+          <span className='pg-price-minimal-value'>{minimalValue}</span>
+        </span>
+      )
+    }
     let summaryText: string
     if (
       sharedUnit &&
@@ -229,15 +278,6 @@ export function PlaygroundPriceQuote(props: {
         .map((line) => `${line.label} ${line.platformCNY} / ${line.unit}`)
         .join(' · ')
     }
-    const platformTitle = `${t('Platform price')} · CNY: ${formattedLines
-      .map((line) => `${line.label} ${line.platformCNY} / ${line.unit}`)
-      .join(' · ')}`
-    const listParts = formattedLines
-      .filter((line) => line.listedUSD)
-      .map((line) => `${line.label} ${line.listedUSD} / ${line.unit}`)
-    const tooltip = hasList
-      ? `${platformTitle} | ${t('Publisher list price')}: ${listParts.join(' · ')}`
-      : `${platformTitle} | ${t('No published list price')}`
     return (
       <span
         className='pg-price-compact tabular-nums'

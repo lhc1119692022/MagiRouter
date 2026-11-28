@@ -40,6 +40,8 @@ export function PlaygroundBilling(props: {
   retryModels: () => void
   onDetails: () => void
   keyTriggerRef?: Ref<HTMLButtonElement>
+  keyPickerOpen?: boolean
+  onKeyPickerOpenChange?: (open: boolean) => void
   actions?: ReactNode
 }) {
   const { t } = useTranslation()
@@ -102,6 +104,8 @@ export function PlaygroundBilling(props: {
         value={
           missing || props.selection === null ? null : String(props.selection)
         }
+        open={props.keyPickerOpen}
+        onOpenChange={(nextOpen) => props.onKeyPickerOpenChange?.(nextOpen)}
         disabled={props.disabled || !props.keys.eligible.length}
         onValueChange={(value) => {
           if (!value || value === CLEAR_KEY_VALUE) {
