@@ -1457,7 +1457,7 @@ function MediaSession(
         <button
           type='button'
           className={cn(
-            'el-btn el-btn-sm el-btn-primary',
+            'el-btn el-btn-primary pg-generate-btn',
             compactEmpty && 'w-full justify-center'
           )}
           onClick={() => props.onOpenKeyPicker?.()}
@@ -1478,7 +1478,7 @@ function MediaSession(
       <button
         type='button'
         disabled={!canSubmitRequest}
-        className='el-btn el-btn-sm el-btn-primary'
+        className='el-btn el-btn-primary pg-generate-btn'
         onClick={() => void handleSubmit()}
       >
         {runStatus === 'running' ? (

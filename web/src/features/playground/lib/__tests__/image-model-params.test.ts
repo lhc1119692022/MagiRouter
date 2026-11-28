@@ -252,7 +252,7 @@ describe('buildImageRequestPayload', () => {
       n: 1,
       background: 'auto',
       output_format: 'png',
-      moderation: 'auto',
+      moderation: 'low',
     })
 
     const editPayload = buildImageRequestPayload({
@@ -324,7 +324,7 @@ describe('buildImageRequestPayload', () => {
       output_format: 'gif',
       frame_count: 12,
       frame_duration_ms: 160,
-      moderation: 'auto',
+      moderation: 'low',
     })
     expect(gifPayload).not.toHaveProperty('stream')
     expect(gifPayload).not.toHaveProperty('output_compression')

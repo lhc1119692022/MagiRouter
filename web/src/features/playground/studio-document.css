@@ -473,6 +473,19 @@ html[data-theme='dark'] .pg-media-combobox [data-slot='input-group'],
   min-width: 0;
   flex-shrink: 0;
 }
+.el-btn.pg-generate-btn {
+  height: 38px;
+  min-width: 152px;
+  padding: 0 24px;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+@media (max-width: 420px) {
+  .el-btn.pg-generate-btn {
+    min-width: 124px;
+    padding: 0 18px;
+  }
+}
 .pg-price-minimal {
   display: inline-flex;
   align-items: center;
@@ -1689,6 +1702,20 @@ html[data-theme='dark'] .pg-inline-switch-btn.is-active,
 .pg-seg-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+.pg-image-count-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.pg-image-count-row .pg-seg-row {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.pg-image-count-row .pg-slider-val {
+  min-width: auto;
+  line-height: 1;
 }
 .pg-subpanel {
   display: flex;

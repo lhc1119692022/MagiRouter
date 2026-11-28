@@ -183,6 +183,7 @@ describe('Image Playground Studio', () => {
     const generateBtn = screen.getByRole('button', { name: /^Generate/ })
     const priceReadout = screen.getByLabelText('Reference price')
     expect(priceReadout).toHaveClass('pg-price-minimal')
+    expect(generateBtn).toHaveClass('pg-generate-btn')
     expect(priceReadout).toHaveTextContent(/^[¥￥]0\.07$/)
     expect(priceReadout.parentElement).toBe(generateBtn.parentElement)
     expect(
@@ -545,12 +546,22 @@ describe('Image Playground Studio', () => {
       within(bgGroup).getByRole('button', { name: 'Transparent (RGBA)' })
     ).toHaveClass('is-active')
 
+    expect(screen.queryByRole('slider', { name: 'Image count' })).toBeNull()
+    const imageCountGroup = screen.getByRole('group', { name: 'Image count' })
+    const imageCountReadout = screen.getByTestId('pg-image-count-value')
+    expect(imageCountGroup.parentElement).toBe(imageCountReadout.parentElement)
+    expect(imageCountReadout).toHaveTextContent('1 image(s)')
+    expect(within(imageCountGroup).getAllByRole('button')).toHaveLength(3)
     await user.click(
-      within(screen.getByRole('group', { name: 'Moderation level' })).getByRole(
-        'button',
-        { name: 'Low (less restrictive)' }
-      )
+      within(imageCountGroup).getByRole('button', { name: '2 image(s)' })
     )
+    expect(imageCountReadout).toHaveTextContent('2 image(s)')
+    await user.click(
+      within(imageCountGroup).getByRole('button', { name: '1 image(s)' })
+    )
+    expect(imageCountReadout).toHaveTextContent('1 image(s)')
+
+    expect(screen.queryByRole('group', { name: 'Moderation level' })).toBeNull()
 
     await user.click(screen.getByRole('switch', { name: 'Stream output' }))
     await user.click(

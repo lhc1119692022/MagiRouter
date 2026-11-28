@@ -22,7 +22,6 @@ import {
   type ImageComplexity,
   type ImageInputFidelity,
   type ImageModelProfile,
-  type ImageModerationMode,
   type ImageOutputFormat,
   type ImageQuality,
   type ImageStudioParams,
@@ -40,11 +39,6 @@ interface ImageParameterControlsProps {
 function getBackgroundLabelKey(mode: ImageBackgroundMode): string {
   if (mode === 'transparent') return 'Transparent (RGBA)'
   if (mode === 'opaque') return 'Opaque (RGB)'
-  return 'Auto'
-}
-
-function getModerationLabelKey(mode: ImageModerationMode): string {
-  if (mode === 'low') return 'Low (less restrictive)'
   return 'Auto'
 }
 
@@ -585,49 +579,37 @@ export function ImageParameterControls(props: ImageParameterControlsProps) {
 
       {props.profile.maxImageCount > 1 && (
         <div className='pg-field'>
-          <div className='pg-field-head'>
-            <span className='pg-field-label'>{t('Image count')}</span>
-            <span className='pg-slider-val tabular-nums'>
+          <span className='pg-field-label'>{t('Image count')}</span>
+          <div className='pg-image-count-row'>
+            {props.profile.imageCountPresets.length > 0 && (
+              <div
+                className='pg-seg-row'
+                role='group'
+                aria-label={t('Image count')}
+              >
+                {props.profile.imageCountPresets.map((count) => (
+                  <button
+                    key={count}
+                    type='button'
+                    disabled={props.disabled || isSvgFormat}
+                    onClick={() => props.onChange({ imageCount: count })}
+                    className={cn(
+                      'pg-seg-btn',
+                      effectiveImageCount === count && 'is-active'
+                    )}
+                  >
+                    {t('{{count}} image(s)', { count })}
+                  </button>
+                ))}
+              </div>
+            )}
+            <span
+              className='pg-slider-val shrink-0 tabular-nums'
+              data-testid='pg-image-count-value'
+            >
               {t('{{count}} image(s)', { count: effectiveImageCount })}
             </span>
           </div>
-          {props.profile.imageCountPresets.length > 0 && (
-            <div
-              className='pg-seg-row'
-              role='group'
-              aria-label={t('Image count')}
-            >
-              {props.profile.imageCountPresets.map((count) => (
-                <button
-                  key={count}
-                  type='button'
-                  disabled={props.disabled || isSvgFormat}
-                  onClick={() => props.onChange({ imageCount: count })}
-                  className={cn(
-                    'pg-seg-btn',
-                    effectiveImageCount === count && 'is-active'
-                  )}
-                >
-                  {t('{{count}} image(s)', { count })}
-                </button>
-              ))}
-            </div>
-          )}
-          {props.profile.maxImageCount > 4 && (
-            <input
-              type='range'
-              min={1}
-              max={props.profile.maxImageCount}
-              step={1}
-              disabled={props.disabled || isSvgFormat}
-              aria-label={t('Image count')}
-              value={effectiveImageCount}
-              onChange={(event) =>
-                props.onChange({ imageCount: Number(event.target.value) })
-              }
-              className='w-full accent-black dark:accent-white'
-            />
-          )}
           {isSvgFormat && (
             <span className='pg-field-hint'>
               {t('SVG output supports 1 image per request.')}
@@ -819,32 +801,6 @@ export function ImageParameterControls(props: ImageParameterControlsProps) {
             </span>
           </div>
         )}
-
-      {props.profile.moderationOptions.length > 0 && (
-        <div className='pg-field'>
-          <span className='pg-field-label'>{t('Moderation level')}</span>
-          <div
-            className='pg-seg-row'
-            role='group'
-            aria-label={t('Moderation level')}
-          >
-            {props.profile.moderationOptions.map((mod: ImageModerationMode) => (
-              <button
-                key={mod}
-                type='button'
-                disabled={props.disabled}
-                onClick={() => props.onChange({ moderation: mod })}
-                className={cn(
-                  'pg-seg-btn',
-                  props.params.moderation === mod && 'is-active'
-                )}
-              >
-                {t(getModerationLabelKey(mod))}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
 
       {props.profile.optimizePromptModes.length > 1 && (
         <div className='pg-field'>
